@@ -327,13 +327,13 @@ journalctl -u openclaw -f | grep "\[QQ\]"
 
 ---
 
-## 📄 许可证
+## 许可证
 
 本项目采用 [MIT License](LICENSE) 开源。
 
 ---
 
-## 🙏 致谢
+## 致谢
 
 - [OpenClaw](https://github.com/openclaw/openclaw) — 强大的 AI Agent 框架
 - [NapCat](https://github.com/NapCatQQ/NapCat-Docker) — 现代化的 QQ OneBot 实现
