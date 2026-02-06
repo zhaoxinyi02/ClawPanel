@@ -1,4 +1,4 @@
-![](img\OpenClaw QQ Plugin.png)
+![](img/OpenClaw QQ Plugin.png)
 
 
 <h1 align="center">OpenClaw QQ Plugin</h1>
@@ -90,7 +90,7 @@ openclaw-qq-plugin/
 
 ## 架构说明
 
-![image-20260206194430728](img\image-20260206194430728.png)
+![image-20260206194430728](img/image-20260206194430728.png)
 
 **消息流程：**
 
