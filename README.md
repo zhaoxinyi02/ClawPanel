@@ -1,4 +1,4 @@
-![](img/OpenClaw QQ Plugin.png)
+![OpenClaw QQ Plugin](img/OpenClaw QQ Plugin.png)
 
 
 <h1 align="center">OpenClaw QQ Plugin</h1>
