@@ -1,8 +1,10 @@
 # OpenClaw IM Manager v3.0
 
-> **QQ + 微信双通道 AI 助手 — Docker 一键部署，扫码即用，跨平台支持**
+![OpenClaw IM Manager](img/openclaw_qw.png)
 
-内嵌 NapCat (QQ) + wechatbot-webhook (微信) + 管理后台，Docker Compose 一键启动。
+> **让你的 QQ 和微信个人号秒变 AI 助手 — Docker 一键部署，扫码即用。**
+
+内嵌 NapCat (QQ) + wechatbot-webhook (微信) + 管理后台，Docker Compose 一键启动：QQ/微信个人号接入 → AI 对话 → 群管理 → 可视化后台。
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Docker](https://img.shields.io/badge/docker-ready-brightgreen.svg)
