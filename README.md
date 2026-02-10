@@ -1,6 +1,6 @@
 # OpenClaw IM Manager v3.0
 
-![OpenClaw IM Manager](img/openclaw_qw.png)
+![OpenClaw IM Manager](img/openclaw_qw0210.png)
 
 > **让你的 QQ 和微信个人号秒变 AI 助手 — Docker 一键部署，扫码即用。**
 
