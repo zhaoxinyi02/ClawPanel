@@ -5,14 +5,14 @@ export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const [events, setEvents] = useState<any[]>([]);
   const [napcatStatus, setNapcatStatus] = useState<any>({ connected: false });
+  const [wechatStatus, setWechatStatus] = useState<any>({ connected: false });
 
   // Fetch initial status from API
   useEffect(() => {
     const fetchStatus = () => {
       api.getStatus().then(r => {
-        if (r.ok && r.napcat) {
-          setNapcatStatus(r.napcat);
-        }
+        if (r.ok && r.napcat) setNapcatStatus(r.napcat);
+        if (r.ok && r.wechat) setWechatStatus(r.wechat);
       }).catch(() => {});
     };
     fetchStatus();
@@ -31,10 +31,12 @@ export function useWebSocket() {
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
-        if (msg.type === 'event') {
-          setEvents(prev => { const next = [...prev, msg.data]; return next.length > 200 ? next.slice(-200) : next; });
+        if (msg.type === 'event' || msg.type === 'wechat-event') {
+          setEvents(prev => { const next = [...prev, { ...msg.data, _source: msg.type === 'wechat-event' ? 'wechat' : 'qq' }]; return next.length > 200 ? next.slice(-200) : next; });
         } else if (msg.type === 'napcat-status') {
           setNapcatStatus(msg.data);
+        } else if (msg.type === 'wechat-status') {
+          setWechatStatus(msg.data);
         }
       } catch {}
     };
@@ -47,5 +49,5 @@ export function useWebSocket() {
   }, []);
 
   const clearEvents = useCallback(() => setEvents([]), []);
-  return { events, napcatStatus, clearEvents };
+  return { events, napcatStatus, wechatStatus, clearEvents };
 }

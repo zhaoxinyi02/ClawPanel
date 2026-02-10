@@ -5,6 +5,7 @@ export interface AdminConfigData {
   server: { port: number; host: string; token: string };
   openclaw: { configPath: string; autoSetup: boolean };
   napcat: { wsUrl: string; accessToken: string; webuiPort: number };
+  wechat: { apiUrl: string; token: string; enabled: boolean; autoReply: boolean };
   qq: {
     ownerQQ: number;
     antiRecall: { enabled: boolean };
@@ -22,6 +23,12 @@ const DEFAULTS: AdminConfigData = {
   server: { port: 6199, host: '0.0.0.0', token: 'openclaw-qq-admin' },
   openclaw: { configPath: '/root/.openclaw/openclaw.json', autoSetup: true },
   napcat: { wsUrl: 'ws://127.0.0.1:3001', accessToken: '', webuiPort: 6099 },
+  wechat: {
+    apiUrl: process.env['WECHAT_API_URL'] || 'http://wechat:3001',
+    token: process.env['WECHAT_TOKEN'] || 'openclaw-wechat',
+    enabled: true,
+    autoReply: true,
+  },
   qq: {
     ownerQQ: 0,
     antiRecall: { enabled: true },

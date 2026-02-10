@@ -9,6 +9,7 @@ import QQBot from './pages/QQBot';
 import Requests from './pages/Requests';
 import Settings from './pages/Settings';
 import QQLogin from './pages/QQLogin';
+import WeChatLogin from './pages/WeChatLogin';
 
 export default function App() {
   const auth = useAuth();
@@ -25,11 +26,12 @@ export default function App() {
 
   return (
     <Routes>
-      <Route element={<Layout onLogout={auth.logout} napcatStatus={ws.napcatStatus} />}>
+      <Route element={<Layout onLogout={auth.logout} napcatStatus={ws.napcatStatus} wechatStatus={ws.wechatStatus} />}>
         <Route path="/" element={<Dashboard ws={ws} />} />
         <Route path="/openclaw" element={<OpenClawConfig />} />
         <Route path="/qqbot" element={<QQBot />} />
         <Route path="/qqlogin" element={<QQLogin />} />
+        <Route path="/wechatlogin" element={<WeChatLogin />} />
         <Route path="/requests" element={<Requests />} />
         <Route path="/settings" element={<Settings />} />
       </Route>

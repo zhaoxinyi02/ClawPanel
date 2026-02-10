@@ -99,6 +99,7 @@ if [ ! -f "${ADMIN_CONFIG_PATH}" ]; then
   "server": { "port": 6199, "host": "0.0.0.0", "token": "${ADMIN_TOKEN}" },
   "openclaw": { "configPath": "${OPENCLAW_CONFIG}", "autoSetup": true },
   "napcat": { "wsUrl": "ws://127.0.0.1:${NAPCAT_WS_PORT}", "accessToken": "${NAPCAT_TOKEN}", "webuiPort": 6099 },
+  "wechat": { "apiUrl": "${WECHAT_API_URL:-http://wechat:3001}", "token": "${WECHAT_TOKEN:-openclaw-wechat}", "enabled": true, "autoReply": true },
   "qq": {
     "ownerQQ": ${OWNER_QQ},
     "antiRecall": { "enabled": true },

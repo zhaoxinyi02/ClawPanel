@@ -1,7 +1,7 @@
 {
-  "name": "openclaw-qq-manager",
+  "name": "openclaw-im-manager",
   "version": "2.0.0",
-  "description": "OpenClaw QQ 个人号 AI 助手 - 内嵌 NapCat，Docker 一键部署，扫码即用",
+  "description": "OpenClaw IM Manager - QQ + 微信双通道 AI 助手，Docker 一键部署，扫码即用",
   "private": true,
   "scripts": {
     "dev:server": "cd server && npx tsx watch src/index.ts",
@@ -15,7 +15,7 @@
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f"
   },
-  "keywords": ["qq", "bot", "napcat", "onebot", "openclaw", "ai", "管理后台", "docker"],
+  "keywords": ["qq", "wechat", "bot", "napcat", "onebot", "openclaw", "ai", "管理后台", "docker", "im"],
   "author": "zhaoxinyi02",
   "license": "MIT"
 }

@@ -5,10 +5,11 @@ import crypto from 'crypto';
 import { AdminConfig } from '../core/admin-config.js';
 import { OneBotClient } from '../core/onebot-client.js';
 import { OpenClawConfig } from '../core/openclaw-config.js';
+import { WeChatClient } from '../core/wechat-client.js';
 import { getPendingRequests } from '../core/event-router.js';
 import { JWT_SECRET } from '../core/ws-manager.js';
 
-export function createRoutes(adminConfig: AdminConfig, onebotClient: OneBotClient, openclawConfig: OpenClawConfig) {
+export function createRoutes(adminConfig: AdminConfig, onebotClient: OneBotClient, openclawConfig: OpenClawConfig, wechatClient: WeChatClient) {
   const router = Router();
 
   // Auth middleware
@@ -44,6 +45,13 @@ export function createRoutes(adminConfig: AdminConfig, onebotClient: OneBotClien
     } catch {}
 
     const ocConfig = openclawConfig.read();
+    let wechatInfo: any = { connected: wechatClient.connected };
+    try {
+      const wl = await wechatClient.getLoginStatus();
+      wechatInfo.loggedIn = wl.loggedIn || false;
+      wechatInfo.name = wl.name || wechatClient.loginUser?.name || '';
+    } catch { wechatInfo.loggedIn = false; }
+
     res.json({
       ok: true,
       napcat: {
@@ -52,6 +60,7 @@ export function createRoutes(adminConfig: AdminConfig, onebotClient: OneBotClien
         nickname: onebotClient.nickname,
         groupCount, friendCount,
       },
+      wechat: wechatInfo,
       openclaw: {
         configured: openclawConfig.exists(),
         qqPluginEnabled: !!ocConfig?.plugins?.entries?.qq?.enabled,
@@ -312,6 +321,70 @@ export function createRoutes(adminConfig: AdminConfig, onebotClient: OneBotClien
       const r = await napcatProxy('POST', '/api/QQLogin/GetQQLoginInfo', {}, cred);
       res.json({ ok: true, ...r });
     } catch (err) { res.json({ ok: false, error: String(err) }); }
+  });
+
+  // === WeChat API ===
+
+  // WeChat status (health + login)
+  router.get('/wechat/status', auth, async (_req, res) => {
+    try {
+      const loginRes = await wechatClient.getLoginStatus();
+      res.json({
+        ok: true,
+        connected: wechatClient.connected,
+        loggedIn: loginRes.loggedIn || false,
+        name: loginRes.name || wechatClient.loginUser?.name || '',
+      });
+    } catch (err) {
+      res.json({ ok: false, connected: false, loggedIn: false, error: String(err) });
+    }
+  });
+
+  // WeChat login URL (returns the URL for QR code scanning)
+  router.get('/wechat/login-url', auth, (_req, res) => {
+    const cfg = adminConfig.get().wechat;
+    // The login page is served by wechatbot-webhook container
+    // From the browser, user accesses it via the mapped port 3002
+    const externalUrl = `http://${_req.hostname}:3002/login?token=${cfg.token}`;
+    const internalUrl = wechatClient.getLoginUrl();
+    res.json({ ok: true, externalUrl, internalUrl });
+  });
+
+  // WeChat send message
+  router.post('/wechat/send', auth, async (req, res) => {
+    try {
+      const { to, content, isRoom } = req.body;
+      const r = await wechatClient.sendMessage(to, content, isRoom || false);
+      res.json({ ok: true, result: r });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // WeChat send file
+  router.post('/wechat/send-file', auth, async (req, res) => {
+    try {
+      const { to, fileUrl, isRoom } = req.body;
+      const r = await wechatClient.sendFile(to, fileUrl, isRoom || false);
+      res.json({ ok: true, result: r });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // WeChat config
+  router.get('/wechat/config', auth, (_req, res) => {
+    const cfg = adminConfig.get().wechat;
+    res.json({ ok: true, config: cfg });
+  });
+
+  router.put('/wechat/config', auth, (req, res) => {
+    try {
+      adminConfig.updateSection('wechat', { ...adminConfig.get().wechat, ...req.body });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
   });
 
   return router;

@@ -50,4 +50,11 @@ export const api = {
   napcatQuickLogin: (uin: string) => post('/napcat/quick-login', { uin }),
   napcatPasswordLogin: (uin: string, password: string) => post('/napcat/password-login', { uin, password }),
   napcatLoginInfo: () => get('/napcat/login-info'),
+  // WeChat
+  wechatStatus: () => get('/wechat/status'),
+  wechatLoginUrl: () => get('/wechat/login-url'),
+  wechatSend: (to: string, content: string, isRoom?: boolean) => post('/wechat/send', { to, content, isRoom }),
+  wechatSendFile: (to: string, fileUrl: string, isRoom?: boolean) => post('/wechat/send-file', { to, fileUrl, isRoom }),
+  wechatConfig: () => get('/wechat/config'),
+  wechatUpdateConfig: (data: any) => put('/wechat/config', data),
 };

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   openclaw-qq:
     build: .
@@ -10,7 +8,7 @@ services:
       - "6199:6199"    # 管理后台
       - "3001:3001"    # NapCat OneBot11 WS（供宿主机 OpenClaw 连接）
     volumes:
-      - /root/.openclaw:/root/.openclaw          # OpenClaw 配置
+      - ${OPENCLAW_DIR:-~/.openclaw}:/root/.openclaw   # OpenClaw 配置（跨平台）
       - napcat-data:/app/napcat/config            # NapCat 配置持久化
       - manager-data:/app/manager/data            # 管理后台配置持久化
       - qq-session:/app/.config/QQ                # QQ 登录 session 持久化
@@ -21,8 +19,38 @@ services:
       - OWNER_QQ=${OWNER_QQ:-0}
       - NAPCAT_TOKEN=${NAPCAT_TOKEN:-}
       - OPENCLAW_CONFIG=/root/.openclaw/openclaw.json
+      - WECHAT_API_URL=http://wechat:3001
+      - WECHAT_TOKEN=${WECHAT_TOKEN:-}
+    depends_on:
+      - wechat
+
+  wechat:
+    image: dannicool/docker-wechatbot-webhook
+    container_name: openclaw-wechat
+    restart: unless-stopped
+    ports:
+      - "3002:3001"    # 微信 webhook API（外部调试用）
+    volumes:
+      - wechat-data:/app/data
+    environment:
+      - RECVD_MSG_API=http://openclaw-qq:6199/api/wechat/callback
+      - LOGIN_API_TOKEN=${WECHAT_TOKEN:-openclaw-wechat}
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        # 将 token 写入内部 .env 以便 preStart 脚本识别
+        WTOKEN=$${LOGIN_API_TOKEN:-openclaw-wechat}
+        if [ -f .env ]; then
+          sed -i "s|^LOCAL_LOGIN_API_TOKEN=.*|LOCAL_LOGIN_API_TOKEN=$$WTOKEN|" .env
+          grep -q "^LOCAL_LOGIN_API_TOKEN" .env || echo "LOCAL_LOGIN_API_TOKEN=$$WTOKEN" >> .env
+          sed -i "s|^LOCAL_RECVD_MSG_API=.*|LOCAL_RECVD_MSG_API=$$RECVD_MSG_API|" .env
+          grep -q "^LOCAL_RECVD_MSG_API" .env || echo "LOCAL_RECVD_MSG_API=$$RECVD_MSG_API" >> .env
+        fi
+        exec npm start
 
 volumes:
   napcat-data:
   manager-data:
   qq-session:
+  wechat-data:
