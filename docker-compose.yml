@@ -9,6 +9,7 @@ services:
       - "3001:3001"    # NapCat OneBot11 WS（供宿主机 OpenClaw 连接）
     volumes:
       - ${OPENCLAW_DIR:-~/.openclaw}:/root/.openclaw   # OpenClaw 配置（跨平台）
+      - ${OPENCLAW_WORK:-/root/openclaw/work}:/root/openclaw/work  # OpenClaw 工作目录（文件服务器用）
       - napcat-data:/app/napcat/config            # NapCat 配置持久化
       - manager-data:/app/manager/data            # 管理后台配置持久化
       - qq-session:/app/.config/QQ                # QQ 登录 session 持久化

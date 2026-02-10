@@ -77,6 +77,13 @@ export function getClientForAccount(accountId: string) {
   return clients.get(accountId);
 }
 
+// 文件服务器支持的目录白名单（需与 file-server.ts 中的 ALLOWED_DIRS 一致）
+const SERVED_DIRS = [
+  "/root/openclaw/work",
+  "/root/.openclaw",
+  "/tmp",
+];
+
 function convertLocalPathToUrl(filePath: string): string {
   if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
     return filePath;
@@ -86,11 +93,20 @@ function convertLocalPathToUrl(filePath: string): string {
     return filePath;
   }
   
-  if (filePath.startsWith("/root/openclaw/work/")) {
-    const relativePath = filePath.substring("/root/openclaw/work".length);
-    // 不要对整个路径使用encodeURIComponent，直接拼接URL
-    const url = FILE_SERVER_BASE_URL + relativePath;
+  // 检查是否是文件服务器可以提供的本地路径
+  const isServedPath = SERVED_DIRS.some(dir => filePath.startsWith(dir + "/") || filePath === dir);
+  
+  if (isServedPath) {
+    // 使用 /file?path= 端点，支持任意白名单目录下的文件
+    const url = FILE_SERVER_BASE_URL + "/file?path=" + encodeURIComponent(filePath);
     console.log("[QQ] Converted local path to URL: " + filePath + " -> " + url);
+    return url;
+  }
+  
+  // 对于其他绝对路径，也尝试通过文件服务器提供（会被白名单检查拦截）
+  if (filePath.startsWith("/") && fs.existsSync(filePath)) {
+    const url = FILE_SERVER_BASE_URL + "/file?path=" + encodeURIComponent(filePath);
+    console.log("[QQ] Attempting to serve local path via file server: " + filePath + " -> " + url);
     return url;
   }
   

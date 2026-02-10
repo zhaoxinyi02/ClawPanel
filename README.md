@@ -8,7 +8,7 @@
 
 Docker 一键部署 · 扫码即用 · 可视化管理后台
 
-[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-red?style=flat-square)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ready-brightgreen?style=flat-square&logo=docker&logoColor=white)](docker-compose.yml)
 [![Version](https://img.shields.io/badge/version-3.0.0-orange?style=flat-square)](https://github.com/zhaoxinyi02/openclaw-im-manager/releases/tag/v3.0.0)
 [![GitHub Stars](https://img.shields.io/github/stars/zhaoxinyi02/openclaw-im-manager?style=flat-square&logo=github)](https://github.com/zhaoxinyi02/openclaw-im-manager/stargazers)
@@ -18,6 +18,13 @@ Docker 一键部署 · 扫码即用 · 可视化管理后台
 </div>
 
 ---
+
+> [!CAUTION]
+> **⚠️ 免责声明 | Disclaimer**
+>
+> 本项目仅供**学习研究**使用，**严禁用于任何商业用途**。使用第三方客户端登录 QQ/微信可能违反腾讯服务协议，**存在封号风险**，请使用小号测试。本项目作者**未进行任何逆向工程**，仅做开源项目整合，**不对任何后果承担责任**。下载使用即表示同意 [完整免责声明](DISCLAIMER.md)。
+>
+> This project is for **learning and research purposes only**. **Commercial use is strictly prohibited.** Use at your own risk. See [full disclaimer](DISCLAIMER.md).
 
 > [!NOTE]
 > 本项目原名 **openclaw-qq-plugin**，v3.0 起正式更名为 **openclaw-im-manager**，新增微信通道支持。
@@ -237,6 +244,20 @@ git pull && docker compose up -d --build
 - [danni-cool/wechatbot-webhook](https://github.com/danni-cool/wechatbot-webhook) — 微信 Webhook 机器人
 - [OpenClaw](https://openclaw.ai) — AI 助手引擎
 
+## ⚠️ 免责声明
+
+> **本项目仅供学习研究使用，严禁商用。**
+
+- 🚫 **严禁商用** — 不得用于任何商业目的、付费服务、收费机器人等
+- ⚠️ **封号风险** — 使用第三方客户端登录 QQ/微信可能导致账号被封禁
+- 🔒 **无逆向** — 本项目未进行任何逆向工程，仅整合已有开源项目
+- 📋 **自担风险** — 使用者需自行承担一切风险和法律责任
+- 💰 **作者未盈利** — 本项目作者未从中获取任何经济收益
+
+**详细免责声明请阅读 [DISCLAIMER.md](DISCLAIMER.md)**
+
 ## 📄 License
 
-[MIT](LICENSE) © 2026
+[CC BY-NC-SA 4.0](LICENSE) © 2026 — **禁止商用**
+
+本项目采用 [知识共享 署名-非商业性使用-相同方式共享 4.0 国际许可证](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans) 进行许可。

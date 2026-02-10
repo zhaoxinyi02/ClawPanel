@@ -141,8 +141,21 @@ echo "[Manager] PID: ${MANAGER_PID}"
 # === 9. Start QQ (NapCat) as main process ===
 echo "[NapCat] 启动 QQ..."
 cd /app/napcat
+
+# 如果没有设置 ACCOUNT，自动从 NapCat 配置中检测已登录的 QQ 号
+if [ -z "${ACCOUNT}" ]; then
+    # 从 napcat_<QQ号>.json 文件名中提取 QQ 号
+    DETECTED=$(ls /app/napcat/config/napcat_*.json 2>/dev/null | head -1 | grep -oP 'napcat_\K[0-9]+')
+    if [ -n "${DETECTED}" ]; then
+        echo "[NapCat] 自动检测到已登录 QQ 号: ${DETECTED}，使用快速登录"
+        ACCOUNT="${DETECTED}"
+    fi
+fi
+
 if [ -n "${ACCOUNT}" ]; then
+    echo "[NapCat] 使用快速登录: QQ ${ACCOUNT}"
     exec gosu napcat /opt/QQ/qq --no-sandbox -q $ACCOUNT
 else
+    echo "[NapCat] 未检测到已登录账号，需要扫码登录"
     exec gosu napcat /opt/QQ/qq --no-sandbox
 fi
