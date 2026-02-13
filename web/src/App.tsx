@@ -4,12 +4,13 @@ import { useWebSocket } from './hooks/useWebSocket';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import OpenClawConfig from './pages/OpenClawConfig';
-import QQ from './pages/QQ';
-import Requests from './pages/Requests';
-import Settings from './pages/Settings';
-import WeChatLogin from './pages/WeChatLogin';
+import ActivityLog from './pages/ActivityLog';
+import Channels from './pages/Channels';
+import Skills from './pages/Skills';
+import CronJobs from './pages/CronJobs';
+import SystemConfig from './pages/SystemConfig';
 import Workspace from './pages/Workspace';
+import Requests from './pages/Requests';
 
 export default function App() {
   const auth = useAuth();
@@ -28,17 +29,21 @@ export default function App() {
     <Routes>
       <Route element={<Layout onLogout={auth.logout} napcatStatus={ws.napcatStatus} wechatStatus={ws.wechatStatus} />}>
         <Route path="/" element={<Dashboard ws={ws} />} />
+        <Route path="/logs" element={<ActivityLog ws={ws} />} />
+        <Route path="/channels" element={<Channels />} />
+        <Route path="/skills" element={<Skills />} />
+        <Route path="/cron" element={<CronJobs />} />
+        <Route path="/config" element={<SystemConfig />} />
         <Route path="/workspace" element={<Workspace />} />
-        <Route path="/openclaw" element={<OpenClawConfig />} />
-        <Route path="/qq" element={<QQ />} />
-        <Route path="/wechat" element={<WeChatLogin />} />
         <Route path="/requests" element={<Requests />} />
-        <Route path="/settings" element={<Settings />} />
       </Route>
       <Route path="/login" element={<Navigate to="/" />} />
-      <Route path="/qqbot" element={<Navigate to="/qq" />} />
-      <Route path="/qqlogin" element={<Navigate to="/qq" />} />
-      <Route path="/wechatlogin" element={<Navigate to="/wechat" />} />
+      {/* Legacy redirects */}
+      <Route path="/qq" element={<Navigate to="/channels" />} />
+      <Route path="/qqbot" element={<Navigate to="/channels" />} />
+      <Route path="/wechat" element={<Navigate to="/channels" />} />
+      <Route path="/openclaw" element={<Navigate to="/config" />} />
+      <Route path="/settings" element={<Navigate to="/config" />} />
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   );
