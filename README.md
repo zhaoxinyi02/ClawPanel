@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="img/logo.png" width="700"/>
+<img src="img/logo.jpg" width="700"/>
 
 # 🐾 ClawPanel
 
