@@ -6,6 +6,7 @@ import {
   FileText, FileImage, FileVideo, FileAudio, FileArchive, FileCode, Download,
   Eye, Edit3, ArrowUpDown, ChevronUp, ChevronDown, MessageSquare,
 } from 'lucide-react';
+import { useI18n } from '../i18n';
 
 interface WsFile {
   name: string; path: string; size: number; sizeHuman: string;
@@ -95,6 +96,7 @@ function simpleMarkdown(md: string): string {
 }
 
 export default function Workspace() {
+  const { t } = useI18n();
   const [files, setFiles] = useState<WsFile[]>([]);
   const [curPath, setCurPath] = useState('');
   const [parentPath, setParentPath] = useState<string | null>(null);
@@ -159,10 +161,10 @@ export default function Workspace() {
 
   const handleDel = async () => {
     if (sel.size === 0) return;
-    if (!confirm(`确定删除 ${sel.size} 个文件/文件夹？不可恢复。`)) return;
+    if (!confirm(t.workspace.deleteConfirm)) return;
     const r = await api.workspaceDelete(Array.from(sel));
-    if (r.ok) { flash(`已删除 ${r.deleted.length} 个文件`); load(curPath); loadStats(); }
-    else flash(r.error || '删除失败', false);
+    if (r.ok) { flash(t.workspace.deleteSuccess); load(curPath); loadStats(); }
+    else flash(r.error || t.workspace.deleteFailed, false);
   };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -170,9 +172,9 @@ export default function Workspace() {
     setUploading(true);
     try {
       const r = await api.workspaceUpload(Array.from(fl), curPath || undefined);
-      if (r.ok) { flash(`已上传 ${r.files.length} 个文件`); load(curPath); loadStats(); }
-      else flash(r.error || '上传失败', false);
-    } catch (err) { flash('上传失败', false); }
+      if (r.ok) { flash(t.workspace.uploadSuccess); load(curPath); loadStats(); }
+      else flash(r.error || t.workspace.uploadFailed, false);
+    } catch (err) { flash(t.workspace.uploadFailed, false); }
     setUploading(false);
     if (fRef.current) fRef.current.value = '';
   };
@@ -180,22 +182,22 @@ export default function Workspace() {
   const handleMk = async () => {
     if (!mkName.trim()) return;
     const r = await api.workspaceMkdir(mkName.trim(), curPath || undefined);
-    if (r.ok) { flash(`已创建: ${mkName}`); setMkName(''); setShowMk(false); load(curPath); }
-    else flash(r.error || '创建失败', false);
+    if (r.ok) { flash(t.workspace.createSuccess); setMkName(''); setShowMk(false); load(curPath); }
+    else flash(r.error || t.workspace.createFailed, false);
   };
 
   const handleClean = async () => {
-    if (!confirm('确定立即清理过期文件？不可恢复。')) return;
+    if (!confirm(t.workspace.deleteConfirm)) return;
     const r = await api.workspaceClean();
-    if (r.ok) { flash(`已清理 ${r.deleted.length} 个过期文件`); load(curPath); loadStats(); }
-    else flash(r.error || '清理失败', false);
+    if (r.ok) { flash(t.workspace.deleteSuccess); load(curPath); loadStats(); }
+    else flash(r.error || t.workspace.deleteFailed, false);
   };
 
   const saveCfg = async () => {
     if (!config) return;
     const r = await api.workspaceUpdateConfig(config);
-    if (r.ok) { setConfig(r.config); flash('配置已保存'); loadStats(); }
-    else flash(r.error || '保存失败', false);
+    if (r.ok) { setConfig(r.config); flash(t.common.success); loadStats(); }
+    else flash(r.error || t.common.failed, false);
   };
 
   const saveNote = async (filePath: string) => {
@@ -206,7 +208,7 @@ export default function Workspace() {
       return n;
     });
     setEditingNote(null);
-    flash('备注已保存');
+    flash(t.common.success);
   };
 
   const openPreview = async (f: WsFile) => {
@@ -229,7 +231,7 @@ export default function Workspace() {
 
   const crumbs = () => {
     const parts = curPath ? curPath.split('/').filter(Boolean) : [];
-    const c: { l: string; p: string }[] = [{ l: '工作区', p: '' }];
+    const c: { l: string; p: string }[] = [{ l: t.workspace.title, p: '' }];
     let acc = '';
     for (const x of parts) { acc = acc ? acc + '/' + x : x; c.push({ l: x, p: acc }); }
     return c;
@@ -240,11 +242,11 @@ export default function Workspace() {
       {/* Header */}
       <div className="flex items-center justify-between shrink-0">
         <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">工作区文件管理</h1>
-          <p className="text-sm text-gray-500 mt-1">管理 OpenClaw 的配置文件与工作区数据</p>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">{t.workspace.title}</h1>
+          <p className="text-sm text-gray-500 mt-1">{t.workspace.subtitle}</p>
         </div>
         <button onClick={() => setShowCfg(!showCfg)} className="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors shadow-sm">
-          <Settings2 size={14} /> 设置
+          <Settings2 size={14} /> {t.nav.systemConfig}
         </button>
       </div>
 
@@ -259,10 +261,10 @@ export default function Workspace() {
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 shrink-0">
           {[
-            { icon: <HardDrive size={18} />, label: '总大小', val: stats.totalSizeHuman, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-900/20' },
-            { icon: <File size={18} />, label: '文件数', val: String(stats.totalFiles), color: 'text-violet-500', bg: 'bg-violet-50 dark:bg-violet-900/20' },
-            { icon: <Clock size={18} />, label: '过期文件', val: String(stats.oldFiles), color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-900/20' },
-            { icon: <AlertTriangle size={18} />, label: '自动清理', val: config?.autoCleanEnabled ? `${config.autoCleanDays} 天` : '关闭', color: config?.autoCleanEnabled ? 'text-emerald-500' : 'text-gray-400', bg: config?.autoCleanEnabled ? 'bg-emerald-50 dark:bg-emerald-900/20' : 'bg-gray-100 dark:bg-gray-800' },
+            { icon: <HardDrive size={18} />, label: t.workspace.totalSize, val: stats.totalSizeHuman, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-900/20' },
+            { icon: <File size={18} />, label: t.workspace.totalFiles, val: String(stats.totalFiles), color: 'text-violet-500', bg: 'bg-violet-50 dark:bg-violet-900/20' },
+            { icon: <Clock size={18} />, label: t.common.status, val: String(stats.oldFiles), color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-900/20' },
+            { icon: <AlertTriangle size={18} />, label: t.workspace.autoClean, val: config?.autoCleanEnabled ? `${config.autoCleanDays}d` : t.common.off, color: config?.autoCleanEnabled ? 'text-emerald-500' : 'text-gray-400', bg: config?.autoCleanEnabled ? 'bg-emerald-50 dark:bg-emerald-900/20' : 'bg-gray-100 dark:bg-gray-800' },
           ].map((s, i) => (
             <div key={i} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-4 flex items-center gap-4 transition-all hover:shadow-md">
               <div className={`p-2.5 rounded-xl ${s.bg} ${s.color}`}>
@@ -337,22 +339,22 @@ export default function Workspace() {
         </div>
         
         <div className="flex items-center gap-2 pl-2 border-l border-gray-100 dark:border-gray-700/50">
-          <button onClick={() => { load(curPath); loadStats(); }} className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-gray-100 transition-colors" title="刷新">
+          <button onClick={() => { load(curPath); loadStats(); }} className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-gray-100 transition-colors" title={t.common.refresh}>
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
           </button>
           
           <button onClick={() => setShowMk(true)} className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
-            <FolderPlus size={14} /> 新建
+            <FolderPlus size={14} /> {t.workspace.newFolder}
           </button>
           
           <label className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-violet-600 text-white hover:bg-violet-700 shadow-sm shadow-violet-200 dark:shadow-none transition-all cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-            <Upload size={14} /> {uploading ? '上传中...' : '上传'}
+            <Upload size={14} /> {uploading ? t.common.loading : t.workspace.uploadFile}
             <input ref={fRef} type="file" multiple className="hidden" onChange={handleUpload} />
           </label>
           
           {sel.size > 0 && (
             <button onClick={handleDel} className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-100 dark:border-red-900/30 transition-colors animate-in zoom-in-95 duration-200">
-              <Trash2 size={14} /> 删除 ({sel.size})
+              <Trash2 size={14} /> {t.common.delete} ({sel.size})
             </button>
           )}
         </div>
@@ -366,7 +368,7 @@ export default function Workspace() {
           </div>
           <input autoFocus value={mkName} onChange={e => setMkName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleMk(); if (e.key === 'Escape') { setShowMk(false); setMkName(''); } }}
-            placeholder="输入新文件夹名称..." className="flex-1 px-3 py-1.5 text-sm bg-transparent border-b border-gray-200 dark:border-gray-700 focus:border-violet-500 outline-none transition-colors" />
+            placeholder={t.workspace.folderNamePlaceholder} className="flex-1 px-3 py-1.5 text-sm bg-transparent border-b border-gray-200 dark:border-gray-700 focus:border-violet-500 outline-none transition-colors" />
           <div className="flex gap-1">
             <button onClick={handleMk} className="p-1.5 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 rounded-lg transition-colors"><Check size={16} /></button>
             <button onClick={() => { setShowMk(false); setMkName(''); }} className="p-1.5 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"><X size={16} /></button>
@@ -400,7 +402,7 @@ export default function Workspace() {
                   </div>
                 )}
                 <a href={api.workspaceDownloadUrl(preview.path)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors">
-                  <Download size={12} /> 下载
+                  <Download size={12} /> {t.workspace.download}
                 </a>
                 <button onClick={() => setPreview(null)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-gray-400 transition-colors">
                   <X size={18} />

@@ -6,6 +6,7 @@ import {
   MemoryStick, Radio, TrendingUp,
 } from 'lucide-react';
 import type { LogEntry } from '../hooks/useWebSocket';
+import { useI18n } from '../i18n';
 
 interface DashboardProps {
   ws: {
@@ -19,6 +20,7 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ ws }: DashboardProps) {
+  const { t, locale } = useI18n();
   const [status, setStatus] = useState<any>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -53,32 +55,32 @@ export default function Dashboard({ ws }: DashboardProps) {
       // QQ (NapCat) — has detailed status from OneBot client
       connectedChannels.push({
         name: ch.label,
-        status: nc.connected ? '已连接' : '未登录',
+        status: nc.connected ? t.common.connected : t.common.notLoggedIn,
         details: [
-          { label: '昵称', value: nc.nickname || '-' },
-          { label: 'QQ号', value: nc.selfId || '-' },
-          { label: '群数', value: String(nc.groupCount || 0) },
-          { label: '好友数', value: String(nc.friendCount || 0) },
+          { label: t.dashboard.nickname, value: nc.nickname || '-' },
+          { label: t.dashboard.qqNumber, value: nc.selfId || '-' },
+          { label: t.dashboard.groups, value: String(nc.groupCount || 0) },
+          { label: t.dashboard.friends, value: String(nc.friendCount || 0) },
         ],
       });
     } else if (ch.id === 'wechat') {
       // WeChat — has detailed status from wechat client
       connectedChannels.push({
         name: ch.label,
-        status: wc.loggedIn ? '已连接' : '未登录',
+        status: wc.loggedIn ? t.common.connected : t.common.notLoggedIn,
         details: [
-          { label: '用户', value: wc.name || '-' },
-          { label: '状态', value: wc.loggedIn ? '已登录' : '未登录' },
+          { label: t.dashboard.user, value: wc.name || '-' },
+          { label: t.common.status, value: wc.loggedIn ? t.dashboard.loggedIn : t.common.notLoggedIn },
         ],
       });
     } else {
       // All other channels (feishu, qqbot, dingtalk, etc.) — enabled in config
       connectedChannels.push({
         name: ch.label,
-        status: '已启用',
+        status: t.common.enabled,
         details: [
-          { label: '类型', value: ch.type === 'plugin' ? '插件通道' : '内置通道' },
-          { label: '状态', value: '由网关管理' },
+          { label: t.dashboard.channelType, value: ch.type === 'plugin' ? t.dashboard.pluginChannel : t.dashboard.builtinChannel },
+          { label: t.common.status, value: t.dashboard.managedByGateway },
         ],
       });
     }
@@ -89,48 +91,48 @@ export default function Dashboard({ ws }: DashboardProps) {
       {/* Header */}
       <div className="shrink-0 flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">仪表盘</h2>
-          <p className="text-sm text-gray-500 mt-1">OpenClaw 运行状态总览</p>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">{t.dashboard.title}</h2>
+          <p className="text-sm text-gray-500 mt-1">{t.dashboard.subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
           <span className="flex h-2.5 w-2.5 relative">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
           </span>
-          <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">系统运行正常</span>
+          <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">{t.dashboard.systemNormal}</span>
         </div>
       </div>
 
       {/* Status cards */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 shrink-0">
-        <StatCard icon={Radio} label="活跃通道" value={`${connectedChannels.length}`} unit="个"
-          sub={connectedChannels.length > 0 ? connectedChannels.map(c => c.name).join(', ') : '无通道连接'}
+        <StatCard icon={Radio} label={t.dashboard.activeChannels} value={`${connectedChannels.length}`} unit={t.dashboard.channelUnit || undefined}
+          sub={connectedChannels.length > 0 ? connectedChannels.map(c => c.name).join(', ') : t.dashboard.noChannels}
           color="text-emerald-600" bg="bg-emerald-50 dark:bg-emerald-900/20" />
-        <StatCard icon={Cpu} label="AI 模型" value={oc.currentModel ? shortenModel(oc.currentModel) : '未设置'}
+        <StatCard icon={Cpu} label={t.dashboard.aiModel} value={oc.currentModel ? shortenModel(oc.currentModel) : t.dashboard.notSet}
           sub={oc.currentModel || ''} color="text-violet-600" bg="bg-violet-50 dark:bg-violet-900/20" />
-        <StatCard icon={Clock} label="运行时间" value={formatUptime(adm.uptime || 0).split(/(\d+)/)[1]} unit={formatUptime(adm.uptime || 0).split(/(\d+)/)[2]}
+        <StatCard icon={Clock} label={t.dashboard.uptime} value={formatUptime(adm.uptime || 0, t).split(/(\d+)/)[1]} unit={formatUptime(adm.uptime || 0, t).split(/(\d+)/)[2]}
           color="text-blue-600" bg="bg-blue-50 dark:bg-blue-900/20" />
-        <StatCard icon={MemoryStick} label="内存占用" value={`${adm.memoryMB || 0}`} unit="MB"
+        <StatCard icon={MemoryStick} label={t.dashboard.memory} value={`${adm.memoryMB || 0}`} unit="MB"
           color="text-cyan-600" bg="bg-cyan-50 dark:bg-cyan-900/20" />
-        <StatCard icon={TrendingUp} label="今日消息" value={`${todayLogs.length}`} unit="条"
-          sub={`收 ${qqCount} / 发 ${botCount}`} color="text-amber-600" bg="bg-amber-50 dark:bg-amber-900/20" />
+        <StatCard icon={TrendingUp} label={t.dashboard.todayMessages} value={`${todayLogs.length}`} unit={t.dashboard.msgUnit || undefined}
+          sub={`${t.dashboard.received} ${qqCount} / ${t.dashboard.sent} ${botCount}`} color="text-amber-600" bg="bg-amber-50 dark:bg-amber-900/20" />
       </div>
 
       {/* Connected channel cards — only show connected */}
       {connectedChannels.length > 0 && (
         <div className="shrink-0">
-          <h3 className="text-sm font-semibold text-gray-500 mb-3 px-1">已连接通道</h3>
+          <h3 className="text-sm font-semibold text-gray-500 mb-3 px-1">{t.dashboard.connectedChannels}</h3>
           <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4`}>
             {connectedChannels.map(ch => (
               <div key={ch.name} className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700/50 hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <div className={`p-1.5 rounded-lg ${ch.status === '已连接' ? 'bg-emerald-50 text-emerald-600' : ch.status === '已启用' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
+                    <div className={`p-1.5 rounded-lg ${ch.status === t.common.connected ? 'bg-emerald-50 text-emerald-600' : ch.status === t.common.enabled ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
                       <Wifi size={16} />
                     </div>
                     <span className="font-semibold text-sm text-gray-900 dark:text-gray-100">{ch.name}</span>
                   </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${ch.status === '已连接' ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400' : ch.status === '已启用' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'}`}>{ch.status}</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${ch.status === t.common.connected ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400' : ch.status === t.common.enabled ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'}`}>{ch.status}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-y-2 gap-x-4">
                   {ch.details.map(d => (
@@ -154,17 +156,17 @@ export default function Dashboard({ ws }: DashboardProps) {
               <Activity size={16} />
             </div>
             <div>
-              <h3 className="font-bold text-sm text-gray-900 dark:text-white">最近活动</h3>
-              <p className="text-[10px] text-gray-500">实时日志流 ({ws.logEntries.length} 条)</p>
+              <h3 className="font-bold text-sm text-gray-900 dark:text-white">{t.dashboard.recentActivity}</h3>
+              <p className="text-[10px] text-gray-500">{t.dashboard.realtimeLog} ({ws.logEntries.length})</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => setAutoScroll(!autoScroll)}
-              title={autoScroll ? '暂停自动滚动' : '开启自动滚动'}
+              title={autoScroll ? t.dashboard.pauseScroll : t.dashboard.resumeScroll}
               className={`p-2 rounded-lg transition-all ${autoScroll ? 'bg-violet-50 text-violet-600 shadow-sm ring-1 ring-violet-100' : 'text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
               <ArrowDown size={14} />
             </button>
-            <button onClick={ws.refreshLog} title="刷新日志" className="p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-400 transition-colors">
+            <button onClick={ws.refreshLog} title={t.dashboard.refreshLog} className="p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-400 transition-colors">
               <RefreshCw size={14} />
             </button>
           </div>
@@ -173,7 +175,7 @@ export default function Dashboard({ ws }: DashboardProps) {
           {ws.logEntries.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-2">
               <Clock size={32} className="opacity-20" />
-              <p className="text-xs">暂无活动日志</p>
+              <p className="text-xs">{t.dashboard.noActivity}</p>
             </div>
           )}
           {ws.logEntries.slice(0, 100).map((entry) => (
@@ -245,8 +247,8 @@ function sourceColor(s: string) {
 function sourceLabel(s: string) {
   switch (s) {
     case 'qq': return 'QQ';
-    case 'wechat': return '微信';
-    case 'system': return '系统';
+    case 'wechat': return 'WeChat';
+    case 'system': return 'SYS';
     case 'openclaw': return 'Bot';
     default: return s;
   }
@@ -270,9 +272,9 @@ function formatLogTime(ts: number) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${time}`;
 }
 
-function formatUptime(s: number) {
-  if (s < 60) return `${Math.floor(s)}秒`;
-  if (s < 3600) return `${Math.floor(s / 60)}分`;
-  if (s < 86400) return `${Math.floor(s / 3600)}时${Math.floor((s % 3600) / 60)}分`;
-  return `${Math.floor(s / 86400)}天${Math.floor((s % 86400) / 3600)}时`;
+function formatUptime(s: number, t: any) {
+  if (s < 60) return `${Math.floor(s)}${t.dashboard.seconds}`;
+  if (s < 3600) return `${Math.floor(s / 60)}${t.dashboard.minutes}`;
+  if (s < 86400) return `${Math.floor(s / 3600)}${t.dashboard.hours}${Math.floor((s % 3600) / 60)}${t.dashboard.minutes}`;
+  return `${Math.floor(s / 86400)}${t.dashboard.days}${Math.floor((s % 86400) / 3600)}${t.dashboard.hours}`;
 }

@@ -1,0 +1,374 @@
+export type Locale = 'zh-CN' | 'en';
+
+export interface Translations {
+  // Common
+  common: {
+    save: string;
+    cancel: string;
+    confirm: string;
+    delete: string;
+    refresh: string;
+    loading: string;
+    success: string;
+    failed: string;
+    enabled: string;
+    disabled: string;
+    on: string;
+    off: string;
+    all: string;
+    none: string;
+    search: string;
+    export: string;
+    close: string;
+    back: string;
+    next: string;
+    status: string;
+    type: string;
+    name: string;
+    description: string;
+    version: string;
+    install: string;
+    installed: string;
+    required: string;
+    optional: string;
+    unknown: string;
+    items: string;
+    records: string;
+    today: string;
+    notConfigured: string;
+    notLoggedIn: string;
+    connected: string;
+    disconnected: string;
+    running: string;
+    stopped: string;
+    paused: string;
+    operationFailed: string;
+  };
+
+  // Login page
+  login: {
+    title: string;
+    subtitle: string;
+    passwordLabel: string;
+    passwordPlaceholder: string;
+    loginButton: string;
+    loggingIn: string;
+    wrongPassword: string;
+    poweredBy: string;
+  };
+
+  // Layout / Navigation
+  nav: {
+    dashboard: string;
+    activityLog: string;
+    channels: string;
+    skills: string;
+    cronJobs: string;
+    workspace: string;
+    systemConfig: string;
+    runningStatus: string;
+    lightMode: string;
+    darkMode: string;
+    logout: string;
+    subtitle: string;
+  };
+
+  // Dashboard
+  dashboard: {
+    title: string;
+    subtitle: string;
+    systemNormal: string;
+    activeChannels: string;
+    channelUnit: string;
+    noChannels: string;
+    aiModel: string;
+    notSet: string;
+    uptime: string;
+    memory: string;
+    todayMessages: string;
+    msgUnit: string;
+    received: string;
+    sent: string;
+    connectedChannels: string;
+    recentActivity: string;
+    realtimeLog: string;
+    noActivity: string;
+    pauseScroll: string;
+    resumeScroll: string;
+    refreshLog: string;
+    // Channel status
+    loggedIn: string;
+    nickname: string;
+    qqNumber: string;
+    groups: string;
+    friends: string;
+    user: string;
+    channelType: string;
+    pluginChannel: string;
+    builtinChannel: string;
+    managedByGateway: string;
+    // Source labels
+    sourceQQ: string;
+    sourceWeChat: string;
+    sourceSystem: string;
+    sourceBot: string;
+    // Time units
+    seconds: string;
+    minutes: string;
+    hours: string;
+    days: string;
+  };
+
+  // Activity Log
+  activityLog: {
+    title: string;
+    subtitle: string;
+    exportLog: string;
+    searchPlaceholder: string;
+    noMatch: string;
+    botReply: string;
+    allTypes: string;
+    text: string;
+    media: string;
+    sticker: string;
+    clear: string;
+  };
+
+  // Channels
+  channels: {
+    title: string;
+    subtitle: string;
+    channelList: string;
+    builtinChannels: string;
+    pluginChannels: string;
+    statusEnabled: string;
+    statusConfigured: string;
+    statusUnconfigured: string;
+    config: string;
+    enabledState: string;
+    disabledState: string;
+    channelEnabled: string;
+    channelDisabled: string;
+    qqClosing: string;
+    saveConfig: string;
+    saving: string;
+    saveSuccess: string;
+    saveFailed: string;
+    noConfigNeeded: string;
+    // Login
+    qrLogin: string;
+    quickLogin: string;
+    passwordLogin: string;
+    logoutQQ: string;
+    logoutConfirm: string;
+    qqLoggedOut: string;
+    logoutFailed: string;
+    alreadyLoggedIn: string;
+    getQRFailed: string;
+    refreshFailed: string;
+    scanQR: string;
+    refreshQR: string;
+    noQuickAccounts: string;
+    selectQuickAccount: string;
+    loginSuccess: string;
+    quickLoginFailed: string;
+    passwordLoginFailed: string;
+    enterQQAndPwd: string;
+    qqNumberLabel: string;
+    qqNumberPlaceholder: string;
+    passwordLabel: string;
+    passwordPlaceholder: string;
+    cannotLoadQR: string;
+    // Requests
+    pendingRequests: string;
+    groupRequest: string;
+    friendRequest: string;
+    comment: string;
+    approve: string;
+    reject: string;
+    // Toggle
+    opened: string;
+    closed: string;
+  };
+
+  // Cron Jobs
+  cron: {
+    title: string;
+    subtitle: string;
+    refreshList: string;
+    newJob: string;
+    createJob: string;
+    jobName: string;
+    jobNamePlaceholder: string;
+    cronExpr: string;
+    cronHelp: string;
+    messageContent: string;
+    messagePlaceholder: string;
+    deliverToChannel: string;
+    createNow: string;
+    loadingJobs: string;
+    noJobs: string;
+    noJobsHint: string;
+    fillRequired: string;
+    createSuccess: string;
+    createFailed: string;
+    deleted: string;
+    deleteFailed: string;
+    deleteConfirm: string;
+    sessionTarget: string;
+    wakeMode: string;
+    jobType: string;
+    resultPush: string;
+    execError: string;
+    lastRun: string;
+    everyMinutes: string;
+    oneTime: string;
+  };
+
+  // Skills
+  skills: {
+    title: string;
+    subtitle: string;
+    refreshList: string;
+    installedTab: string;
+    clawHubTab: string;
+    searchInstalled: string;
+    searchClawHub: string;
+    allFilter: string;
+    enabledFilter: string;
+    disabledFilter: string;
+    loadingSkills: string;
+    noMatch: string;
+    noSkillsFound: string;
+    clawHubTitle: string;
+    clawHubSubtitle: string;
+    syncStore: string;
+    syncing: string;
+    visitSite: string;
+    syncSuccess: string;
+    syncDone: string;
+    syncFailed: string;
+    installHint: string;
+    configRequired: string;
+    configRequirements: string;
+    envVars: string;
+    binTools: string;
+    cliTool: string;
+    installPath: string;
+    // Source badges
+    srcInstalled: string;
+    srcDevExt: string;
+    srcSkill: string;
+    srcAppSkill: string;
+    srcWorkspace: string;
+    srcScript: string;
+    srcConfig: string;
+  };
+
+  // System Config
+  sysConfig: {
+    title: string;
+    subtitle: string;
+    tabModels: string;
+    tabIdentity: string;
+    tabGeneral: string;
+    tabVersion: string;
+    tabEnv: string;
+    saveAll: string;
+    savingConfig: string;
+    saveSuccess: string;
+    saveFailed: string;
+    // Models tab
+    modelProviders: string;
+    addProvider: string;
+    providerName: string;
+    baseUrl: string;
+    apiKey: string;
+    models: string;
+    primaryModel: string;
+    removeProvider: string;
+    quickAdd: string;
+    // Identity tab
+    adminPassword: string;
+    adminPasswordHelp: string;
+    showPassword: string;
+    hidePassword: string;
+    identitySection: string;
+    messagesSection: string;
+    agentDefaults: string;
+    identityDocs: string;
+    identityDocsHelp: string;
+    selectDoc: string;
+    saveDoc: string;
+    savingDoc: string;
+    // General tab
+    gatewayConfig: string;
+    hooksConfig: string;
+    commandsConfig: string;
+    apiKeysConfig: string;
+    sudoPassword: string;
+    sudoPasswordHelp: string;
+    rawConfig: string;
+    // Version tab
+    currentVersion: string;
+    checkUpdate: string;
+    checking: string;
+    noUpdate: string;
+    updateAvailable: string;
+    startUpdate: string;
+    updating: string;
+    updateSuccess: string;
+    updateFailed: string;
+    backupConfig: string;
+    backupList: string;
+    backupNow: string;
+    backingUp: string;
+    restoreBackup: string;
+    restoreConfirm: string;
+    noBackups: string;
+    // Env tab
+    envTitle: string;
+    envLoading: string;
+    osInfo: string;
+    softwareVersions: string;
+    runtimeInfo: string;
+  };
+
+  // Workspace
+  workspace: {
+    title: string;
+    subtitle: string;
+    uploadFile: string;
+    newFolder: string;
+    refreshFiles: string;
+    fileName: string;
+    fileSize: string;
+    modifiedTime: string;
+    actions: string;
+    download: string;
+    preview: string;
+    deleteFile: string;
+    deleteConfirm: string;
+    noFiles: string;
+    parentDir: string;
+    folderName: string;
+    folderNamePlaceholder: string;
+    createFolder: string;
+    uploadSuccess: string;
+    uploadFailed: string;
+    createSuccess: string;
+    createFailed: string;
+    deleteSuccess: string;
+    deleteFailed: string;
+    statsTitle: string;
+    totalFiles: string;
+    totalSize: string;
+    autoClean: string;
+    autoCleanHelp: string;
+    cleanNow: string;
+    cleaning: string;
+    fileNote: string;
+    fileNotePlaceholder: string;
+    saveNote: string;
+  };
+}

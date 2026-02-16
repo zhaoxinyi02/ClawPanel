@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '../lib/api';
 import { Radio, Wifi, WifiOff, QrCode, Key, Zap, UserCheck, Check, X, Power, Loader2, RefreshCw, LogOut, Sparkles } from 'lucide-react';
+import { useI18n } from '../i18n';
 
 type ChannelDef = {
   id: string; label: string; description: string; type: 'builtin' | 'plugin';
@@ -149,13 +150,17 @@ function statusDot(s: 'enabled' | 'configured' | 'unconfigured') {
   return 'bg-gray-300 dark:bg-gray-600';
 }
 
-function statusLabel(s: 'enabled' | 'configured' | 'unconfigured') {
-  if (s === 'enabled') return '已启用';
-  if (s === 'configured') return '已配置未启用';
-  return '未配置';
-}
+// statusLabel is now inside the component to access i18n
 
 export default function Channels() {
+  const { t } = useI18n();
+
+  const statusLabel = (s: 'enabled' | 'configured' | 'unconfigured') => {
+    if (s === 'enabled') return t.channels.statusEnabled;
+    if (s === 'configured') return t.channels.statusConfigured;
+    return t.channels.statusUnconfigured;
+  };
+
   const [status, setStatus] = useState<any>(null);
   const [selectedChannel, setSelectedChannel] = useState('qq');
   const [ocConfig, setOcConfig] = useState<any>({});
@@ -200,16 +205,16 @@ export default function Channels() {
     try {
       const r = await api.toggleChannel(channelId, newEnabled);
       if (r.ok) {
-        setMsg(r.message || (newEnabled ? '通道已启用' : '通道已禁用'));
+        setMsg(r.message || (newEnabled ? t.channels.channelEnabled : t.channels.channelDisabled));
         if (channelId === 'qq' && !newEnabled) {
-          setMsg('QQ 通道已关闭，正在退出登录并重启网关...');
+          setMsg(t.channels.qqClosing);
         }
       } else {
-        setMsg(r.error || '操作失败');
+        setMsg(r.error || t.common.operationFailed);
       }
       reload();
       setTimeout(() => setMsg(''), 5000);
-    } catch (err) { setMsg('操作失败: ' + String(err)); setTimeout(() => setMsg(''), 3000); }
+    } catch (err) { setMsg(t.common.operationFailed + ': ' + String(err)); setTimeout(() => setMsg(''), 3000); }
   };
 
   const handleSave = async () => {
@@ -239,10 +244,10 @@ export default function Channels() {
       }
       await api.updateChannel(currentDef.id, chData);
       if (currentDef.type === 'plugin') await api.updatePlugin(currentDef.id, { enabled: chData.enabled || false });
-      setMsg('保存成功');
+      setMsg(t.channels.saveSuccess);
       reload();
       setTimeout(() => setMsg(''), 2000);
-    } catch (err) { setMsg('保存失败: ' + String(err)); }
+    } catch (err) { setMsg(t.channels.saveFailed + ': ' + String(err)); }
     finally { setSaving(false); }
   };
 
@@ -368,8 +373,8 @@ export default function Channels() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-bold">通道管理</h2>
-        <p className="text-xs text-gray-500 mt-0.5">配置和管理所有消息通道 — <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />已启用</span> <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-red-400 inline-block" />已配置未启用</span> <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-gray-300 inline-block" />未配置</span></p>
+        <h2 className="text-lg font-bold">{t.channels.title}</h2>
+        <p className="text-xs text-gray-500 mt-0.5">{t.channels.subtitle} — <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />{t.channels.statusEnabled}</span> <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-red-400 inline-block" />{t.channels.statusConfigured}</span> <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-gray-300 inline-block" />{t.channels.statusUnconfigured}</span></p>
       </div>
 
       {msg && (
@@ -382,11 +387,11 @@ export default function Channels() {
         {/* Channel selector */}
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 flex flex-col max-h-[75vh] overflow-hidden">
           <div className="p-3 border-b border-gray-100 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-800/50">
-            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider px-1">通道列表</h3>
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider px-1">{t.channels.channelList}</h3>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-4">
             <div>
-              <h3 className="text-[10px] font-semibold text-gray-400 mb-2 px-2 uppercase tracking-wide">内置通道</h3>
+              <h3 className="text-[10px] font-semibold text-gray-400 mb-2 px-2 uppercase tracking-wide">{t.channels.builtinChannels}</h3>
               <div className="space-y-1">
                 {sortedBuiltin.map(ch => {
                   const st = getChannelStatus(ch, ocConfig);
@@ -413,7 +418,7 @@ export default function Channels() {
             
             {sortedPlugin.length > 0 && (
               <div>
-                <h3 className="text-[10px] font-semibold text-gray-400 mb-2 px-2 uppercase tracking-wide">插件通道</h3>
+                <h3 className="text-[10px] font-semibold text-gray-400 mb-2 px-2 uppercase tracking-wide">{t.channels.pluginChannels}</h3>
                 <div className="space-y-1">
                   {sortedPlugin.map(ch => {
                     const st = getChannelStatus(ch, ocConfig);
@@ -452,7 +457,7 @@ export default function Channels() {
                   </div>
                   <div>
                     <div className="flex items-center gap-3">
-                      <h3 className="font-bold text-base text-gray-900 dark:text-white">{currentDef.label} 配置</h3>
+                      <h3 className="font-bold text-base text-gray-900 dark:text-white">{currentDef.label} {t.channels.config}</h3>
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                         getChannelStatus(currentDef, ocConfig) === 'enabled' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400' :
                         getChannelStatus(currentDef, ocConfig) === 'configured' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400' :
@@ -466,7 +471,7 @@ export default function Channels() {
                   {/* Enable/Disable toggle switch */}
                   <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-900/50 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-gray-800">
                     <span className={`text-[11px] font-medium ${isChannelEnabled(currentDef.id) ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400'}`}>
-                      {isChannelEnabled(currentDef.id) ? '启用中' : '已停用'}
+                      {isChannelEnabled(currentDef.id) ? t.channels.enabledState : t.channels.disabledState}
                     </span>
                     <button onClick={() => handleToggleEnabled(currentDef.id)}
                       className={`relative w-9 h-5 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-violet-500 ${isChannelEnabled(currentDef.id) ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'}`}>
@@ -478,22 +483,22 @@ export default function Channels() {
                     <div className="flex items-center gap-2 border-l border-gray-200 dark:border-gray-700 pl-3 ml-1">
                       {currentDef.loginMethods.includes('qrcode') && (
                         <button onClick={handleQRLogin} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors">
-                          <QrCode size={14} />扫码
+                          <QrCode size={14} />{t.channels.qrLogin}
                         </button>
                       )}
                       {currentDef.loginMethods.includes('quick') && (
                         <button onClick={handleQuickLoginOpen} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors">
-                          <Zap size={14} />快速
+                          <Zap size={14} />{t.channels.quickLogin}
                         </button>
                       )}
                       {currentDef.loginMethods.includes('password') && (
                         <button onClick={handlePasswordLoginOpen} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors">
-                          <Key size={14} />账密
+                          <Key size={14} />{t.channels.passwordLogin}
                         </button>
                       )}
                       {currentDef.id === 'qq' && (
                         <button onClick={handleQQLogout} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors">
-                          <LogOut size={14} />退出
+                          <LogOut size={14} />{t.channels.logoutQQ}
                         </button>
                       )}
                     </div>
@@ -523,7 +528,7 @@ export default function Channels() {
                             <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${currentVal ? 'translate-x-4' : ''}`} />
                           </button>
                           <span className={`text-xs ${currentVal ? 'text-violet-600 dark:text-violet-400 font-medium' : 'text-gray-500'}`}>
-                            {currentVal ? '已开启' : '已关闭'}
+                            {currentVal ? t.channels.opened : t.channels.closed}
                           </span>
                         </div>
                       ) : (
@@ -553,7 +558,7 @@ export default function Channels() {
               {currentDef.configFields.length === 0 && (
                 <div className="py-12 flex flex-col items-center justify-center text-gray-400 border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-xl">
                   <Sparkles size={32} className="mb-2 opacity-20" />
-                  <p className="text-sm">此通道无需额外配置，启用即可使用</p>
+                  <p className="text-sm">{t.channels.noConfigNeeded}</p>
                 </div>
               )}
 
@@ -561,7 +566,7 @@ export default function Channels() {
                 <button onClick={handleSave} disabled={saving}
                   className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 shadow-sm shadow-violet-200 dark:shadow-none transition-all hover:shadow-md hover:shadow-violet-200 dark:hover:shadow-none">
                   {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-                  {saving ? '保存中...' : '保存配置'}
+                  {saving ? t.channels.saving : t.channels.saveConfig}
                 </button>
               </div>
             </div>
@@ -574,7 +579,7 @@ export default function Channels() {
                 <div className="p-1.5 rounded-lg bg-violet-100 dark:bg-violet-900/30 text-violet-600">
                   <UserCheck size={18} />
                 </div>
-                <h3 className="font-bold text-sm text-gray-900 dark:text-white">待审核请求</h3>
+                <h3 className="font-bold text-sm text-gray-900 dark:text-white">{t.channels.pendingRequests}</h3>
                 <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full">{requests.length}</span>
               </div>
               <div className="space-y-2.5">
@@ -583,17 +588,17 @@ export default function Channels() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${r.type === 'group' ? 'bg-indigo-100 text-indigo-700' : 'bg-pink-100 text-pink-700'}`}>
-                          {r.type === 'group' ? '加群' : '好友'}
+                          {r.type === 'group' ? t.channels.groupRequest : t.channels.friendRequest}
                         </span>
                         <span className="font-mono text-gray-900 dark:text-gray-100 font-medium">{r.userId || r.groupId || ''}</span>
                       </div>
-                      {r.comment && <div className="text-gray-500 text-xs truncate">附言: "{r.comment}"</div>}
+                      {r.comment && <div className="text-gray-500 text-xs truncate">{t.channels.comment}: "{r.comment}"</div>}
                     </div>
                     <div className="flex items-center gap-2">
-                      <button onClick={() => handleApprove(r.flag)} className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors" title="同意">
+                      <button onClick={() => handleApprove(r.flag)} className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors" title={t.channels.approve}>
                         <Check size={16} />
                       </button>
-                      <button onClick={() => handleReject(r.flag)} className="p-2 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors" title="拒绝">
+                      <button onClick={() => handleReject(r.flag)} className="p-2 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors" title={t.channels.reject}>
                         <X size={16} />
                       </button>
                     </div>
@@ -611,9 +616,9 @@ export default function Channels() {
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden transform transition-all border border-gray-100 dark:border-gray-800" onClick={e => e.stopPropagation()}>
             <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between bg-gray-50/50 dark:bg-gray-900">
               <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                {loginModal === 'qrcode' && <><QrCode size={18} className="text-blue-500" /> QQ 扫码登录</>}
-                {loginModal === 'quick' && <><Zap size={18} className="text-emerald-500" /> QQ 快速登录</>}
-                {loginModal === 'password' && <><Key size={18} className="text-amber-500" /> QQ 账密登录</>}
+                {loginModal === 'qrcode' && <><QrCode size={18} className="text-blue-500" /> QQ {t.channels.qrLogin}</>}
+                {loginModal === 'quick' && <><Zap size={18} className="text-emerald-500" /> QQ {t.channels.quickLogin}</>}
+                {loginModal === 'password' && <><Key size={18} className="text-amber-500" /> QQ {t.channels.passwordLogin}</>}
               </h3>
               <button onClick={() => setLoginModal(null)} className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                 <X size={18} />
@@ -621,8 +626,8 @@ export default function Channels() {
             </div>
             <div className="p-6 space-y-4">
               {loginMsg && (
-                <div className={`px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2 ${loginMsg.includes('成功') ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600' : 'bg-red-50 dark:bg-red-900/30 text-red-600'}`}>
-                   {loginMsg.includes('成功') ? <Check size={16} /> : <X size={16} />}
+                <div className={`px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2 ${loginMsg.includes(t.common.success) || loginMsg.includes('success') ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600' : 'bg-red-50 dark:bg-red-900/30 text-red-600'}`}>
+                   {loginMsg.includes(t.common.success) || loginMsg.includes('success') ? <Check size={16} /> : <X size={16} />}
                   {loginMsg}
                 </div>
               )}
@@ -638,13 +643,13 @@ export default function Channels() {
                     <img src={qrImg.startsWith('data:') ? qrImg : `data:image/png;base64,${qrImg}`} alt="QR Code" className="w-48 h-48 rounded-lg border border-gray-200 dark:border-gray-700" />
                   ) : (
                     <div className="w-48 h-48 flex items-center justify-center bg-gray-50 dark:bg-gray-800 rounded-lg text-xs text-gray-400">
-                      无法加载二维码
+                      {t.channels.cannotLoadQR}
                     </div>
                   )}
-                  <p className="text-xs text-gray-500">请使用手机QQ扫描二维码登录</p>
+                  <p className="text-xs text-gray-500">{t.channels.scanQR}</p>
                   <button onClick={handleRefreshQR} disabled={qrLoading}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
-                    <RefreshCw size={12} className={qrLoading ? 'animate-spin' : ''} />刷新二维码
+                    <RefreshCw size={12} className={qrLoading ? 'animate-spin' : ''} />{t.channels.refreshQR}
                   </button>
                 </div>
               )}
@@ -655,10 +660,10 @@ export default function Channels() {
                   {loginLoading ? (
                     <div className="flex items-center justify-center py-8"><Loader2 size={20} className="animate-spin text-gray-400" /></div>
                   ) : quickList.length === 0 ? (
-                    <p className="text-xs text-gray-400 text-center py-8">没有可用的快速登录账号，请先使用扫码或账密登录一次</p>
+                    <p className="text-xs text-gray-400 text-center py-8">{t.channels.noQuickAccounts}</p>
                   ) : (
                     <>
-                      <p className="text-xs text-gray-500">选择一个已登录过的QQ号快速登录：</p>
+                      <p className="text-xs text-gray-500">{t.channels.selectQuickAccount}</p>
                       {quickList.map(uin => (
                         <button key={uin} onClick={() => handleQuickLogin(uin)}
                           className="w-full flex items-center gap-3 px-4 py-3 rounded-lg bg-gray-50 dark:bg-gray-800 hover:bg-emerald-50 dark:hover:bg-emerald-950 text-sm transition-colors">
@@ -675,19 +680,19 @@ export default function Channels() {
               {loginModal === 'password' && (
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">QQ号</label>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t.channels.qqNumberLabel}</label>
                     <input type="text" value={loginUin} onChange={e => setLoginUin(e.target.value)}
-                      placeholder="输入QQ号" className="w-full px-3 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-transparent" />
+                      placeholder={t.channels.qqNumberPlaceholder} className="w-full px-3 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-transparent" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">密码</label>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t.channels.passwordLabel}</label>
                     <input type="password" value={loginPwd} onChange={e => setLoginPwd(e.target.value)}
-                      placeholder="输入QQ密码" className="w-full px-3 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-transparent" />
+                      placeholder={t.channels.passwordPlaceholder} className="w-full px-3 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-transparent" />
                   </div>
                   <button onClick={handlePasswordLogin} disabled={loginLoading || !loginUin || !loginPwd}
                     className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50">
                     {loginLoading ? <Loader2 size={12} className="animate-spin" /> : <Key size={12} />}
-                    {loginLoading ? '登录中...' : '登录'}
+                    {loginLoading ? t.login.loggingIn : t.login.loginButton}
                   </button>
                 </div>
               )}

@@ -5,6 +5,7 @@ import {
   Download, Filter,
 } from 'lucide-react';
 import type { LogEntry } from '../hooks/useWebSocket';
+import { useI18n } from '../i18n';
 
 interface Props {
   ws: {
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export default function ActivityLog({ ws }: Props) {
+  const { t } = useI18n();
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState<string>('');
   const [typeFilter, setTypeFilter] = useState<string>('');
@@ -70,12 +72,12 @@ export default function ActivityLog({ ws }: Props) {
     <div className="h-full flex flex-col space-y-4">
       <div className="flex items-center justify-between shrink-0">
         <div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">活动日志</h2>
-          <p className="text-sm text-gray-500 mt-1">实时查看所有通道的消息收发记录</p>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">{t.activityLog.title}</h2>
+          <p className="text-sm text-gray-500 mt-1">{t.activityLog.subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={handleExport} className="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors shadow-sm">
-            <Download size={14} />导出日志
+            <Download size={14} />{t.activityLog.exportLog}
           </button>
         </div>
       </div>
@@ -85,18 +87,18 @@ export default function ActivityLog({ ws }: Props) {
         <div className="flex flex-col gap-3 px-5 py-4 border-b border-gray-100 dark:border-gray-800 bg-gray-50/30 dark:bg-gray-800/50 shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm text-gray-500">
-              <span className="font-semibold text-gray-900 dark:text-white tabular-nums">{filteredLog.length}</span> 条记录
+              <span className="font-semibold text-gray-900 dark:text-white tabular-nums">{filteredLog.length}</span> {t.common.records}
             </div>
             <div className="flex items-center gap-2">
               <button onClick={() => setAutoScroll(!autoScroll)}
                 className={`p-2 rounded-lg transition-all ${autoScroll ? 'bg-violet-50 text-violet-600 shadow-sm ring-1 ring-violet-100' : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-                title={autoScroll ? '暂停自动滚动' : '开启自动滚动'}>
+                title={autoScroll ? t.dashboard.pauseScroll : t.dashboard.resumeScroll}>
                 <ArrowDown size={14} />
               </button>
-              <button onClick={ws.refreshLog} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 transition-colors" title="刷新">
+              <button onClick={ws.refreshLog} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 transition-colors" title={t.common.refresh}>
                 <RefreshCw size={14} />
               </button>
-              <button onClick={ws.clearEvents} className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-500 transition-colors" title="清空">
+              <button onClick={ws.clearEvents} className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-500 transition-colors" title={t.activityLog.clear}>
                 <Trash2 size={14} />
               </button>
             </div>
@@ -108,7 +110,7 @@ export default function ActivityLog({ ws }: Props) {
               <input 
                 value={search} 
                 onChange={e => setSearch(e.target.value)} 
-                placeholder="搜索日志内容..."
+placeholder={t.activityLog.searchPlaceholder}
                 className="w-full pl-9 pr-4 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all" 
               />
             </div>
@@ -117,11 +119,11 @@ export default function ActivityLog({ ws }: Props) {
             
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-hide">
               {[
-                { key: '', label: '全部', count: ws.logEntries.length },
+                { key: '', label: t.common.all, count: ws.logEntries.length },
                 { key: 'qq', label: 'QQ', count: sourceCounts['qq'] || 0 },
-                { key: 'openclaw', label: 'Bot回复', count: sourceCounts['openclaw'] || 0 },
-                { key: 'wechat', label: '微信', count: sourceCounts['wechat'] || 0 },
-                { key: 'system', label: '系统', count: sourceCounts['system'] || 0 },
+                { key: 'openclaw', label: t.activityLog.botReply, count: sourceCounts['openclaw'] || 0 },
+                { key: 'wechat', label: 'WeChat', count: sourceCounts['wechat'] || 0 },
+                { key: 'system', label: t.dashboard.sourceSystem, count: sourceCounts['system'] || 0 },
               ].map(f => (
                 <button key={f.key} onClick={() => setSourceFilter(f.key)}
                   className={`px-2.5 py-1.5 text-xs rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 ${
@@ -140,10 +142,10 @@ export default function ActivityLog({ ws }: Props) {
             <div className="flex items-center gap-1.5">
               <Filter size={14} className="text-gray-400" />
               {[
-                { key: '', label: '全部类型' },
-                { key: 'text', label: '文本' },
-                { key: 'media', label: '媒体' },
-                { key: 'sticker', label: '表情' },
+                { key: '', label: t.activityLog.allTypes },
+                { key: 'text', label: t.activityLog.text },
+                { key: 'media', label: t.activityLog.media },
+                { key: 'sticker', label: t.activityLog.sticker },
               ].map(f => (
                 <button key={f.key} onClick={() => setTypeFilter(f.key)}
                   className={`px-2.5 py-1.5 text-xs rounded-lg transition-all whitespace-nowrap ${
@@ -165,7 +167,7 @@ export default function ActivityLog({ ws }: Props) {
               <div className="p-4 rounded-full bg-gray-50 dark:bg-gray-800/50">
                 <Search size={24} className="opacity-20" />
               </div>
-              <p className="text-sm">暂无匹配的日志记录</p>
+              <p className="text-sm">{t.activityLog.noMatch}</p>
             </div>
           )}
           {filteredLog.slice(0, 500).map((entry) => (
@@ -217,8 +219,8 @@ function sourceColor(s: string) {
 function sourceLabel(s: string) {
   switch (s) {
     case 'qq': return 'QQ';
-    case 'wechat': return '微信';
-    case 'system': return '系统';
+    case 'wechat': return 'WeChat';
+    case 'system': return 'SYS';
     case 'openclaw': return 'Bot';
     default: return s;
   }

@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Lock } from 'lucide-react';
+import { useI18n } from '../i18n';
 
 export default function Login({ onLogin }: { onLogin: (pw: string) => Promise<boolean> }) {
+  const { t } = useI18n();
   const [pw, setPw] = useState('');
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
@@ -11,7 +13,7 @@ export default function Login({ onLogin }: { onLogin: (pw: string) => Promise<bo
     setLoading(true);
     setErr('');
     const ok = await onLogin(pw);
-    if (!ok) setErr('密码错误');
+    if (!ok) setErr(t.login.wrongPassword);
     setLoading(false);
   };
 
@@ -21,13 +23,13 @@ export default function Login({ onLogin }: { onLogin: (pw: string) => Promise<bo
         <div className="flex flex-col items-center">
           <img src="/logo.jpg" alt="ClawPanel" className="w-16 h-16 rounded-2xl shadow-lg mb-4" />
           <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">ClawPanel</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">OpenClaw 智能管理面板</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t.login.subtitle}</p>
         </div>
         
         <form onSubmit={submit} className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-800 p-8 space-y-6">
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 ml-1">管理密码</label>
+              <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 ml-1">{t.login.passwordLabel}</label>
               <div className="relative">
                 <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
                   <Lock size={16} />
@@ -36,7 +38,7 @@ export default function Login({ onLogin }: { onLogin: (pw: string) => Promise<bo
                   type="password" 
                   value={pw} 
                   onChange={e => setPw(e.target.value)} 
-                  placeholder="请输入 ADMIN_TOKEN" 
+                  placeholder={t.login.passwordPlaceholder} 
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all" 
                   autoFocus 
                 />
@@ -51,13 +53,13 @@ export default function Login({ onLogin }: { onLogin: (pw: string) => Promise<bo
             
             <button type="submit" disabled={loading || !pw} 
               className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold shadow-lg shadow-violet-200 dark:shadow-none transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100">
-              {loading ? '登录中...' : '登 录'}
+              {loading ? t.login.loggingIn : t.login.loginButton}
             </button>
           </div>
         </form>
         
         <p className="text-center text-[10px] text-gray-400">
-          Powered by OpenClaw & NapCat
+          {t.login.poweredBy}
         </p>
       </div>
     </div>

@@ -1,3 +1,6 @@
+import { mockApi } from './mockApi';
+
+const IS_DEMO = import.meta.env.VITE_DEMO === 'true';
 const BASE = '/api';
 
 function headers() {
@@ -36,7 +39,7 @@ async function uploadFormData(path: string, formData: FormData) {
   return res.json();
 }
 
-export const api = {
+const _api = {
   login: (token: string) => post('/auth/login', { token }),
   getStatus: () => get('/status'),
   getOpenClawConfig: () => get('/openclaw/config'),
@@ -125,3 +128,6 @@ export const api = {
   },
   clearEvents: () => post('/events/clear'),
 };
+
+// In demo mode, replace all API calls with mock data
+export const api = IS_DEMO ? mockApi as unknown as typeof _api : _api;

@@ -2,22 +2,25 @@ import { useState } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, ScrollText, Radio, Sparkles, Clock, Settings,
-  Moon, Sun, LogOut, Menu, FolderOpen, Cat,
+  Moon, Sun, LogOut, Menu, FolderOpen, Cat, Languages,
 } from 'lucide-react';
-
-const navItems = [
-  { to: '/', icon: LayoutDashboard, label: '仪表盘' },
-  { to: '/logs', icon: ScrollText, label: '活动日志' },
-  { to: '/channels', icon: Radio, label: '通道管理' },
-  { to: '/skills', icon: Sparkles, label: '技能中心' },
-  { to: '/cron', icon: Clock, label: '定时任务' },
-  { to: '/workspace', icon: FolderOpen, label: '工作区' },
-  { to: '/config', icon: Settings, label: '系统配置' },
-];
+import { useI18n } from '../i18n';
 
 interface Props { onLogout: () => void; napcatStatus: any; wechatStatus?: any; openclawStatus?: any; }
 
 export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawStatus }: Props) {
+  const { t, locale, setLocale } = useI18n();
+
+  const navItems = [
+    { to: '/', icon: LayoutDashboard, label: t.nav.dashboard },
+    { to: '/logs', icon: ScrollText, label: t.nav.activityLog },
+    { to: '/channels', icon: Radio, label: t.nav.channels },
+    { to: '/skills', icon: Sparkles, label: t.nav.skills },
+    { to: '/cron', icon: Clock, label: t.nav.cronJobs },
+    { to: '/workspace', icon: FolderOpen, label: t.nav.workspace },
+    { to: '/config', icon: Settings, label: t.nav.systemConfig },
+  ];
+
   const [dark, setDark] = useState(() => {
     const s = localStorage.getItem('theme');
     if (s === 'dark' || (!s && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
@@ -37,6 +40,10 @@ export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawS
     });
   };
 
+  const toggleLocale = () => {
+    setLocale(locale === 'zh-CN' ? 'en' : 'zh-CN');
+  };
+
   // Build channel list from enabledChannels returned by /api/status
   const enabledChannels: { id: string; label: string }[] = openclawStatus?.enabledChannels || [];
   const connectedChannels: { label: string; detail: string; connected: boolean }[] = [];
@@ -45,17 +52,17 @@ export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawS
       const connected = napcatStatus?.connected;
       connectedChannels.push({
         label: 'QQ',
-        detail: connected ? `${napcatStatus.nickname || 'QQ'} (${napcatStatus.selfId || ''})` : '未登录',
+        detail: connected ? `${napcatStatus.nickname || 'QQ'} (${napcatStatus.selfId || ''})` : t.common.notLoggedIn,
         connected: !!connected,
       });
     } else if (ch.id === 'wechat') {
       connectedChannels.push({
-        label: '微信',
-        detail: wechatStatus?.loggedIn ? (wechatStatus.name || '已连接') : '未登录',
+        label: locale === 'zh-CN' ? '微信' : 'WeChat',
+        detail: wechatStatus?.loggedIn ? (wechatStatus.name || t.common.connected) : t.common.notLoggedIn,
         connected: !!wechatStatus?.loggedIn,
       });
     } else {
-      connectedChannels.push({ label: ch.label, detail: '已启用', connected: true });
+      connectedChannels.push({ label: ch.label, detail: t.common.enabled, connected: true });
     }
   }
 
@@ -69,7 +76,7 @@ export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawS
             <img src="/logo.jpg" alt="ClawPanel" className="w-8 h-8 rounded-xl shadow-sm object-cover" />
             <div>
               <h1 className="font-bold text-sm tracking-tight text-gray-900 dark:text-white">ClawPanel</h1>
-              <p className="text-[10px] text-gray-500 font-medium -mt-0.5">OpenClaw 管理面板</p>
+              <p className="text-[10px] text-gray-500 font-medium -mt-0.5">{t.nav.subtitle}</p>
             </div>
           </div>
         </div>
@@ -77,7 +84,7 @@ export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawS
         {/* Connected channel indicators — only show if any connected */}
         {connectedChannels.length > 0 && (
           <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800/50 space-y-1.5">
-            <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">运行状态</div>
+            <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">{t.nav.runningStatus}</div>
             {connectedChannels.map(ch => (
               <div key={ch.label} className="flex items-center gap-2 text-xs">
                 <span className={`relative flex h-2 w-2 shrink-0`}>
@@ -112,11 +119,14 @@ export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawS
 
         {/* Footer */}
         <div className="p-2 border-t border-gray-200 dark:border-gray-800 space-y-0.5">
+          <button onClick={toggleLocale} className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 w-full">
+            <Languages size={16} />{locale === 'zh-CN' ? 'English' : '中文（简体）'}
+          </button>
           <button onClick={toggleDark} className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 w-full">
-            {dark ? <Sun size={16} /> : <Moon size={16} />}{dark ? '浅色模式' : '深色模式'}
+            {dark ? <Sun size={16} /> : <Moon size={16} />}{dark ? t.nav.lightMode : t.nav.darkMode}
           </button>
           <button onClick={onLogout} className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 w-full">
-            <LogOut size={16} />退出登录
+            <LogOut size={16} />{t.nav.logout}
           </button>
         </div>
       </aside>

@@ -7,6 +7,7 @@ import {
   Monitor, HardDrive, FileText, Archive, RotateCcw,
   CheckCircle, AlertTriangle, Package, Box, Shield, Command
 } from 'lucide-react';
+import { useI18n } from '../i18n';
 
 const KNOWN_PROVIDERS: { id: string; name: string; baseUrl: string; models: string[] }[] = [
   { id: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1', 'o1-mini', 'o3-mini'] },
@@ -22,6 +23,7 @@ const KNOWN_PROVIDERS: { id: string; name: string; baseUrl: string; models: stri
 type ConfigTab = 'models' | 'identity' | 'general' | 'version' | 'env';
 
 export default function SystemConfig() {
+  const { t: i18n } = useI18n();
   const [config, setConfig] = useState<any>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -109,37 +111,37 @@ export default function SystemConfig() {
     setSaving(true); setMsg('');
     try {
       await api.updateOpenClawConfig(config);
-      setMsg('配置已保存，部分配置需要重启 OpenClaw 生效');
+      setMsg(i18n.sysConfig.saveSuccess);
       setTimeout(() => setMsg(''), 4000);
-    } catch (err) { setMsg('保存失败: ' + String(err)); }
+    } catch (err) { setMsg(i18n.sysConfig.saveFailed + ': ' + String(err)); }
     finally { setSaving(false); }
   };
 
   const handleBackup = async () => {
     setBackingUp(true);
-    try { const r = await api.createBackup(); if (r.ok) { setMsg('备份成功'); loadVersion(); } }
-    catch (err) { setMsg('备份失败: ' + String(err)); }
+    try { const r = await api.createBackup(); if (r.ok) { setMsg(i18n.sysConfig.backupConfig + ' ' + i18n.common.success); loadVersion(); } }
+    catch (err) { setMsg(i18n.common.failed + ': ' + String(err)); }
     finally { setBackingUp(false); setTimeout(() => setMsg(''), 3000); }
   };
 
   const handleRestore = async (name: string) => {
-    if (!confirm(`确定要恢复备份 ${name}？当前配置将自动备份。`)) return;
+    if (!confirm(i18n.sysConfig.restoreConfirm)) return;
     try {
       const r = await api.restoreBackup(name);
-      if (r.ok) { setMsg('恢复成功，请重启 OpenClaw'); loadConfig(); loadVersion(); }
-    } catch (err) { setMsg('恢复失败: ' + String(err)); }
+      if (r.ok) { setMsg(i18n.common.success); loadConfig(); loadVersion(); }
+    } catch (err) { setMsg(i18n.common.failed + ': ' + String(err)); }
     setTimeout(() => setMsg(''), 4000);
   };
 
   const handleSaveDoc = async () => {
     if (!selectedDoc) return;
     setDocSaving(true);
-    try { await api.saveDoc(selectedDoc.path, docContent); setMsg('文档已保存'); loadDocs(); }
-    catch (err) { setMsg('保存失败: ' + String(err)); }
+    try { await api.saveDoc(selectedDoc.path, docContent); setMsg(i18n.common.success); loadDocs(); }
+    catch (err) { setMsg(i18n.sysConfig.saveFailed + ': ' + String(err)); }
     finally { setDocSaving(false); setTimeout(() => setMsg(''), 3000); }
   };
 
-  if (loading) return <div className="text-center py-12 text-gray-400 text-xs">加载配置中...</div>;
+  if (loading) return <div className="text-center py-12 text-gray-400 text-xs">{i18n.common.loading}</div>;
 
   const providers = config?.models?.providers || {};
   const primaryModel = config?.agents?.defaults?.model?.primary || '';
@@ -148,18 +150,18 @@ export default function SystemConfig() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">系统配置</h2>
-          <p className="text-sm text-gray-500 mt-1">OpenClaw 深度配置 — 模型、版本、环境、文档等</p>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">{i18n.sysConfig.title}</h2>
+          <p className="text-sm text-gray-500 mt-1">{i18n.sysConfig.subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={loadConfig} className="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors shadow-sm">
-            <RefreshCw size={14} />重新加载
+            <RefreshCw size={14} />{i18n.common.refresh}
           </button>
           {(tab === 'models' || tab === 'general' || tab === 'identity') && (
             <button onClick={handleSave} disabled={saving}
               className="flex items-center gap-2 px-4 py-2 text-xs font-medium rounded-lg bg-violet-600 text-white hover:bg-violet-700 shadow-sm shadow-violet-200 dark:shadow-none transition-all hover:shadow-md hover:shadow-violet-200 dark:hover:shadow-none disabled:opacity-50">
               {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
-              {saving ? '保存中...' : '保存配置'}
+              {saving ? i18n.sysConfig.savingConfig : i18n.sysConfig.saveAll}
             </button>
           )}
         </div>
@@ -175,15 +177,15 @@ export default function SystemConfig() {
       {/* Tabs */}
       <div className="flex gap-6 border-b border-gray-200 dark:border-gray-800 overflow-x-auto pb-px">
         {([
-          { id: 'models' as ConfigTab, label: '模型配置', icon: Brain },
-          { id: 'identity' as ConfigTab, label: '身份 & 文档', icon: Users },
-          { id: 'general' as ConfigTab, label: '通用配置', icon: Terminal },
-          { id: 'version' as ConfigTab, label: '版本管理', icon: Package },
-          { id: 'env' as ConfigTab, label: '环境检测', icon: Monitor },
-        ]).map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={`flex items-center gap-2 pb-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${tab === t.id ? 'border-violet-600 text-violet-700 dark:text-violet-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
-            <t.icon size={16} />{t.label}
+          { id: 'models' as ConfigTab, label: i18n.sysConfig.tabModels, icon: Brain },
+          { id: 'identity' as ConfigTab, label: i18n.sysConfig.tabIdentity, icon: Users },
+          { id: 'general' as ConfigTab, label: i18n.sysConfig.tabGeneral, icon: Terminal },
+          { id: 'version' as ConfigTab, label: i18n.sysConfig.tabVersion, icon: Package },
+          { id: 'env' as ConfigTab, label: i18n.sysConfig.tabEnv, icon: Monitor },
+        ]).map(tb => (
+          <button key={tb.id} onClick={() => setTab(tb.id)}
+            className={`flex items-center gap-2 pb-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${tab === tb.id ? 'border-violet-600 text-violet-700 dark:text-violet-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+            <tb.icon size={16} />{tb.label}
           </button>
         ))}
       </div>
@@ -193,7 +195,7 @@ export default function SystemConfig() {
         <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-200">
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-5">
             <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-              <Brain size={16} className="text-violet-500" /> 当前主模型
+              <Brain size={16} className="text-violet-500" /> {i18n.sysConfig.primaryModel}
             </h3>
             <div className="relative">
               <input value={primaryModel} onChange={e => setVal('agents.defaults.model.primary', e.target.value)}
@@ -208,12 +210,12 @@ export default function SystemConfig() {
 
           <div className="space-y-4">
             <div className="flex items-center justify-between px-1">
-              <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider">模型提供商</h3>
+              <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider">{i18n.sysConfig.modelProviders}</h3>
               <button onClick={() => {
                 const id = `provider-${Date.now()}`;
                 setVal(`models.providers.${id}`, { baseUrl: '', apiKey: '', api: 'openai-completions', models: [] });
               }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-900/50 transition-colors">
-                <Plus size={14} />添加提供商
+                <Plus size={14} />{i18n.sysConfig.addProvider}
               </button>
             </div>
 
