@@ -32,7 +32,7 @@
 > 旧版本请查看 [v3.0.0 Tag](https://github.com/zhaoxinyi02/ClawPanel/releases/tag/v3.0.0)。
 
 > [!TIP]
-> **在线演示**：访问 [demo.zhaoxinyi.xyz](https://demo.zhaoxinyi.xyz) 体验 ClawPanel 的完整功能（使用模拟数据，无需部署）。
+> **在线演示**：访问 [demo.zhaoxinyi.xyz](https://demo.zhaoxinyi.xyz) 体验 ClawPanel 的完整功能（使用模拟数据，无需部署），登录密码为任意数字/字母。
 
 ## ✨ 主要功能
 
