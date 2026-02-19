@@ -231,6 +231,7 @@ export interface Translations {
     subtitle: string;
     refreshList: string;
     installedTab: string;
+    pluginsTab: string;
     clawHubTab: string;
     searchInstalled: string;
     searchClawHub: string;
@@ -332,6 +333,16 @@ export interface Translations {
     osInfo: string;
     softwareVersions: string;
     runtimeInfo: string;
+    changePassword: string;
+    changePasswordDesc: string;
+    currentPassword: string;
+    newPassword: string;
+    confirmPassword: string;
+    changePasswordBtn: string;
+    passwordMismatch: string;
+    passwordTooShort: string;
+    passwordChanged: string;
+    wrongPassword: string;
   };
 
   // Workspace

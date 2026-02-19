@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { api } from '../lib/api';
 import {
   Save, RefreshCw, ChevronDown, ChevronRight,
@@ -514,6 +514,7 @@ export default function SystemConfig() {
             { path: 'env.vars.GOOGLE_API_KEY', label: 'Google API Key', type: 'password' as const },
           ]} getVal={getVal} setVal={setVal} />
           <SudoPasswordSection />
+          <ChangePasswordSection />
           <details className="card">
             <summary className="px-4 py-3 text-xs font-medium text-gray-500 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50">查看原始配置 (JSON)</summary>
             <pre className="px-4 pb-4 text-[11px] text-gray-600 dark:text-gray-400 overflow-x-auto max-h-96 overflow-y-auto font-mono">{JSON.stringify(config, null, 2)}</pre>
@@ -561,85 +562,7 @@ export default function SystemConfig() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 pt-2">
-              <button onClick={async () => {
-                setChecking(true);
-                try {
-                  const r = await api.checkUpdate();
-                  if (r.ok) {
-                    setVersionInfo({ ...versionInfo, ...r, lastCheckedAt: r.checkedAt || new Date().toISOString() });
-                    setMsg(r.updateAvailable ? `发现新版本: ${r.latestVersion}` : '已是最新版本');
-                  } else { setMsg('检查更新失败'); }
-                } catch { setMsg('检查更新失败'); }
-                finally { setChecking(false); setTimeout(() => setMsg(''), 3000); }
-              }} disabled={checking || updating}
-                className="flex items-center gap-2 px-4 py-2 text-xs font-medium rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 disabled:opacity-50 transition-colors">
-                <RefreshCw size={14} className={checking ? 'animate-spin' : ''} />
-                {checking ? '检查中...' : '检查更新'}
-              </button>
-              
-              {versionInfo.updateAvailable && !updating && updateStatus !== 'running' && (
-                <button onClick={async () => {
-                  if (!confirm('确定要更新 OpenClaw？更新过程中服务可能短暂中断。')) return;
-                  setUpdating(true); setUpdateLog([]); setUpdateStatus('running');
-                  try {
-                    const r = await api.doUpdate();
-                    if (!r.ok) { setMsg(r.error || '启动更新失败'); setUpdating(false); setUpdateStatus('failed'); return; }
-                  } catch { setMsg('启动更新失败'); setUpdating(false); setUpdateStatus('failed'); return; }
-                  // Poll update status
-                  const poll = setInterval(async () => {
-                    try {
-                      const s = await api.getUpdateStatus();
-                      if (s.ok) {
-                        setUpdateLog(s.log || []);
-                        setUpdateStatus(s.status);
-                        if (s.status === 'success') {
-                          clearInterval(poll);
-                          setUpdating(false);
-                          setMsg('更新完成！正在刷新...');
-                          setTimeout(() => { loadVersion(); }, 2000);
-                        } else if (s.status === 'failed') {
-                          clearInterval(poll);
-                          setUpdating(false);
-                          setMsg('更新失败，请查看日志');
-                        }
-                      }
-                    } catch { /* server might restart during update */ }
-                  }, 2000);
-                }}
-                  className="flex items-center gap-2 px-4 py-2 text-xs font-medium rounded-lg bg-amber-500 text-white hover:bg-amber-600 shadow-sm transition-all hover:shadow-md hover:shadow-amber-200 dark:hover:shadow-none">
-                  <Package size={14} />立即更新
-                </button>
-              )}
-            </div>
-
-            {versionInfo.updateAvailable && !updating && updateStatus !== 'running' && (
-              <div className="px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-xs text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-900/30 flex items-center gap-2">
-                <AlertTriangle size={16} className="shrink-0" />
-                <span>有新版本可用！点击「立即更新」一键升级，或在终端运行: <code className="font-mono bg-amber-100 dark:bg-amber-900/50 px-1.5 py-0.5 rounded font-bold">openclaw update</code></span>
-              </div>
-            )}
-
-            {/* Update progress */}
-            {(updating || updateStatus === 'running' || updateLog.length > 0) && (
-              <div className="space-y-3 pt-4 border-t border-gray-100 dark:border-gray-800">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm font-semibold">
-                    <Terminal size={16} className="text-gray-400" />
-                    <span>更新日志</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {updateStatus === 'running' && <span className="flex items-center gap-1.5 text-xs text-blue-500"><RefreshCw size={12} className="animate-spin" /> 正在更新...</span>}
-                    {updateStatus === 'success' && <span className="flex items-center gap-1.5 text-xs text-emerald-500"><CheckCircle size={12} /> 更新完成</span>}
-                    {updateStatus === 'failed' && <span className="flex items-center gap-1.5 text-xs text-red-500"><AlertTriangle size={12} /> 更新失败</span>}
-                  </div>
-                </div>
-                <div className="bg-gray-900 dark:bg-black rounded-xl p-4 max-h-60 overflow-y-auto font-mono text-[11px] text-gray-300 space-y-1 shadow-inner">
-                  {updateLog.map((line, i) => <div key={i} className="break-all border-l-2 border-gray-700 pl-2">{line}</div>)}
-                  {updateStatus === 'running' && <div className="animate-pulse text-blue-400 pl-2">▌</div>}
-                </div>
-              </div>
-            )}
+            <UpdateSection versionInfo={versionInfo} updating={updating} setUpdating={setUpdating} updateStatus={updateStatus} setUpdateStatus={setUpdateStatus} updateLog={updateLog} setUpdateLog={setUpdateLog} checking={checking} setChecking={setChecking} setVersionInfo={setVersionInfo} setMsg={setMsg} loadVersion={loadVersion} />
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-6 space-y-4">
@@ -871,6 +794,201 @@ function SudoPasswordSection() {
         )}
       </div>
     </div>
+  );
+}
+
+function ChangePasswordSection() {
+  const { t } = useI18n();
+  const [oldPwd, setOldPwd] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  const [confirmPwd, setConfirmPwd] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [msgOk, setMsgOk] = useState(true);
+
+  const handleChange = async () => {
+    if (!oldPwd || !newPwd) return;
+    if (newPwd !== confirmPwd) { setMsg(t.sysConfig?.passwordMismatch || '两次输入的密码不一致'); setMsgOk(false); setTimeout(() => setMsg(''), 3000); return; }
+    if (newPwd.length < 4) { setMsg(t.sysConfig?.passwordTooShort || '密码至少4位'); setMsgOk(false); setTimeout(() => setMsg(''), 3000); return; }
+    setSaving(true);
+    try {
+      const r = await api.changePassword(oldPwd, newPwd);
+      if (r.ok) {
+        setMsg(t.sysConfig?.passwordChanged || '密码修改成功，即将退出登录...');
+        setMsgOk(true);
+        setTimeout(() => { localStorage.removeItem('admin-token'); window.location.reload(); }, 2000);
+      } else {
+        setMsg(r.error === 'Wrong current password' ? (t.sysConfig?.wrongPassword || '当前密码错误') : (r.error || '修改失败'));
+        setMsgOk(false);
+      }
+    } catch { setMsg('修改失败'); setMsgOk(false); }
+    finally { setSaving(false); setTimeout(() => setMsg(''), 4000); }
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 overflow-hidden">
+      <div className="px-5 py-4 flex items-center gap-3 border-b border-gray-100 dark:border-gray-800 bg-gray-50/30 dark:bg-gray-900/30">
+        <div className="p-1.5 rounded-lg bg-violet-100 dark:bg-violet-900/30 text-violet-600">
+          <Key size={16} />
+        </div>
+        <div>
+          <h3 className="text-sm font-bold text-gray-900 dark:text-white">{t.sysConfig?.changePassword || '修改管理密码'}</h3>
+          <p className="text-[10px] text-gray-500 mt-0.5">{t.sysConfig?.changePasswordDesc || '修改 ClawPanel 管理后台登录密码，修改后需重新登录'}</p>
+        </div>
+      </div>
+      <div className="p-5 space-y-3">
+        <input type="password" value={oldPwd} onChange={e => setOldPwd(e.target.value)}
+          placeholder={t.sysConfig?.currentPassword || '当前密码'}
+          className="w-full px-4 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all placeholder:text-gray-400" />
+        <input type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)}
+          placeholder={t.sysConfig?.newPassword || '新密码'}
+          className="w-full px-4 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all placeholder:text-gray-400" />
+        <input type="password" value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)}
+          placeholder={t.sysConfig?.confirmPassword || '确认新密码'}
+          className="w-full px-4 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all placeholder:text-gray-400" />
+        <button onClick={handleChange} disabled={saving || !oldPwd || !newPwd || !confirmPwd}
+          className="w-full px-4 py-2.5 text-xs font-medium rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 shadow-sm transition-all">
+          {saving ? '修改中...' : (t.sysConfig?.changePasswordBtn || '修改密码')}
+        </button>
+        {msg && (
+          <div className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border ${msgOk ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-900/30' : 'text-red-600 bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-900/30'}`}>
+            {msgOk ? <CheckCircle size={12} /> : <AlertTriangle size={12} />} {msg}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function UpdateSection({ versionInfo, updating, setUpdating, updateStatus, setUpdateStatus, updateLog, setUpdateLog, checking, setChecking, setVersionInfo, setMsg, loadVersion }: any) {
+  const logRef = useRef<HTMLDivElement>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const startTimeRef = useRef<number>(0);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Auto-scroll log to bottom
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [updateLog]);
+
+  // Elapsed timer
+  useEffect(() => {
+    if (updateStatus === 'running') {
+      if (!startTimeRef.current) startTimeRef.current = Date.now();
+      timerRef.current = setInterval(() => setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000)), 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (updateStatus !== 'running') startTimeRef.current = 0;
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [updateStatus]);
+
+  const startUpdate = async () => {
+    if (!confirm('确定要更新 OpenClaw？更新过程中服务可能短暂中断。\n\n注意：需要在宿主机运行 update-watcher.sh 脚本来执行实际更新。')) return;
+    setUpdating(true); setUpdateLog(['⏳ 发送更新请求...']); setUpdateStatus('running'); setElapsed(0); startTimeRef.current = Date.now();
+    try {
+      const r = await api.doUpdate();
+      if (!r.ok) { setUpdateLog(['❌ ' + (r.error || '启动更新失败')]); setUpdating(false); setUpdateStatus('failed'); return; }
+      setUpdateLog(['✅ 更新请求已发送，等待宿主机执行...']);
+    } catch { setUpdateLog(['❌ 启动更新失败（网络错误）']); setUpdating(false); setUpdateStatus('failed'); return; }
+    // Poll update status every 1s
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      try {
+        const s = await api.getUpdateStatus();
+        if (s.ok) {
+          if (s.log?.length) setUpdateLog(s.log);
+          setUpdateStatus(s.status);
+          if (s.status === 'success') {
+            clearInterval(pollRef.current!); pollRef.current = null;
+            setUpdating(false);
+            setMsg('✅ 更新完成！');
+            setTimeout(() => { loadVersion(); }, 2000);
+          } else if (s.status === 'failed') {
+            clearInterval(pollRef.current!); pollRef.current = null;
+            setUpdating(false);
+            setMsg('❌ 更新失败，请查看日志');
+          }
+        }
+      } catch { /* server might restart during update */ }
+    }, 1000);
+  };
+
+  const fmtElapsed = (s: number) => s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${s % 60}s`;
+
+  return (
+    <>
+      <div className="flex items-center gap-3 pt-2">
+        <button onClick={async () => {
+          setChecking(true);
+          try {
+            const r = await api.checkUpdate();
+            if (r.ok) {
+              setVersionInfo({ ...versionInfo, ...r, lastCheckedAt: r.checkedAt || new Date().toISOString() });
+              setMsg(r.updateAvailable ? `发现新版本: ${r.latestVersion}` : '已是最新版本');
+            } else { setMsg('检查更新失败'); }
+          } catch { setMsg('检查更新失败'); }
+          finally { setChecking(false); setTimeout(() => setMsg(''), 3000); }
+        }} disabled={checking || updating}
+          className="flex items-center gap-2 px-4 py-2 text-xs font-medium rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 disabled:opacity-50 transition-colors">
+          <RefreshCw size={14} className={checking ? 'animate-spin' : ''} />
+          {checking ? '检查中...' : '检查更新'}
+        </button>
+        
+        {!updating && updateStatus !== 'running' && (
+          <button onClick={startUpdate}
+            className={`flex items-center gap-2 px-4 py-2 text-xs font-medium rounded-lg shadow-sm transition-all hover:shadow-md ${versionInfo.updateAvailable ? 'bg-amber-500 text-white hover:bg-amber-600 hover:shadow-amber-200 dark:hover:shadow-none' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}>
+            <Package size={14} />
+            {versionInfo.updateAvailable ? '立即更新' : '强制更新'}
+          </button>
+        )}
+      </div>
+
+      {versionInfo.updateAvailable && !updating && updateStatus !== 'running' && (
+        <div className="px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-xs text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-900/30 flex items-center gap-2">
+          <AlertTriangle size={16} className="shrink-0" />
+          <span>有新版本可用！点击「立即更新」一键升级，或在终端运行: <code className="font-mono bg-amber-100 dark:bg-amber-900/50 px-1.5 py-0.5 rounded font-bold">openclaw update</code></span>
+        </div>
+      )}
+
+      {/* Update progress */}
+      {(updating || updateStatus === 'running' || updateLog.length > 0) && (
+        <div className="space-y-3 pt-4 border-t border-gray-100 dark:border-gray-800">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <Terminal size={16} className="text-gray-400" />
+              <span>更新日志</span>
+            </div>
+            <div className="flex items-center gap-3">
+              {updateStatus === 'running' && (
+                <span className="text-[10px] font-mono text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">{fmtElapsed(elapsed)}</span>
+              )}
+              {updateStatus === 'running' && <span className="flex items-center gap-1.5 text-xs text-blue-500"><RefreshCw size={12} className="animate-spin" /> 正在更新...</span>}
+              {updateStatus === 'success' && <span className="flex items-center gap-1.5 text-xs text-emerald-500"><CheckCircle size={12} /> 更新完成</span>}
+              {updateStatus === 'failed' && <span className="flex items-center gap-1.5 text-xs text-red-500"><AlertTriangle size={12} /> 更新失败</span>}
+              {updateStatus !== 'running' && updateLog.length > 0 && (
+                <button onClick={() => { setUpdateLog([]); setUpdateStatus('idle'); }} className="text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">清除</button>
+              )}
+            </div>
+          </div>
+          <div ref={logRef} className="bg-gray-900 dark:bg-black rounded-xl p-4 max-h-72 overflow-y-auto font-mono text-[11px] text-gray-300 space-y-0.5 shadow-inner scroll-smooth">
+            {updateLog.map((line: string, i: number) => (
+              <div key={i} className={`break-all border-l-2 pl-2 py-0.5 ${line.includes('✅') || line.includes('成功') ? 'border-emerald-500 text-emerald-400' : line.includes('❌') || line.includes('失败') || line.includes('error') ? 'border-red-500 text-red-400' : line.includes('⏳') || line.includes('等待') ? 'border-blue-500 text-blue-400' : 'border-gray-700'}`}>
+                {line}
+              </div>
+            ))}
+            {updateStatus === 'running' && <div className="animate-pulse text-blue-400 pl-2 pt-1">▌</div>}
+          </div>
+          {updateStatus === 'running' && (
+            <div className="text-[10px] text-gray-400 flex items-center gap-1.5">
+              <AlertTriangle size={10} />
+              提示：更新由宿主机 update-watcher.sh 脚本执行，请确保该脚本正在运行
+            </div>
+          )}
+        </div>
+      )}
+    </>
   );
 }
 

@@ -6,14 +6,15 @@
 
 **OpenClaw 智能管理面板 — 比官方控制台更强大的可视化管理工具**
 
-多通道接入 · 多模型配置 · 技能中心 · 版本管理 · 环境检测 · Docker 一键部署
+多通道接入 · 多模型配置 · 技能中心 · 插件管理 · 版本管理 · 环境检测 · 多语言 · Docker / 原生安装
 
 [![License](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-red?style=flat-square)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ready-brightgreen?style=flat-square&logo=docker&logoColor=white)](docker-compose.yml)
-[![Version](https://img.shields.io/badge/version-4.2.1-violet?style=flat-square)](https://github.com/zhaoxinyi02/ClawPanel/releases)
+[![Version](https://img.shields.io/badge/version-4.3.0-violet?style=flat-square)](https://github.com/zhaoxinyi02/ClawPanel/releases)
+[![Demo](https://img.shields.io/badge/demo-online-blue?style=flat-square&logo=vercel)](https://demo.zhaoxinyi.xyz)
 [![GitHub Stars](https://img.shields.io/github/stars/zhaoxinyi02/ClawPanel?style=flat-square&logo=github)](https://github.com/zhaoxinyi02/ClawPanel/stargazers)
 
-[快速开始](#-快速开始) · [功能特性](#-主要功能) · [效果预览](#-效果预览) · [API 文档](docs/API.md) · [部署指南](docs/DEPLOYMENT.md) · [English](README_EN.md)
+[在线演示](https://demo.zhaoxinyi.xyz) · [快速开始](#-快速开始) · [功能特性](#-主要功能) · [API 文档](docs/API.md) · [部署指南](docs/DEPLOYMENT.md) · [English](README_EN.md)
 
 </div>
 
@@ -27,8 +28,11 @@
 > This project is for **learning and research purposes only**. **Commercial use is strictly prohibited.** Use at your own risk. See [full disclaimer](DISCLAIMER.md).
 
 > [!NOTE]
-> **v4.2.1 UI 美化 & 通道修复**：全新紫罗兰主题设计、专业图标替换、仪表盘/侧边栏显示所有已连接通道、网关重启成功日志、favicon 更新。
+> **v4.3.0 技能 & 插件分离 · 修改密码 · 多语言 · 安装器**：技能和插件独立展示、管理后台支持修改登录密码、中英文切换、提供 Linux/Windows/macOS 原生安装方式。
 > 旧版本请查看 [v3.0.0 Tag](https://github.com/zhaoxinyi02/ClawPanel/releases/tag/v3.0.0)。
+
+> [!TIP]
+> **在线演示**：访问 [demo.zhaoxinyi.xyz](https://demo.zhaoxinyi.xyz) 体验 ClawPanel 的完整功能（使用模拟数据，无需部署）。
 
 ## ✨ 主要功能
 
@@ -62,9 +66,10 @@
 
 <img src="img/channels.png" width="700"/>
 
-### ⚡ 技能中心 + ClawHub 商店
-- **已安装技能**：从服务端实时扫描，一键启用/禁用，搜索筛选
-- **ClawHub 商店**：浏览 13+ 可安装技能，一键获取安装命令（这里暂时没有完善，爬取ClawHub不完全，下个版本完善）
+### ⚡ 技能中心 + 插件管理 + ClawHub 商店
+- **技能列表**：从服务端实时扫描所有已安装技能（内置 + 工作区 + 应用内置），搜索筛选
+- **插件管理**：独立的插件标签页，管理飞书/钉钉/企业微信/QQ官方Bot/NapCat QQ 等插件，一键启用/禁用
+- **ClawHub 商店**：浏览 13+ 可安装技能，一键获取安装命令
 
 <img src="img/skills.png" width="700"/>
 
@@ -94,6 +99,7 @@
 #### 📦 版本管理
 - 当前版本 / 最新版本对比
 - 更新检测与提示
+- **一键更新 + 实时日志**：点击「立即更新」后实时显示更新进度、彩色日志、计时器，更新完成/失败一目了然
 - **配置备份与恢复**：一键备份 openclaw.json，恢复前自动备份当前配置
 
 <img src="img/config-version.png" width="700"/>
@@ -155,12 +161,47 @@
 
 ## 🚀 快速开始
 
-### 前提条件
+ClawPanel 提供两种安装方式：**原生安装**（推荐）和 **Docker 安装**。
+
+### 方式一：原生安装（推荐）
+
+#### Linux 一键安装
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zhaoxinyi02/ClawPanel/main/install.sh | bash
+```
+
+安装过程中会提示输入管理密码、QQ 账号等信息。安装完成后自动创建 systemd 服务并启动。
+
+#### Windows 安装
+
+```powershell
+irm https://raw.githubusercontent.com/zhaoxinyi02/ClawPanel/main/install.ps1 | iex
+```
+
+或下载 `install.ps1` 后运行：`powershell -ExecutionPolicy Bypass -File install.ps1`
+
+#### macOS 安装
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zhaoxinyi02/ClawPanel/main/install-mac.sh | bash
+```
+
+安装完成后自动创建 LaunchAgent 并在浏览器中打开管理面板。
+
+> [!TIP]
+> 原生安装会自动检测 OpenClaw 安装路径，创建系统服务，并在桌面创建快捷方式。
+
+---
+
+### 方式二：Docker 安装
+
+#### 前提条件
 
 - [Docker](https://docs.docker.com/get-docker/) + Docker Compose
 - [OpenClaw](https://openclaw.ai) 已安装
 
-### 1️⃣ 克隆 & 配置
+#### 1️⃣ 克隆 & 配置
 
 ```bash
 git clone https://github.com/zhaoxinyi02/ClawPanel.git
@@ -274,7 +315,46 @@ git pull && docker compose up -d --build
 ```
 </details>
 
+<details>
+<summary><b>活动日志出现「管理后台启动」但我没有手动重启？</b></summary>
+
+这通常是因为 Docker 容器自动重启导致的。常见原因：
+1. **QQ 进程崩溃**：NapCat QQ 进程异常退出（如 SIGSEGV），v4.3.0 已修复此问题（QQ 进程崩溃后自动重启，不再重启整个容器）
+2. **Docker 守护进程重启**：系统更新或 Docker 服务重启会导致容器重启
+3. **内存不足（OOM）**：服务器内存不足时 Linux 内核会杀掉容器进程
+
+查看容器重启原因：`docker inspect openclaw-qq --format='{{.State.ExitCode}} {{.State.OOMKilled}}'`
+</details>
+
+<details>
+<summary><b>QQ 登录提示 Unauthorized？</b></summary>
+
+确保 `.env` 中的 `WEBUI_TOKEN` 与 NapCat WebUI 配置一致。如果你修改了 `ADMIN_TOKEN` 但没有设置 `WEBUI_TOKEN`，两者会不一致导致认证失败。v4.3.0 已修复此问题。
+</details>
+
+<details>
+<summary><b>技能中心只显示部分技能？</b></summary>
+
+v4.3.0 之前的版本在 Docker 环境下无法正确扫描应用内置技能。请更新到 v4.3.0 并在 `.env` 中添加：
+```env
+OPENCLAW_APP=/path/to/openclaw/app  # OpenClaw 应用目录
+```
+</details>
+
 ## 📋 更新日志
+
+### v4.3.0 — 技能插件分离 · 修改密码 · 多语言 · 安装器 (2026-02-19)
+- 🆕 **技能/插件分离**：技能中心拆分为「技能」「插件」「ClawHub 商店」三个标签页，插件不再混入技能列表
+- 🆕 **修改管理密码**：系统配置 → 通用 → 修改管理密码，修改后自动退出登录
+- 🆕 **多语言支持**：支持中文（简体）和 English 切换，侧边栏底部一键切换
+- 🆕 **在线演示站**：[demo.zhaoxinyi.xyz](https://demo.zhaoxinyi.xyz) 提供完整功能演示（模拟数据）
+- 🆕 **原生安装方式**：提供 Linux 一键安装脚本、deb/rpm 包、Windows exe、macOS dmg，与 Docker 安装并存
+- 🆕 **版本更新实时状态**：一键更新后实时显示终端日志、彩色状态指示、已用时间计时器，更新成功/失败一目了然
+- 🆕 **更新守护脚本**：`update-watcher.sh` 监听容器更新信号，在宿主机执行 `openclaw update` 并回传日志
+- 🔧 **技能扫描修复**：修复 Docker 环境下无法扫描应用内置技能的问题（新增 `OPENCLAW_APP` 环境变量）
+- 🔧 **NapCat 认证修复**：修复 `ADMIN_TOKEN ≠ WEBUI_TOKEN` 时 QQ 登录 Unauthorized 的问题
+- 🔧 **QQ 进程崩溃恢复**：QQ 进程崩溃后自动重启，不再导致整个容器重启
+- 🔧 **NapCat 认证重试**：NapCat API 调用失败时自动重新认证并重试
 
 ### v4.2.1 — UI 美化 & 通道显示修复 (2026-02-17)
 - 🎨 **全新紫罗兰主题**：统一的 Violet 色调设计，现代化卡片布局，深色/浅色模式全面适配

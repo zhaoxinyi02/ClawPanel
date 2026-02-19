@@ -10,6 +10,7 @@ services:
     volumes:
       - ${OPENCLAW_DIR:-~/.openclaw}:/root/.openclaw   # OpenClaw 配置（跨平台）
       - ${OPENCLAW_WORK:-/root/openclaw/work}:/root/openclaw/work  # OpenClaw 工作目录（文件服务器用）
+      - ${OPENCLAW_APP:-/root/openclaw/app}:/root/openclaw/app:ro  # OpenClaw 应用目录（技能扫描用，只读）
       - napcat-data:/app/napcat/config            # NapCat 配置持久化
       - manager-data:/app/manager/data            # ClawPanel 配置持久化
       - qq-session:/app/.config/QQ                # QQ 登录 session 持久化
@@ -21,6 +22,7 @@ services:
       - NAPCAT_TOKEN=${NAPCAT_TOKEN:-}
       - OPENCLAW_CONFIG=/root/.openclaw/openclaw.json
       - OPENCLAW_WORK=/root/openclaw/work
+      - OPENCLAW_APP=/root/openclaw/app
       - WECHAT_API_URL=http://wechat:3001
       - WECHAT_TOKEN=${WECHAT_TOKEN:-}
     depends_on:

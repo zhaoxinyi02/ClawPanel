@@ -58,6 +58,7 @@ const FAKE_FILES: any[] = [
 
 export const mockApi = {
   login: async (_token: string) => { await delay(500); return { ok: true, token: 'demo-token' }; },
+  changePassword: async (_old: string, _new: string) => { await delay(300); return { ok: true }; },
   getStatus: async () => {
     await delay(100);
     return {

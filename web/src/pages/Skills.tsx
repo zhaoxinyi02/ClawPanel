@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import {
   Sparkles, Search, ToggleLeft, ToggleRight, Download,
-  RefreshCw, Package, Globe, Check, Loader2, ExternalLink, X, Key, FolderOpen,
+  RefreshCw, Package, Globe, Check, Loader2, ExternalLink, X, Key, FolderOpen, Plug,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 
@@ -16,6 +16,17 @@ interface SkillEntry {
   installedAt?: string;
   metadata?: any;
   requires?: { env?: string[]; bins?: string[] };
+  path?: string;
+}
+
+interface PluginEntry {
+  id: string;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  source: string;
+  version?: string;
+  installedAt?: string;
   path?: string;
 }
 
@@ -38,10 +49,11 @@ const CLAWHUB_CATALOG: { id: string; name: string; description: string; descript
 export default function Skills() {
   const { t } = useI18n();
   const [skills, setSkills] = useState<SkillEntry[]>([]);
+  const [plugins, setPlugins] = useState<PluginEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
-  const [tab, setTab] = useState<'installed' | 'clawhub'>('installed');
+  const [tab, setTab] = useState<'skills' | 'plugins' | 'clawhub'>('skills');
   const [msg, setMsg] = useState('');
   const [installing, setInstalling] = useState('');
   const [syncing, setSyncing] = useState(false);
@@ -53,7 +65,10 @@ export default function Skills() {
     setLoading(true);
     try {
       const r = await api.getSkills();
-      if (r.ok) setSkills(r.skills || []);
+      if (r.ok) {
+        setSkills(r.skills || []);
+        setPlugins(r.plugins || []);
+      }
     } catch (err) {
       console.error('Failed to load skills:', err);
     } finally { setLoading(false); }
@@ -70,6 +85,22 @@ export default function Skills() {
       setTimeout(() => setMsg(''), 2000);
     } catch {
       setSkills(prev => prev.map(s => s.id === id ? { ...s, enabled: !newEnabled } : s));
+      setMsg(t.common.operationFailed);
+      setTimeout(() => setMsg(''), 2000);
+    }
+  };
+
+  const togglePlugin = async (id: string) => {
+    const plugin = plugins.find(p => p.id === id);
+    if (!plugin) return;
+    const newEnabled = !plugin.enabled;
+    setPlugins(prev => prev.map(p => p.id === id ? { ...p, enabled: newEnabled } : p));
+    try {
+      await api.updatePlugin(id, { enabled: newEnabled });
+      setMsg(`${plugin.name} ${newEnabled ? t.common.enabled : t.common.disabled}`);
+      setTimeout(() => setMsg(''), 2000);
+    } catch {
+      setPlugins(prev => prev.map(p => p.id === id ? { ...p, enabled: !newEnabled } : p));
       setMsg(t.common.operationFailed);
       setTimeout(() => setMsg(''), 2000);
     }
@@ -141,9 +172,13 @@ export default function Skills() {
 
       {/* Tabs */}
       <div className="flex gap-6 border-b border-gray-200 dark:border-gray-800">
-        <button onClick={() => setTab('installed')}
-          className={`pb-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2 ${tab === 'installed' ? 'border-violet-600 text-violet-700 dark:text-violet-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
-          <Package size={16} />{t.skills.installedTab} <span className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs px-1.5 py-0.5 rounded-full">{skills.length}</span>
+        <button onClick={() => setTab('skills')}
+          className={`pb-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2 ${tab === 'skills' ? 'border-violet-600 text-violet-700 dark:text-violet-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+          <Sparkles size={16} />{t.skills.installedTab} <span className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs px-1.5 py-0.5 rounded-full">{skills.length}</span>
+        </button>
+        <button onClick={() => setTab('plugins')}
+          className={`pb-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2 ${tab === 'plugins' ? 'border-violet-600 text-violet-700 dark:text-violet-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+          <Plug size={16} />{t.skills.pluginsTab || '插件'} <span className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs px-1.5 py-0.5 rounded-full">{plugins.length}</span>
         </button>
         <button onClick={() => setTab('clawhub')}
           className={`pb-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2 ${tab === 'clawhub' ? 'border-violet-600 text-violet-700 dark:text-violet-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
@@ -158,7 +193,7 @@ export default function Skills() {
         </div>
       )}
 
-      {tab === 'installed' && (
+      {tab === 'skills' && (
         <div className="space-y-4">
           {/* Filters */}
           <div className="flex flex-wrap items-center justify-between gap-4">
@@ -218,6 +253,56 @@ export default function Skills() {
                     <button onClick={() => toggleSkill(skill.id)} className="relative group/toggle focus:outline-none">
                       {skill.enabled 
                         ? <ToggleRight size={32} className="text-emerald-500 transition-transform group-hover/toggle:scale-105" /> 
+                        : <ToggleLeft size={32} className="text-gray-300 dark:text-gray-600 transition-transform group-hover/toggle:scale-105" />}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'plugins' && (
+        <div className="space-y-4">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-3">
+              <Loader2 size={32} className="animate-spin text-violet-500/50" />
+              <p className="text-sm">{t.skills.loadingSkills}</p>
+            </div>
+          ) : plugins.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-400 border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-xl">
+              <Plug size={32} className="opacity-20 mb-2" />
+              <p className="text-sm">{t.skills.noMatch}</p>
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {plugins.map(plugin => (
+                <div key={plugin.id} className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700/50 flex items-center gap-4 hover:shadow-md transition-all group">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${plugin.enabled ? 'bg-gradient-to-br from-blue-500 to-cyan-600' : 'bg-gray-100 dark:bg-gray-700'}`}>
+                    <Plug size={20} className={plugin.enabled ? 'text-white' : 'text-gray-400'} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-base font-bold text-gray-900 dark:text-white">{plugin.name}</span>
+                      {plugin.version && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 font-mono">v{plugin.version}</span>}
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${plugin.source === 'installed' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : plugin.source === 'config-ext' ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'}`}>
+                        {plugin.source === 'installed' ? t.skills.srcInstalled : plugin.source === 'config-ext' ? t.skills.srcDevExt : t.skills.srcConfig}
+                      </span>
+                    </div>
+                    {plugin.description && <p className="text-xs text-gray-500 truncate">{plugin.description}</p>}
+                    {plugin.path && <p className="text-[10px] text-gray-400 truncate mt-1 font-mono">{plugin.path}</p>}
+                  </div>
+                  <div className="flex items-center gap-4 border-l border-gray-100 dark:border-gray-700 pl-4">
+                    <div className="text-right hidden sm:block">
+                      <div className="text-[10px] text-gray-400">{t.common.status}</div>
+                      <div className={`text-xs font-medium ${plugin.enabled ? 'text-emerald-600' : 'text-gray-400'}`}>
+                        {plugin.enabled ? t.common.enabled : t.common.disabled}
+                      </div>
+                    </div>
+                    <button onClick={() => togglePlugin(plugin.id)} className="relative group/toggle focus:outline-none">
+                      {plugin.enabled
+                        ? <ToggleRight size={32} className="text-emerald-500 transition-transform group-hover/toggle:scale-105" />
                         : <ToggleLeft size={32} className="text-gray-300 dark:text-gray-600 transition-transform group-hover/toggle:scale-105" />}
                     </button>
                   </div>

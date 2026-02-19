@@ -41,6 +41,7 @@ async function uploadFormData(path: string, formData: FormData) {
 
 const _api = {
   login: (token: string) => post('/auth/login', { token }),
+  changePassword: (oldPassword: string, newPassword: string) => post('/auth/change-password', { oldPassword, newPassword }),
   getStatus: () => get('/status'),
   getOpenClawConfig: () => get('/openclaw/config'),
   updateOpenClawConfig: (config: any) => put('/openclaw/config', { config }),

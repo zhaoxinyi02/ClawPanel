@@ -36,6 +36,18 @@ export function createRoutes(adminConfig: AdminConfig, onebotClient: OneBotClien
     }
   });
 
+  // Change admin password
+  router.post('/auth/change-password', auth, (req, res) => {
+    const { oldPassword, newPassword } = req.body;
+    if (!oldPassword || !newPassword) return res.status(400).json({ ok: false, error: 'Missing fields' });
+    if (newPassword.length < 4) return res.status(400).json({ ok: false, error: 'Password too short' });
+    const cfg = adminConfig.get();
+    if (oldPassword !== cfg.server.token) return res.status(401).json({ ok: false, error: 'Wrong current password' });
+    adminConfig.update({ server: { ...cfg.server, token: newPassword } });
+    if (eventLog) eventLog.addSystemEvent('管理后台密码已修改');
+    res.json({ ok: true });
+  });
+
   // === Status ===
   router.get('/status', auth, async (_req, res) => {
     const cfg = adminConfig.get();
@@ -922,10 +934,11 @@ export function createRoutes(adminConfig: AdminConfig, onebotClient: OneBotClien
     }
   });
 
-  // Scan installed skills/extensions
+  // Scan installed skills/extensions — returns { skills, plugins } separately
   router.get('/system/skills', auth, async (_req, res) => {
     try {
       const skills: any[] = [];
+      const plugins: any[] = [];
       const seen = new Set<string>();
 
       // Helper to parse SKILL.md frontmatter
@@ -950,23 +963,23 @@ export function createRoutes(adminConfig: AdminConfig, onebotClient: OneBotClien
         } catch { return null; }
       };
 
-      const extDir = path.join(OPENCLAW_DIR, 'extensions');
       const ocConfig = openclawConfig.read() || {};
       const pluginEntries = ocConfig?.plugins?.entries || {};
       const pluginInstalls = ocConfig?.plugins?.installs || {};
+      const pluginSeen = new Set<string>();
 
-      // Scan extensions directory (installed plugins)
+      // --- PLUGINS: scan extensions directories ---
+      const extDir = path.join(OPENCLAW_DIR, 'extensions');
       if (fs.existsSync(extDir)) {
         for (const name of fs.readdirSync(extDir)) {
           const extPath = path.join(extDir, name);
           if (!fs.statSync(extPath).isDirectory()) continue;
           let pkgInfo: any = {};
           try { pkgInfo = JSON.parse(fs.readFileSync(path.join(extPath, 'package.json'), 'utf-8')); } catch {}
-          // Also try openclaw.plugin.json for description
           let pluginJson: any = {};
           try { pluginJson = JSON.parse(fs.readFileSync(path.join(extPath, 'openclaw.plugin.json'), 'utf-8')); } catch {}
-          seen.add(name);
-          skills.push({
+          pluginSeen.add(name);
+          plugins.push({
             id: name,
             name: pluginJson.name || pkgInfo.name || name,
             description: pluginJson.description || pkgInfo.description || '',
@@ -983,15 +996,15 @@ export function createRoutes(adminConfig: AdminConfig, onebotClient: OneBotClien
       const configExtDir = path.join(path.dirname(OPENCLAW_DIR), 'openclaw', 'config', 'extensions');
       if (fs.existsSync(configExtDir)) {
         for (const name of fs.readdirSync(configExtDir)) {
-          if (seen.has(name)) continue;
+          if (pluginSeen.has(name)) continue;
           const extPath = path.join(configExtDir, name);
           if (!fs.statSync(extPath).isDirectory()) continue;
           let pkgInfo: any = {};
           try { pkgInfo = JSON.parse(fs.readFileSync(path.join(extPath, 'package.json'), 'utf-8')); } catch {}
           let pluginJson: any = {};
           try { pluginJson = JSON.parse(fs.readFileSync(path.join(extPath, 'openclaw.plugin.json'), 'utf-8')); } catch {}
-          seen.add(name);
-          skills.push({
+          pluginSeen.add(name);
+          plugins.push({
             id: name,
             name: pluginJson.name || pkgInfo.name || name,
             description: pluginJson.description || pkgInfo.description || '',
@@ -1003,94 +1016,92 @@ export function createRoutes(adminConfig: AdminConfig, onebotClient: OneBotClien
         }
       }
 
-      // Scan OPENCLAW_DIR/skills
-      const skillsDir = path.join(OPENCLAW_DIR, 'skills');
-      if (fs.existsSync(skillsDir)) {
-        for (const name of fs.readdirSync(skillsDir)) {
-          if (seen.has(name)) continue;
-          const skillPath = path.join(skillsDir, name);
-          if (!fs.statSync(skillPath).isDirectory()) continue;
-          let pkgInfo: any = {};
-          try { pkgInfo = JSON.parse(fs.readFileSync(path.join(skillPath, 'package.json'), 'utf-8')); } catch {}
-          // Try reading SKILL.md for description
-          let skillDesc = pkgInfo.description || '';
-          if (!skillDesc) {
-            try {
-              const md = fs.readFileSync(path.join(skillPath, 'SKILL.md'), 'utf-8');
-              const firstLine = md.split('\n').find((l: string) => l.trim() && !l.startsWith('#'));
-              if (firstLine) skillDesc = firstLine.trim().slice(0, 200);
-            } catch {}
-          }
-          seen.add(name);
-          skills.push({
-            id: name,
-            name: pkgInfo.name || name,
-            description: skillDesc,
-            version: pkgInfo.version || '',
-            enabled: true,
-            source: 'skill',
-            path: skillPath,
-          });
-        }
+      // Add entries from plugins.entries that aren't already scanned (e.g. NapCat QQ)
+      for (const [id, entry] of Object.entries(pluginEntries)) {
+        if (pluginSeen.has(id)) continue;
+        pluginSeen.add(id);
+        plugins.push({
+          id,
+          name: id,
+          description: '',
+          version: pluginInstalls[id]?.version || '',
+          enabled: (entry as any)?.enabled !== false,
+          source: 'config',
+          installedAt: pluginInstalls[id]?.installedAt || '',
+        });
       }
 
-      // Scan workspace work/skills
-      const workDir = process.env['OPENCLAW_WORK'] || path.join(path.dirname(OPENCLAW_DIR), 'openclaw', 'work');
-      const workSkillsDir = path.join(workDir, 'skills');
-      if (fs.existsSync(workSkillsDir)) {
-        for (const name of fs.readdirSync(workSkillsDir)) {
-          if (seen.has(name)) continue;
-          const skillPath = path.join(workSkillsDir, name);
-          if (!fs.statSync(skillPath).isDirectory()) continue;
-          let pkgInfo: any = {};
-          try { pkgInfo = JSON.parse(fs.readFileSync(path.join(skillPath, 'package.json'), 'utf-8')); } catch {}
-          let skillDesc = pkgInfo.description || '';
-          if (!skillDesc) {
-            try {
-              const md = fs.readFileSync(path.join(skillPath, 'SKILL.md'), 'utf-8');
-              const firstLine = md.split('\n').find((l: string) => l.trim() && !l.startsWith('#'));
-              if (firstLine) skillDesc = firstLine.trim().slice(0, 200);
-            } catch {}
-          }
-          seen.add(name);
-          skills.push({
-            id: name,
-            name: pkgInfo.name || name,
-            description: skillDesc,
-            version: pkgInfo.version || '',
-            enabled: true,
-            source: 'workspace',
-            path: skillPath,
-          });
-        }
-      }
+      // --- SKILLS: scan skill directories ---
 
-      // Scan openclaw/app/skills (built-in OpenClaw skills)
-      const appSkillsDir = path.join(path.dirname(OPENCLAW_DIR), 'openclaw', 'app', 'skills');
-      if (fs.existsSync(appSkillsDir)) {
-        for (const name of fs.readdirSync(appSkillsDir)) {
+      // Helper to scan a skills directory
+      const scanSkillDir = (dir: string, source: string, requireSkillMd = false) => {
+        if (!fs.existsSync(dir)) return;
+        for (const name of fs.readdirSync(dir)) {
           if (seen.has(name)) continue;
-          const skillPath = path.join(appSkillsDir, name);
+          const skillPath = path.join(dir, name);
           if (!fs.statSync(skillPath).isDirectory()) continue;
           const skillMdPath = path.join(skillPath, 'SKILL.md');
-          if (!fs.existsSync(skillMdPath)) continue;
-          const skillInfo = parseSkillMd(skillMdPath);
+          if (requireSkillMd && !fs.existsSync(skillMdPath)) continue;
+          let pkgInfo: any = {};
+          try { pkgInfo = JSON.parse(fs.readFileSync(path.join(skillPath, 'package.json'), 'utf-8')); } catch {}
+          let skillDesc = pkgInfo.description || '';
+          let skillName = pkgInfo.name || name;
+          let metadata = null;
+          let requires = undefined;
+          if (fs.existsSync(skillMdPath)) {
+            const skillInfo = parseSkillMd(skillMdPath);
+            if (skillInfo) {
+              skillName = skillInfo.name || skillName;
+              skillDesc = skillInfo.description || skillDesc;
+              metadata = skillInfo.metadata;
+              requires = skillInfo.metadata?.openclaw?.requires;
+            }
+          }
+          if (!skillDesc) {
+            try {
+              const md = fs.readFileSync(skillMdPath, 'utf-8');
+              const firstLine = md.split('\n').find((l: string) => l.trim() && !l.startsWith('#') && !l.startsWith('---'));
+              if (firstLine) skillDesc = firstLine.trim().slice(0, 200);
+            } catch {}
+          }
           seen.add(name);
           skills.push({
             id: name,
-            name: skillInfo?.name || name,
-            description: skillInfo?.description || '',
-            version: '',
+            name: skillName,
+            description: skillDesc,
+            version: pkgInfo.version || '',
             enabled: true,
-            source: 'app-skill',
+            source,
             path: skillPath,
-            metadata: skillInfo?.metadata,
-            requires: skillInfo?.metadata?.openclaw?.requires,
+            metadata,
+            requires,
           });
+        }
+      };
+
+      // 1. OPENCLAW_DIR/skills (user-installed skills)
+      scanSkillDir(path.join(OPENCLAW_DIR, 'skills'), 'skill');
+
+      // 2. Workspace work/skills
+      const workDir = process.env['OPENCLAW_WORK'] || path.join(path.dirname(OPENCLAW_DIR), 'openclaw', 'work');
+      scanSkillDir(path.join(workDir, 'skills'), 'workspace');
+
+      // 3. Built-in app skills — use OPENCLAW_APP env var, fallback to common paths
+      const appDir = process.env['OPENCLAW_APP'] || '';
+      const appSkillsCandidates = [
+        appDir ? path.join(appDir, 'skills') : '',
+        path.join(path.dirname(OPENCLAW_DIR), 'openclaw', 'app', 'skills'),
+        path.join(path.dirname(OPENCLAW_DIR), 'app', 'skills'),
+        '/home/zhaoxinyi/openclaw/app/skills',
+      ].filter(Boolean);
+      for (const candidate of appSkillsCandidates) {
+        if (fs.existsSync(candidate)) {
+          scanSkillDir(candidate, 'app-skill', true);
+          break;
         }
       }
 
-      // Scan workspace work/scripts (utility scripts as skills)
+      // 4. Workspace work/scripts (utility scripts as skills)
       const workScriptsDir = path.join(workDir, 'scripts');
       if (fs.existsSync(workScriptsDir)) {
         for (const name of fs.readdirSync(workScriptsDir)) {
@@ -1100,7 +1111,6 @@ export function createRoutes(adminConfig: AdminConfig, onebotClient: OneBotClien
           const scriptId = 'script-' + name.replace(/\.(js|ts)$/, '');
           if (seen.has(scriptId)) continue;
           seen.add(scriptId);
-          // Derive friendly name from filename
           const friendlyName = name.replace(/\.(js|ts)$/, '').replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
           skills.push({
             id: scriptId,
@@ -1114,24 +1124,9 @@ export function createRoutes(adminConfig: AdminConfig, onebotClient: OneBotClien
         }
       }
 
-      // Add entries from plugins.entries that aren't already scanned
-      for (const [id, entry] of Object.entries(pluginEntries)) {
-        if (seen.has(id)) continue;
-        seen.add(id);
-        skills.push({
-          id,
-          name: id,
-          description: '',
-          version: pluginInstalls[id]?.version || '',
-          enabled: (entry as any)?.enabled !== false,
-          source: 'config',
-          installedAt: pluginInstalls[id]?.installedAt || '',
-        });
-      }
-
-      res.json({ ok: true, skills });
+      res.json({ ok: true, skills, plugins });
     } catch (err) {
-      res.json({ ok: true, skills: [] });
+      res.json({ ok: true, skills: [], plugins: [] });
     }
   });
 
