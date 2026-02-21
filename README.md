@@ -11,7 +11,7 @@
 [![License](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-red?style=flat-square)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ready-brightgreen?style=flat-square&logo=docker&logoColor=white)](docker-compose.yml)
 [![Version](https://img.shields.io/badge/version-4.4.0-violet?style=flat-square)](https://github.com/zhaoxinyi02/ClawPanel/releases)
-[![Demo](https://img.shields.io/badge/demo-online-blue?style=flat-square&logo=vercel)](https://demo.zhaoxinyi.xyz)
+[![Demo](https://img.shields.io/badge/demo-online-blue?style=flat-square&logo=vercel)](http://demo.zhaoxinyi.xyz)
 [![GitHub Stars](https://img.shields.io/github/stars/zhaoxinyi02/ClawPanel?style=flat-square&logo=github)](https://github.com/zhaoxinyi02/ClawPanel/stargazers)
 
 [在线演示](https://demo.zhaoxinyi.xyz) · [快速开始](#-快速开始) · [功能特性](#-主要功能) · [API 文档](docs/API.md) · [部署指南](docs/DEPLOYMENT.md) · [English](README_EN.md)
