@@ -117,29 +117,14 @@ fi
 echo "[NapCat] 启动 QQ..."
 cd /app/napcat
 
-if [ -z "${ACCOUNT}" ]; then
-    DETECTED=$(ls /app/napcat/config/napcat_*.json 2>/dev/null | head -1 | grep -oP 'napcat_\K[0-9]+')
-    if [ -n "${DETECTED}" ]; then
-        echo "[NapCat] 自动检测到已登录 QQ 号: ${DETECTED}"
-        ACCOUNT="${DETECTED}"
-    fi
-fi
+# Never auto-login previous account — always require manual login (QR/quick/password)
+# This prevents issues where QQ logs out on mobile but NapCat keeps trying the old session
+# Users can use quick-login via the panel UI if they want to reuse a previous session
 
 # Keep QQ running even if it exits (for QR code login flow)
 while true; do
-    if [ -n "${ACCOUNT}" ]; then
-        echo "[NapCat] 使用快速登录: QQ ${ACCOUNT}"
-        gosu napcat /opt/QQ/qq --no-sandbox -q $ACCOUNT || true
-    else
-        echo "[NapCat] 未检测到已登录账号，需要扫码登录"
-        gosu napcat /opt/QQ/qq --no-sandbox || true
-    fi
+    echo "[NapCat] 等待扫码登录（通过面板通道管理页面操作）"
+    gosu napcat /opt/QQ/qq --no-sandbox || true
     echo "[NapCat] QQ 进程退出，5秒后重启..."
     sleep 5
-    # Re-detect account after restart
-    ACCOUNT=""
-    DETECTED=$(ls /app/napcat/config/napcat_*.json 2>/dev/null | head -1 | grep -oP 'napcat_\K[0-9]+')
-    if [ -n "${DETECTED}" ]; then
-        ACCOUNT="${DETECTED}"
-    fi
 done

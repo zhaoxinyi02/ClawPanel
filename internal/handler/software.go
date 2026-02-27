@@ -52,7 +52,10 @@ func detectCmd(name string, args ...string) string {
 		}, ";")
 		cmd.Env = append(os.Environ(), "PATH="+currentPath+";"+extraPaths)
 	} else {
+		home, _ := os.UserHomeDir()
 		extraPaths := "/usr/local/bin:/usr/bin:/bin:/snap/bin"
+		extraPaths += ":" + filepath.Join(home, ".local", "bin")
+		extraPaths += ":" + filepath.Join(home, ".npm-global", "bin")
 		if runtime.GOOS == "darwin" {
 			extraPaths += ":/opt/homebrew/bin:/opt/homebrew/sbin"
 		}
@@ -885,8 +888,41 @@ docker exec openclaw-qq bash -c 'cat > /app/napcat/config/webui.json << WUEOF
 }
 WUEOF'
 
+echo "🔄 重启容器使配置生效..."
+docker restart openclaw-qq
+
+echo "⏳ 等待 NapCat 服务启动..."
+for i in $(seq 1 30); do
+  if curl -s -o /dev/null -w '' http://127.0.0.1:6099 2>/dev/null; then
+    echo "✅ NapCat WebUI (6099) 已就绪"
+    break
+  fi
+  sleep 2
+done
+
+# Verify ports
+WS_OK=false
+HTTP_OK=false
+for i in $(seq 1 10); do
+  if bash -c 'echo > /dev/tcp/127.0.0.1/3001' 2>/dev/null; then WS_OK=true; fi
+  if bash -c 'echo > /dev/tcp/127.0.0.1/3000' 2>/dev/null; then HTTP_OK=true; fi
+  if $WS_OK && $HTTP_OK; then break; fi
+  sleep 2
+done
+
+if $WS_OK; then
+  echo "✅ OneBot11 WebSocket (3001) 已就绪"
+else
+  echo "⚠️ OneBot11 WebSocket (3001) 尚未就绪，可能需要先扫码登录QQ"
+fi
+if $HTTP_OK; then
+  echo "✅ OneBot11 HTTP API (3000) 已就绪"
+else
+  echo "⚠️ OneBot11 HTTP API (3000) 尚未就绪，可能需要先扫码登录QQ"
+fi
+
 echo "✅ NapCat (QQ个人号) 安装完成"
-echo "📝 请在通道管理中配置 QQ 并扫码登录"
+echo "📝 请在通道管理中扫码登录 QQ"
 `, cfg.OpenClawDir, cfg.OpenClawWork)
 }
 

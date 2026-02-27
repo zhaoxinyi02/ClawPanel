@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../lib/api';
-import { Radio, Wifi, WifiOff, QrCode, Key, Zap, UserCheck, Check, X, Power, Loader2, RefreshCw, LogOut, Sparkles, Download, Package } from 'lucide-react';
+import { Radio, Wifi, WifiOff, QrCode, Key, Zap, UserCheck, Check, X, Power, Loader2, RefreshCw, LogOut, Sparkles, Download, Package, Wrench, Search, Copy, CheckCircle, AlertTriangle, AlertCircle } from 'lucide-react';
 import { useI18n } from '../i18n';
 
 type ChannelDef = {
@@ -183,6 +183,10 @@ export default function Channels() {
   const [reconnectLogs, setReconnectLogs] = useState<any[]>([]);
   const [showReconnectLogs, setShowReconnectLogs] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [diagnoseResult, setDiagnoseResult] = useState<any>(null);
+  const [restarting, setRestarting] = useState(false);
+  const qrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadNapcatStatus = () => {
     api.napcatStatus().then(r => { if (r.ok) setNapcatStatus(r.status); }).catch(() => {});
@@ -323,6 +327,7 @@ export default function Channels() {
       const r = await api.napcatGetQRCode();
       if (r.ok && r.data?.qrcode) {
         setQrImg(r.data.qrcode);
+        startQrPolling();
       } else if (r.message?.includes('Logined') || r.data?.message?.includes('Logined')) {
         setLoginMsg('QQ 已登录，无需重复登录');
       } else {
@@ -338,6 +343,7 @@ export default function Channels() {
       const r = await api.napcatRefreshQRCode();
       if (r.ok && r.data?.qrcode) {
         setQrImg(r.data.qrcode);
+        startQrPolling();
       } else {
         setLoginMsg(r.data?.message || '刷新失败');
       }
@@ -406,16 +412,63 @@ export default function Channels() {
 
   const handleRestartNapcat = async () => {
     if (!confirm('确定要重启 NapCat 容器？重启期间 QQ 将暂时离线。')) return;
+    setRestarting(true);
     try {
       const r = await api.napcatRestart();
       if (r.ok) {
         setMsg('NapCat 容器正在重启，请等待约 30 秒...');
-        setTimeout(() => { reload(); setMsg(''); }, 15000);
+        setTimeout(() => { reload(); setMsg(''); setRestarting(false); loadNapcatStatus(); }, 15000);
       } else {
         setMsg(r.error || '重启失败');
+        setRestarting(false);
       }
-    } catch (err) { setMsg('重启失败: ' + String(err)); }
+    } catch (err) { setMsg('重启失败: ' + String(err)); setRestarting(false); }
   };
+
+  const handleDiagnose = async (repair: boolean) => {
+    setDiagnosing(true);
+    setDiagnoseResult(null);
+    try {
+      const r = await api.napcatDiagnose(repair);
+      if (r.ok) {
+        setDiagnoseResult(r);
+        loadNapcatStatus();
+      } else {
+        setMsg(r.error || '诊断失败');
+      }
+    } catch (err) { setMsg('诊断失败: ' + String(err)); }
+    finally { setDiagnosing(false); }
+  };
+
+  // QR code polling: check login status every 3s after QR is shown
+  const startQrPolling = () => {
+    stopQrPolling();
+    qrPollRef.current = setInterval(async () => {
+      try {
+        const r = await api.napcatLoginStatus();
+        if (r.ok && r.data?.isLogin) {
+          stopQrPolling();
+          setLoginMsg('✅ 登录成功！');
+          reload();
+          loadNapcatStatus();
+          setTimeout(() => setLoginModal(null), 1500);
+        }
+      } catch {}
+    }, 3000);
+  };
+
+  const stopQrPolling = () => {
+    if (qrPollRef.current) {
+      clearInterval(qrPollRef.current);
+      qrPollRef.current = null;
+    }
+  };
+
+  // Cleanup polling on unmount or modal close
+  useEffect(() => {
+    if (!loginModal) stopQrPolling();
+    return () => stopQrPolling();
+  }, [loginModal]);
 
   const handleApprove = async (flag: string) => {
     await api.approveRequest(flag);
@@ -612,8 +665,9 @@ export default function Channels() {
                           <button onClick={handleQQLogout} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors">
                             <LogOut size={14} />{t.channels.logoutQQ}
                           </button>
-                          <button onClick={handleRestartNapcat} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/50 transition-colors">
-                            <RefreshCw size={14} />重启NapCat
+                          <button onClick={handleRestartNapcat} disabled={restarting} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/50 disabled:opacity-50 transition-colors">
+                            {restarting ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                            {restarting ? '重启中...' : '重启NapCat'}
                           </button>
                         </>
                       )}
@@ -691,6 +745,77 @@ export default function Channels() {
                       ))}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* NapCat Diagnose & Repair */}
+              {currentDef.id === 'qq' && isContainerInstalled('napcat') && (
+                <div className="rounded-xl border border-gray-100 dark:border-gray-700/50 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Wrench size={16} className="text-violet-500" />
+                      <span className="text-sm font-bold text-gray-900 dark:text-white">NapCat 诊断修复</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => handleDiagnose(false)} disabled={diagnosing}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 disabled:opacity-50 transition-colors">
+                        {diagnosing ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
+                        {diagnosing ? '诊断中...' : '检测状态'}
+                      </button>
+                      <button onClick={() => handleDiagnose(true)} disabled={diagnosing}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-all shadow-sm">
+                        {diagnosing ? <Loader2 size={12} className="animate-spin" /> : <Wrench size={12} />}
+                        {diagnosing ? '修复中...' : '诊断并修复'}
+                      </button>
+                    </div>
+                  </div>
+                  {diagnoseResult && (
+                    <div className="space-y-2">
+                      <div className={`px-3 py-2 rounded-lg text-xs font-medium ${
+                        diagnoseResult.summary?.includes('✅') ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600' :
+                        diagnoseResult.summary?.includes('🔧') ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600' :
+                        'bg-red-50 dark:bg-red-900/20 text-red-600'
+                      }`}>
+                        {diagnoseResult.summary}
+                      </div>
+                      <div className="space-y-1 max-h-60 overflow-y-auto">
+                        {diagnoseResult.steps?.map((step: any, i: number) => (
+                          <div key={i} className="flex items-start gap-2 text-[11px] px-2 py-1.5 rounded-lg bg-gray-50 dark:bg-gray-900/30">
+                            <span className="shrink-0 mt-0.5">
+                              {step.status === 'ok' ? <CheckCircle size={13} className="text-emerald-500" /> :
+                               step.status === 'fixed' ? <CheckCircle size={13} className="text-blue-500" /> :
+                               step.status === 'warning' ? <AlertTriangle size={13} className="text-amber-500" /> :
+                               step.status === 'error' ? <AlertCircle size={13} className="text-red-500" /> :
+                               <Check size={13} className="text-gray-400" />}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-gray-700 dark:text-gray-300">{step.step}</span>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold uppercase ${
+                                  step.status === 'ok' ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600' :
+                                  step.status === 'fixed' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600' :
+                                  step.status === 'warning' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600' :
+                                  step.status === 'error' ? 'bg-red-100 dark:bg-red-900/30 text-red-600' :
+                                  'bg-gray-100 dark:bg-gray-800 text-gray-500'
+                                }`}>{step.status}</span>
+                              </div>
+                              <p className="text-gray-600 dark:text-gray-400">{step.message}</p>
+                              {step.detail && <p className="text-gray-400 text-[10px] mt-0.5">{step.detail}</p>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Restarting overlay */}
+              {currentDef.id === 'qq' && restarting && (
+                <div className="rounded-xl border-2 border-dashed border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-900/10 p-6 flex flex-col items-center justify-center gap-3">
+                  <Loader2 size={32} className="animate-spin text-orange-500" />
+                  <p className="text-sm font-medium text-orange-600 dark:text-orange-400">NapCat 正在重启中，请稍候...</p>
+                  <p className="text-[11px] text-gray-400">重启期间 QQ 将暂时离线，通常需要 15-30 秒</p>
                 </div>
               )}
 

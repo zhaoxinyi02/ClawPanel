@@ -88,6 +88,8 @@ const _api = {
   napcatReconnectLogs: () => get('/napcat/reconnect-logs'),
   napcatReconnect: () => post('/napcat/reconnect'),
   napcatMonitorConfig: (data: { autoReconnect?: boolean; maxReconnect?: number }) => put('/napcat/monitor-config', data),
+  napcatDiagnose: (repair?: boolean) => postLong('/napcat/diagnose', { repair: !!repair }, 120000),
+  systemDiagnose: () => get('/system/diagnose'),
   // Config check & fix
   checkConfig: () => get('/openclaw/config/check'),
   fixConfig: (issueIds: string[]) => post('/openclaw/config/fix', { issueIds }),

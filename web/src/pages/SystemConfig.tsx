@@ -67,6 +67,8 @@ export default function SystemConfig() {
   const [updateStatus, setUpdateStatus] = useState('idle');
   const [showRestartPrompt, setShowRestartPrompt] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [diagReport, setDiagReport] = useState('');
+  const [diagLoading, setDiagLoading] = useState(false);
 
   useEffect(() => { loadConfig(); }, []);
 
@@ -842,6 +844,41 @@ export default function SystemConfig() {
               </div>
               
               <SoftwareEnvironment envInfo={envInfo} onRefresh={loadEnv} />
+
+              {/* System Diagnose Report */}
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                    <FileText size={16} className="text-violet-500" /> 系统诊断报告
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    {diagReport && (
+                      <button onClick={() => { navigator.clipboard.writeText(diagReport); setMsg('已复制到剪贴板'); setTimeout(() => setMsg(''), 2000); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                        <Archive size={12} /> 复制报告
+                      </button>
+                    )}
+                    <button onClick={async () => {
+                      setDiagLoading(true);
+                      try {
+                        const r = await api.systemDiagnose();
+                        if (r.ok) setDiagReport(r.report || '');
+                        else setMsg(r.error || '诊断失败');
+                      } catch (err) { setMsg('诊断失败: ' + String(err)); }
+                      finally { setDiagLoading(false); }
+                    }} disabled={diagLoading}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-all shadow-sm">
+                      {diagLoading ? <RefreshCw size={12} className="animate-spin" /> : <Terminal size={12} />}
+                      {diagLoading ? '生成中...' : '生成诊断报告'}
+                    </button>
+                  </div>
+                </div>
+                {diagReport && (
+                  <pre className="bg-gray-900 dark:bg-black text-green-400 text-[11px] font-mono p-4 rounded-lg overflow-auto max-h-96 whitespace-pre-wrap leading-relaxed border border-gray-700">
+                    {diagReport}
+                  </pre>
+                )}
+              </div>
             </>
           )}
         </div>

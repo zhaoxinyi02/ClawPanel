@@ -100,7 +100,7 @@ func runServer(stopCh chan struct{}) {
 	pluginMgr := plugin.NewManager(cfg)
 
 	// 初始化面板自检更新器
-	panelUpdater := update.NewUpdater("v5.0.3", cfg.DataDir)
+	panelUpdater := update.NewUpdater("v5.0.4", cfg.DataDir)
 
 	// 设置 Gin 模式
 	if cfg.Debug {
@@ -182,7 +182,7 @@ func runServer(stopCh chan struct{}) {
 			auth.GET("/system/update-status", handler.UpdateStatus(cfg))
 
 			// ClawPanel 面板自检更新
-			auth.GET("/panel/version", handler.GetPanelVersion("v5.0.3"))
+			auth.GET("/panel/version", handler.GetPanelVersion("v5.0.4"))
 			auth.GET("/panel/check-update", handler.CheckPanelUpdate(panelUpdater))
 			auth.POST("/panel/do-update", handler.DoPanelUpdate(panelUpdater))
 			auth.GET("/panel/update-progress", handler.PanelUpdateProgress(panelUpdater))
@@ -231,6 +231,10 @@ func runServer(stopCh chan struct{}) {
 			auth.GET("/napcat/reconnect-logs", handler.GetNapCatReconnectLogs(napcatMon))
 			auth.POST("/napcat/reconnect", handler.NapCatReconnect(napcatMon))
 			auth.PUT("/napcat/monitor-config", handler.NapCatMonitorConfig(napcatMon))
+			auth.POST("/napcat/diagnose", handler.DiagnoseNapCat(cfg))
+
+			// 系统诊断
+			auth.GET("/system/diagnose", handler.SystemDiagnose(cfg))
 
 			// WeChat
 			auth.GET("/wechat/status", handler.WechatStatus(cfg))
@@ -336,7 +340,7 @@ func runServer(stopCh chan struct{}) {
 
 	// 启动服务器
 	addr := fmt.Sprintf("0.0.0.0:%d", cfg.Port)
-	log.Printf("[ClawPanel] v5.0.3 启动中 → http://%s", addr)
+	log.Printf("[ClawPanel] v5.0.4 启动中 → http://%s", addr)
 	log.Printf("[ClawPanel] 数据目录: %s", cfg.DataDir)
 	log.Printf("[ClawPanel] OpenClaw 目录: %s", cfg.OpenClawDir)
 

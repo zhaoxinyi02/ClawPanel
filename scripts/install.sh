@@ -9,7 +9,7 @@
 
 set -e
 
-VERSION="5.0.3"
+VERSION="5.0.4"
 INSTALL_DIR="/opt/clawpanel"
 SERVICE_NAME="clawpanel"
 BINARY_NAME="clawpanel"
