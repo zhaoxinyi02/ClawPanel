@@ -188,18 +188,18 @@ func boolStatus(installed bool) string {
 }
 
 func detectOpenClawVersion(cfg *config.Config) string {
-	// 1. Try npm global package.json FIRST (works even when running as SYSTEM service)
-	npmRoot := detectCmd("npm", "root", "-g")
-	if npmRoot != "" {
-		pkgPath := filepath.Join(npmRoot, "openclaw", "package.json")
+	// 1. Try reading from cfg.OpenClawApp FIRST (most reliable for SYSTEM service)
+	if cfg.OpenClawApp != "" {
+		pkgPath := filepath.Join(cfg.OpenClawApp, "package.json")
 		if v := readVersionFromPackageJSON(pkgPath); v != "" {
 			return v
 		}
 	}
 	
-	// 2. Try reading from cfg.OpenClawApp if it points to npm global openclaw
-	if cfg.OpenClawApp != "" && strings.Contains(cfg.OpenClawApp, "node_modules") {
-		pkgPath := filepath.Join(cfg.OpenClawApp, "package.json")
+	// 2. Try npm global package.json (may fail when running as SYSTEM service)
+	npmRoot := detectCmd("npm", "root", "-g")
+	if npmRoot != "" {
+		pkgPath := filepath.Join(npmRoot, "openclaw", "package.json")
 		if v := readVersionFromPackageJSON(pkgPath); v != "" {
 			return v
 		}
