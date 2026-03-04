@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/zhaoxinyi02/ClawPanel/internal/config"
@@ -20,15 +21,6 @@ func GetOpenClawConfig(cfg *config.Config) gin.HandlerFunc {
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{"ok": true, "config": gin.H{}})
 			return
-		}
-		// 移除不应通过 WebUI 编辑的字段
-		delete(ocConfig, "tools")
-		delete(ocConfig, "session")
-		if cron, ok := ocConfig["cron"].(map[string]interface{}); ok {
-			delete(cron, "jobs")
-			if len(cron) == 0 {
-				delete(ocConfig, "cron")
-			}
 		}
 		c.JSON(http.StatusOK, gin.H{"ok": true, "config": ocConfig})
 	}
@@ -48,16 +40,6 @@ func SaveOpenClawConfig(cfg *config.Config) gin.HandlerFunc {
 		ocCfg := req.Config
 		if ocCfg == nil {
 			ocCfg = map[string]interface{}{}
-		}
-
-		// 移除不应保存的字段
-		delete(ocCfg, "tools")
-		delete(ocCfg, "session")
-		if cron, ok := ocCfg["cron"].(map[string]interface{}); ok {
-			delete(cron, "jobs")
-			if len(cron) == 0 {
-				delete(ocCfg, "cron")
-			}
 		}
 
 		// 自动为非 OpenAI 提供商注入 compat.supportsDeveloperRole=false
@@ -346,7 +328,17 @@ func injectCompatFlags(ocCfg map[string]interface{}) {
 
 // patchModelsJSON 修补运行时 models.json
 func patchModelsJSON(cfg *config.Config) {
-	modelsPath := filepath.Join(cfg.OpenClawDir, "agents", "main", "agent", "models.json")
+	agentIDs, _ := loadAgentIDs(cfg)
+	if isLegacySingleAgentMode() {
+		agentIDs = []string{"main"}
+	}
+	for _, agentID := range agentIDs {
+		patchModelsJSONForAgent(cfg, agentID)
+	}
+}
+
+func patchModelsJSONForAgent(cfg *config.Config, agentID string) {
+	modelsPath := filepath.Join(cfg.OpenClawDir, "agents", agentID, "agent", "models.json")
 	data, err := os.ReadFile(modelsPath)
 	if err != nil {
 		return
@@ -393,38 +385,13 @@ func patchModelsJSON(cfg *config.Config) {
 	if changed {
 		newData, err := json.MarshalIndent(modelsData, "", "  ")
 		if err == nil {
-			os.WriteFile(modelsPath, newData, 0644)
+			_ = os.WriteFile(modelsPath, newData, 0644)
 		}
 	}
 }
 
 func isNativeOpenAI(baseURL string) bool {
-	return len(baseURL) > 0 && (contains(baseURL, "api.openai.com"))
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsLower(s, substr))
-}
-
-func containsLower(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if toLower(s[i:i+len(substr)]) == toLower(substr) {
-			return true
-		}
-	}
-	return false
-}
-
-func toLower(s string) string {
-	b := make([]byte, len(s))
-	for i := range s {
-		if s[i] >= 'A' && s[i] <= 'Z' {
-			b[i] = s[i] + 32
-		} else {
-			b[i] = s[i]
-		}
-	}
-	return string(b)
+	return strings.Contains(strings.ToLower(baseURL), "api.openai.com")
 }
 
 // writeRestartSignal 写入网关重启信号文件

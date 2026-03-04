@@ -29,6 +29,18 @@ const FAKE_CRON_JOBS = [
   { id: 'cron_3', name: '周报生成', enabled: false, schedule: { kind: 'cron', expr: '0 18 * * 5' }, sessionTarget: 'main', wakeMode: 'now', payload: { kind: 'text', text: '生成本周工作总结', deliver: true, channel: 'qq' }, state: {}, createdAtMs: Date.now() - 2592000000 },
 ];
 
+const FAKE_AGENTS = {
+  default: 'main',
+  defaults: { model: { primary: 'deepseek/deepseek-chat' } },
+  list: [
+    { id: 'main', default: true, workspace: '/work/main', agentDir: 'agents/main', sessions: 12, lastActive: Date.now() - 60000 },
+    { id: 'work', default: false, workspace: '/work/work', agentDir: 'agents/work', sessions: 4, lastActive: Date.now() - 3600000 },
+  ],
+  bindings: [
+    { name: 'work-group', enabled: true, agent: 'work', match: { channel: 'qq', peer: 'group:123' } },
+  ],
+};
+
 const FAKE_CONFIG: any = {
   models: {
     providers: {
@@ -74,6 +86,13 @@ export const mockApi = {
   },
   getOpenClawConfig: async () => { await delay(200); return { ok: true, config: JSON.parse(JSON.stringify(FAKE_CONFIG)) }; },
   updateOpenClawConfig: async (_config: any) => { await delay(300); return { ok: true }; },
+  getAgentsConfig: async () => { await delay(150); return { ok: true, agents: JSON.parse(JSON.stringify(FAKE_AGENTS)) }; },
+  createAgent: async (_agent: any) => { await delay(200); return { ok: true }; },
+  updateAgent: async (_id: string, _agent: any) => { await delay(200); return { ok: true }; },
+  deleteAgent: async (_id: string, _preserveSessions = true) => { await delay(200); return { ok: true }; },
+  getBindings: async () => { await delay(120); return { ok: true, bindings: JSON.parse(JSON.stringify(FAKE_AGENTS.bindings)) }; },
+  updateBindings: async (_bindings: any[]) => { await delay(200); return { ok: true }; },
+  previewRoute: async (_meta: any) => { await delay(180); return { ok: true, result: { agent: 'work', matchedBy: 'bindings[0].match.peer', trace: ['hit bindings[0]'] } }; },
   getModels: async () => { await delay(100); return { ok: true, models: FAKE_CONFIG.models }; },
   updateModels: async (_data: any) => { await delay(200); return { ok: true }; },
   getChannels: async () => { await delay(100); return { ok: true, channels: FAKE_CONFIG.channels }; },

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -250,6 +251,29 @@ func SaveCronJobs(cfg *config.Config) gin.HandlerFunc {
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "参数错误"})
 			return
+		}
+
+		agentIDs, agentSet := loadAgentIDs(cfg)
+		if len(agentIDs) == 0 {
+			agentSet = map[string]struct{}{"main": {}}
+		}
+		for i := range req.Jobs {
+			job, ok := req.Jobs[i].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			target := strings.TrimSpace(toString(job["sessionTarget"]))
+			if target == "" {
+				target = "main"
+				job["sessionTarget"] = target
+			}
+			if _, ok := agentSet[target]; !ok {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"ok":    false,
+					"error": fmt.Sprintf("jobs[%d] sessionTarget 不存在: %s", i, target),
+				})
+				return
+			}
 		}
 
 		cronDir := filepath.Join(cfg.OpenClawDir, "cron")

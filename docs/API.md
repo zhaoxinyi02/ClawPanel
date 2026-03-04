@@ -1,4 +1,4 @@
-# ClawPanel API 接口文档 (v4.2.1)
+# ClawPanel API 接口文档 (v5.0.16)
 
 所有接口需要 JWT 认证（除 `/api/auth/login`），请在请求头中添加：
 ```
@@ -191,6 +191,73 @@ Authorization: Bearer <token>
 { "config": { ... } }
 ```
 
+> v5.0.16+：配置写入前会自动备份到 `OPENCLAW_DIR/backups/pre-edit-*.json`，并保留最近 10 份。
+
+### GET `/api/openclaw/agents`
+获取多智能体配置与统计信息（`defaults` / `default` / `list` / `bindings`）。
+
+### POST `/api/openclaw/agents`
+创建 Agent。
+
+**请求体：**
+```json
+{
+  "agent": {
+    "id": "work",
+    "workspace": "/data/work/work",
+    "agentDir": "agents/work",
+    "default": false,
+    "model": { "primary": "openai/gpt-4o" },
+    "tools": {},
+    "sandbox": {}
+  }
+}
+```
+
+### PUT `/api/openclaw/agents/:id`
+更新指定 Agent（`id` 不可修改）。
+
+### DELETE `/api/openclaw/agents/:id?preserveSessions=true`
+删除 Agent，可选保留该 Agent 的 sessions 文件。
+
+### GET `/api/openclaw/bindings`
+获取 bindings 路由规则（按顺序返回）。
+
+### PUT `/api/openclaw/bindings`
+全量替换 bindings（保序）。
+
+**请求体：**
+```json
+{
+  "bindings": [
+    {
+      "name": "work-group",
+      "enabled": true,
+      "agentId": "work",
+      "match": { "channel": "qq", "peer": "group:123" }
+    }
+  ]
+}
+```
+
+> 兼容性：后端同时兼容旧字段 `agent`，写入时会标准化为 `agentId`。
+
+### POST `/api/openclaw/route/preview`
+路由预览。根据 `meta` 返回命中 Agent、命中规则和 trace。
+
+**请求体：**
+```json
+{
+  "meta": {
+    "channel": "qq",
+    "peer": "group:123",
+    "guildId": "",
+    "teamId": "",
+    "accountId": "10001"
+  }
+}
+```
+
 ### GET `/api/openclaw/models`
 获取模型配置。
 
@@ -353,6 +420,19 @@ Authorization: Bearer <token>
 ```json
 { "jobs": [...] }
 ```
+
+> v5.0.16+：保存前会校验每个任务的 `sessionTarget` 必须存在于 Agent 列表。
+
+## 会话管理
+
+### GET `/api/sessions?agent=main|all|<agentId>`
+获取会话列表。`agent=all` 时聚合全部 Agent 会话，并返回 `agentId` 字段。
+
+### GET `/api/sessions/:id?agent=<agentId>`
+获取指定会话详情（必须指定有效 agent，`agent=all` 不支持）。
+
+### DELETE `/api/sessions/:id?agent=<agentId>`
+删除指定会话（必须指定有效 agent，`agent=all` 不支持）。
 
 ### GET `/api/system/docs`
 获取 OpenClaw 目录下的文档列表。

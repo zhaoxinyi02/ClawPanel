@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, ScrollText, Radio, Sparkles, Clock, Settings,
-  Moon, Sun, LogOut, Menu, FolderOpen, Cat, Languages, MessageSquare,
-  RotateCw, RefreshCw, Power, Puzzle,
+  Moon, Sun, LogOut, Menu, FolderOpen, Languages, MessageSquare,
+  RotateCw, RefreshCw, Power, Puzzle, Bot,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import AIAssistant from './AIAssistant';
@@ -14,6 +14,7 @@ interface Props { onLogout: () => void; napcatStatus: any; wechatStatus?: any; o
 
 export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawStatus, wsMessages }: Props) {
   const { t, locale, setLocale } = useI18n();
+  const enableAgents = import.meta.env.VITE_FEATURE_AGENTS !== 'false';
   const [tasks, setTasks] = useState<TaskInfo[]>([]);
   const [taskLogs, setTaskLogs] = useState<Record<string, string[]>>({});
 
@@ -47,6 +48,7 @@ export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawS
     { to: '/channels', icon: Radio, label: t.nav.channels },
     { to: '/skills', icon: Sparkles, label: t.nav.skills },
     { to: '/plugins', icon: Puzzle, label: locale === 'zh-CN' ? '插件中心' : 'Plugins' },
+    ...(enableAgents ? [{ to: '/agents', icon: Bot, label: locale === 'zh-CN' ? 'Agents' : 'Agents' }] : []),
     { to: '/cron', icon: Clock, label: t.nav.cronJobs },
     { to: '/sessions', icon: MessageSquare, label: '会话管理' },
     { to: '/workspace', icon: FolderOpen, label: t.nav.workspace },

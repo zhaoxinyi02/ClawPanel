@@ -3,6 +3,7 @@ package handler
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,17 +17,18 @@ import (
 
 // SessionInfo represents a session entry from sessions.json
 type SessionInfo struct {
-	Key             string `json:"key"`
-	SessionID       string `json:"sessionId"`
-	ChatType        string `json:"chatType"`
-	LastChannel     string `json:"lastChannel"`
-	LastTo          string `json:"lastTo"`
-	UpdatedAt       int64  `json:"updatedAt"`
-	OriginLabel     string `json:"originLabel"`
-	OriginProvider  string `json:"originProvider"`
-	OriginFrom      string `json:"originFrom"`
-	SessionFile     string `json:"sessionFile"`
-	MessageCount    int    `json:"messageCount"`
+	AgentID        string `json:"agentId,omitempty"`
+	Key            string `json:"key"`
+	SessionID      string `json:"sessionId"`
+	ChatType       string `json:"chatType"`
+	LastChannel    string `json:"lastChannel"`
+	LastTo         string `json:"lastTo"`
+	UpdatedAt      int64  `json:"updatedAt"`
+	OriginLabel    string `json:"originLabel"`
+	OriginProvider string `json:"originProvider"`
+	OriginFrom     string `json:"originFrom"`
+	SessionFile    string `json:"sessionFile"`
+	MessageCount   int    `json:"messageCount"`
 }
 
 // SessionMessage represents a message in a session JSONL file
@@ -52,56 +54,30 @@ type MsgContent struct {
 func GetSessions(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		agentID := c.DefaultQuery("agent", "main")
-		sessionsPath := filepath.Join(cfg.OpenClawDir, "agents", agentID, "sessions", "sessions.json")
+		if isLegacySingleAgentMode() {
+			agentID = "main"
+		}
 
-		data, err := os.ReadFile(sessionsPath)
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{"ok": true, "sessions": []interface{}{}})
+		if agentID == "all" {
+			agentIDs, _ := loadAgentIDs(cfg)
+			merged := make([]SessionInfo, 0, 128)
+			for _, id := range agentIDs {
+				items := loadSessionsByAgent(cfg, id)
+				merged = append(merged, items...)
+			}
+			sort.Slice(merged, func(i, j int) bool {
+				return merged[i].UpdatedAt > merged[j].UpdatedAt
+			})
+			c.JSON(http.StatusOK, gin.H{"ok": true, "sessions": merged})
 			return
 		}
 
-		var raw map[string]interface{}
-		if err := json.Unmarshal(data, &raw); err != nil {
-			c.JSON(http.StatusOK, gin.H{"ok": true, "sessions": []interface{}{}, "error": "解析失败"})
+		if err := validateAgentQuery(cfg, agentID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
 			return
 		}
 
-		var sessions []SessionInfo
-		for key, val := range raw {
-			v, ok := val.(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			si := SessionInfo{
-				Key:       key,
-				SessionID: getString(v, "sessionId"),
-				ChatType:  getString(v, "chatType"),
-				LastChannel: getString(v, "lastChannel"),
-				LastTo:    getString(v, "lastTo"),
-			}
-
-			if updatedAt, ok := v["updatedAt"].(float64); ok {
-				si.UpdatedAt = int64(updatedAt)
-			}
-
-			if origin, ok := v["origin"].(map[string]interface{}); ok {
-				si.OriginLabel = getString(origin, "label")
-				si.OriginProvider = getString(origin, "provider")
-				si.OriginFrom = getString(origin, "from")
-			}
-
-			si.SessionFile = getString(v, "sessionFile")
-
-			// Count messages in session file
-			if si.SessionFile != "" {
-				si.MessageCount = countSessionMessages(si.SessionFile)
-			}
-
-			sessions = append(sessions, si)
-		}
-
-		// Sort by updatedAt descending
+		sessions := loadSessionsByAgent(cfg, agentID)
 		sort.Slice(sessions, func(i, j int) bool {
 			return sessions[i].UpdatedAt > sessions[j].UpdatedAt
 		})
@@ -115,6 +91,17 @@ func GetSessionDetail(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("id")
 		agentID := c.DefaultQuery("agent", "main")
+		if isLegacySingleAgentMode() {
+			agentID = "main"
+		}
+		if agentID == "all" {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "agent=all 不支持会话详情查询"})
+			return
+		}
+		if err := validateAgentQuery(cfg, agentID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
 		limit := 100
 		if l := c.Query("limit"); l != "" {
 			if v, err := json.Number(l).Int64(); err == nil && v > 0 {
@@ -145,6 +132,17 @@ func DeleteSession(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("id")
 		agentID := c.DefaultQuery("agent", "main")
+		if isLegacySingleAgentMode() {
+			agentID = "main"
+		}
+		if agentID == "all" {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "agent=all 不支持删除会话"})
+			return
+		}
+		if err := validateAgentQuery(cfg, agentID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
 
 		sessionsPath := filepath.Join(cfg.OpenClawDir, "agents", agentID, "sessions", "sessions.json")
 
@@ -336,6 +334,61 @@ func countSessionMessages(filePath string) int {
 		}
 	}
 	return count
+}
+
+func loadSessionsByAgent(cfg *config.Config, agentID string) []SessionInfo {
+	sessionsPath := filepath.Join(cfg.OpenClawDir, "agents", agentID, "sessions", "sessions.json")
+	data, err := os.ReadFile(sessionsPath)
+	if err != nil {
+		return []SessionInfo{}
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return []SessionInfo{}
+	}
+
+	sessions := make([]SessionInfo, 0, len(raw))
+	for key, val := range raw {
+		v, ok := val.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		si := SessionInfo{
+			AgentID:     agentID,
+			Key:         key,
+			SessionID:   getString(v, "sessionId"),
+			ChatType:    getString(v, "chatType"),
+			LastChannel: getString(v, "lastChannel"),
+			LastTo:      getString(v, "lastTo"),
+		}
+		if updatedAt, ok := v["updatedAt"].(float64); ok {
+			si.UpdatedAt = int64(updatedAt)
+		}
+		if origin, ok := v["origin"].(map[string]interface{}); ok {
+			si.OriginLabel = getString(origin, "label")
+			si.OriginProvider = getString(origin, "provider")
+			si.OriginFrom = getString(origin, "from")
+		}
+		si.SessionFile = getString(v, "sessionFile")
+		if si.SessionFile != "" {
+			si.MessageCount = countSessionMessages(si.SessionFile)
+		}
+		sessions = append(sessions, si)
+	}
+	return sessions
+}
+
+func validateAgentQuery(cfg *config.Config, agentID string) error {
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return nil
+	}
+	_, agentSet := loadAgentIDs(cfg)
+	if _, ok := agentSet[agentID]; ok {
+		return nil
+	}
+	return fmt.Errorf("agent 不存在: %s", agentID)
 }
 
 func getString(m map[string]interface{}, key string) string {

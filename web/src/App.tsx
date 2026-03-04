@@ -14,8 +14,10 @@ import SystemConfig from './pages/SystemConfig';
 import Sessions from './pages/Sessions';
 import Workspace from './pages/Workspace';
 import Plugins from './pages/Plugins';
+import Agents from './pages/Agents';
 
 export default function App() {
+  const enableAgents = import.meta.env.VITE_FEATURE_AGENTS !== 'false';
   const auth = useAuth();
   const ws = useWebSocket();
 
@@ -38,6 +40,9 @@ export default function App() {
         <Route path="/channels" element={<OpenClawRequired configured={!!ws.openclawStatus?.configured}><Channels /></OpenClawRequired>} />
         <Route path="/skills" element={<OpenClawRequired configured={!!ws.openclawStatus?.configured}><Skills /></OpenClawRequired>} />
         <Route path="/plugins" element={<OpenClawRequired configured={!!ws.openclawStatus?.configured}><Plugins /></OpenClawRequired>} />
+        {enableAgents && (
+          <Route path="/agents" element={<OpenClawRequired configured={!!ws.openclawStatus?.configured}><Agents /></OpenClawRequired>} />
+        )}
         <Route path="/cron" element={<OpenClawRequired configured={!!ws.openclawStatus?.configured}><CronJobs /></OpenClawRequired>} />
         <Route path="/sessions" element={<OpenClawRequired configured={!!ws.openclawStatus?.configured}><Sessions /></OpenClawRequired>} />
         <Route path="/config" element={<SystemConfig />} />

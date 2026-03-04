@@ -7,27 +7,31 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
+	"time"
+
+	json5 "github.com/titanous/json5"
 )
 
 // Config 应用配置
 type Config struct {
-	Port        int    `json:"port"`
-	DataDir     string `json:"dataDir"`
-	OpenClawDir string `json:"openClawDir"`
-	OpenClawApp string `json:"openClawApp"`
+	Port         int    `json:"port"`
+	DataDir      string `json:"dataDir"`
+	OpenClawDir  string `json:"openClawDir"`
+	OpenClawApp  string `json:"openClawApp"`
 	OpenClawWork string `json:"openClawWork"`
-	JWTSecret   string `json:"jwtSecret"`
-	AdminToken  string `json:"adminToken"`
-	Debug       bool   `json:"debug"`
-	mu          sync.RWMutex
+	JWTSecret    string `json:"jwtSecret"`
+	AdminToken   string `json:"adminToken"`
+	Debug        bool   `json:"debug"`
+	mu           sync.RWMutex
 }
 
 const (
-	DefaultPort     = 19527
-	ConfigFileName  = "clawpanel.json"
-	DefaultJWTSecret = "clawpanel-secret-change-me"
+	DefaultPort       = 19527
+	ConfigFileName    = "clawpanel.json"
+	DefaultJWTSecret  = "clawpanel-secret-change-me"
 	DefaultAdminToken = "clawpanel"
 )
 
@@ -194,7 +198,7 @@ func getDefaultOpenClawDir() string {
 			return c
 		}
 	}
-	
+
 	// If no openclaw.json found, check if npm global openclaw exists
 	// This handles the case where OpenClaw is installed via npm but not yet configured
 	npmGlobalDir := getNpmGlobalOpenClawDir()
@@ -210,7 +214,7 @@ func getDefaultOpenClawDir() string {
 		// For non-Windows or if no user homes found, return home/.openclaw
 		return filepath.Join(home, ".openclaw")
 	}
-	
+
 	// Fallback: return the first candidate that exists as a directory
 	for _, c := range candidates {
 		if info, err := os.Stat(c); err == nil && info.IsDir() {
@@ -227,7 +231,7 @@ func getWindowsUserHomes() []string {
 		return nil
 	}
 	var homes []string
-	
+
 	// Scan C:\Users\* for real user profiles FIRST (prioritize real users)
 	usersDir := `C:\Users`
 	entries, err := os.ReadDir(usersDir)
@@ -244,7 +248,7 @@ func getWindowsUserHomes() []string {
 			}
 		}
 	}
-	
+
 	// Only add USERPROFILE env if it's not a SYSTEM path and not already in list
 	if up := os.Getenv("USERPROFILE"); up != "" {
 		if !strings.Contains(up, "system32") && !strings.Contains(up, "systemprofile") {
@@ -261,7 +265,7 @@ func getWindowsUserHomes() []string {
 			}
 		}
 	}
-	
+
 	return homes
 }
 
@@ -277,7 +281,10 @@ func (c *Config) ReadOpenClawJSON() (map[string]interface{}, error) {
 	}
 	var result map[string]interface{}
 	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, err
+		// 兼容 JSON5（注释、尾逗号等）
+		if err5 := json5.Unmarshal(data, &result); err5 != nil {
+			return nil, fmt.Errorf("解析 openclaw.json 失败(JSON/JSON5): %w", err)
+		}
 	}
 	return result, nil
 }
@@ -288,11 +295,88 @@ func (c *Config) WriteOpenClawJSON(data map[string]interface{}) error {
 	defer c.mu.Unlock()
 
 	cfgPath := filepath.Join(c.OpenClawDir, "openclaw.json")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0755); err != nil {
+		return err
+	}
+	if err := backupOpenClawBeforeWrite(cfgPath, filepath.Join(c.OpenClawDir, "backups")); err != nil {
+		return err
+	}
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(cfgPath, jsonData, 0644)
+}
+
+func backupOpenClawBeforeWrite(cfgPath, backupDir string) error {
+	info, err := os.Stat(cfgPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if info.IsDir() {
+		return fmt.Errorf("openclaw.json 路径是目录: %s", cfgPath)
+	}
+
+	raw, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		return err
+	}
+
+	ts := time.Now().Format("20060102T150405.000")
+	backupPath := filepath.Join(backupDir, fmt.Sprintf("pre-edit-%s.json", ts))
+	if err := os.WriteFile(backupPath, raw, 0644); err != nil {
+		return err
+	}
+	return cleanupOldPreEditBackups(backupDir, 10)
+}
+
+func cleanupOldPreEditBackups(backupDir string, keep int) error {
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		return nil
+	}
+
+	type backupFile struct {
+		name string
+		path string
+		mod  time.Time
+	}
+	var files []backupFile
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasPrefix(name, "pre-edit-") || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, backupFile{
+			name: name,
+			path: filepath.Join(backupDir, name),
+			mod:  info.ModTime(),
+		})
+	}
+	if len(files) <= keep {
+		return nil
+	}
+
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].mod.After(files[j].mod)
+	})
+	for i := keep; i < len(files); i++ {
+		_ = os.Remove(files[i].path)
+	}
+	return nil
 }
 
 // dirExists 检查目录是否存在

@@ -3,6 +3,7 @@ import { api } from '../lib/api';
 import { MessageSquare, Trash2, ChevronLeft, Clock, User, Bot, Loader2, RefreshCw, Search, Hash } from 'lucide-react';
 
 interface SessionInfo {
+  agentId?: string;
   key: string;
   sessionId: string;
   chatType: string;
@@ -24,6 +25,8 @@ interface ChatMessage {
 
 export default function Sessions() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [agentOptions, setAgentOptions] = useState<string[]>(['main']);
+  const [selectedAgent, setSelectedAgent] = useState('main');
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<SessionInfo | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -33,20 +36,40 @@ export default function Sessions() {
   const loadSessions = async () => {
     setLoading(true);
     try {
-      const r = await api.getSessions();
+      const r = await api.getSessions(selectedAgent);
       if (r.ok) setSessions(r.sessions || []);
     } catch {}
     finally { setLoading(false); }
   };
 
-  useEffect(() => { loadSessions(); }, []);
+  const loadAgents = async () => {
+    try {
+      const r = await api.getAgentsConfig();
+      if (r.ok) {
+        const list = (r.agents?.list || []).map((x: any) => x.id).filter(Boolean);
+        const uniq = Array.from(new Set(['main', ...list]));
+        setAgentOptions(uniq);
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    loadAgents();
+  }, []);
+
+  useEffect(() => {
+    loadSessions();
+    setSelected(null);
+    setMessages([]);
+  }, [selectedAgent]);
 
   const loadMessages = async (s: SessionInfo) => {
     setSelected(s);
     setMsgLoading(true);
     setMessages([]);
     try {
-      const r = await api.getSessionDetail(s.sessionId);
+      const targetAgent = s.agentId || selectedAgent;
+      const r = await api.getSessionDetail(s.sessionId, targetAgent);
       if (r.ok) setMessages(r.messages || []);
     } catch {}
     finally { setMsgLoading(false); }
@@ -55,10 +78,11 @@ export default function Sessions() {
   const handleDelete = async (s: SessionInfo) => {
     if (!confirm(`确定删除会话 "${s.originLabel || s.key}"？此操作不可恢复。`)) return;
     try {
-      const r = await api.deleteSession(s.sessionId);
+      const targetAgent = s.agentId || selectedAgent;
+      const r = await api.deleteSession(s.sessionId, targetAgent);
       if (r.ok) {
-        setSessions(prev => prev.filter(x => x.sessionId !== s.sessionId));
-        if (selected?.sessionId === s.sessionId) {
+        setSessions(prev => prev.filter(x => !(x.sessionId === s.sessionId && (x.agentId || selectedAgent) === targetAgent)));
+        if (selected?.sessionId === s.sessionId && (selected?.agentId || selectedAgent) === targetAgent) {
           setSelected(null);
           setMessages([]);
         }
@@ -101,9 +125,21 @@ export default function Sessions() {
           <h2 className="text-lg font-bold text-gray-900 dark:text-white">会话管理</h2>
           <p className="text-xs text-gray-500 mt-0.5">管理 OpenClaw 的对话会话，查看聊天记录</p>
         </div>
-        <button onClick={loadSessions} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-          <RefreshCw size={14} /> 刷新
-        </button>
+        <div className="flex items-center gap-2">
+          <select
+            value={selectedAgent}
+            onChange={e => setSelectedAgent(e.target.value)}
+            className="px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300"
+          >
+            <option value="all">all</option>
+            {agentOptions.map(id => (
+              <option key={id} value={id}>{id}</option>
+            ))}
+          </select>
+          <button onClick={loadSessions} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+            <RefreshCw size={14} /> 刷新
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -153,6 +189,11 @@ export default function Sessions() {
                       )}
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
+                      {s.agentId && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 dark:bg-violet-900/20 dark:text-violet-300 font-mono">
+                          {s.agentId}
+                        </span>
+                      )}
                       <span className="text-[10px] text-gray-400 flex items-center gap-1">
                         <Clock size={10} /> {formatTime(s.updatedAt)}
                       </span>

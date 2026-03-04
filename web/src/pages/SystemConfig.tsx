@@ -34,6 +34,46 @@ const KNOWN_PROVIDERS: { id: string; name: string; nameZh?: string; baseUrl: str
 ];
 
 type ConfigTab = 'models' | 'identity' | 'general' | 'version' | 'env' | 'health';
+type ConfigDiffItem = { path: string; before: string; after: string };
+
+function cloneConfig<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value ?? {}));
+}
+
+function stringifyShort(value: any): string {
+  if (value === undefined) return 'undefined';
+  if (value === null) return 'null';
+  if (typeof value === 'string') return value;
+  try {
+    const raw = JSON.stringify(value);
+    if (raw.length > 120) return raw.slice(0, 117) + '...';
+    return raw;
+  } catch {
+    return String(value);
+  }
+}
+
+function buildConfigDiff(before: any, after: any, prefix = ''): ConfigDiffItem[] {
+  const isObj = (v: any) => v && typeof v === 'object' && !Array.isArray(v);
+  if (Array.isArray(before) || Array.isArray(after)) {
+    const b = JSON.stringify(before ?? null);
+    const a = JSON.stringify(after ?? null);
+    if (b === a) return [];
+    return [{ path: prefix || '(root)', before: stringifyShort(before), after: stringifyShort(after) }];
+  }
+  if (!isObj(before) || !isObj(after)) {
+    if (JSON.stringify(before) === JSON.stringify(after)) return [];
+    return [{ path: prefix || '(root)', before: stringifyShort(before), after: stringifyShort(after) }];
+  }
+
+  const keys = Array.from(new Set([...Object.keys(before), ...Object.keys(after)])).sort();
+  let result: ConfigDiffItem[] = [];
+  keys.forEach((k) => {
+    const nextPath = prefix ? `${prefix}.${k}` : k;
+    result = result.concat(buildConfigDiff(before?.[k], after?.[k], nextPath));
+  });
+  return result;
+}
 
 export default function SystemConfig() {
   const { t: i18n } = useI18n();
@@ -69,12 +109,22 @@ export default function SystemConfig() {
   const [restarting, setRestarting] = useState(false);
   const [diagReport, setDiagReport] = useState('');
   const [diagLoading, setDiagLoading] = useState(false);
+  const [originConfig, setOriginConfig] = useState<any>({});
+  const [diffItems, setDiffItems] = useState<ConfigDiffItem[]>([]);
+  const [showDiffPreview, setShowDiffPreview] = useState(false);
 
   useEffect(() => { loadConfig(); }, []);
 
   const loadConfig = async () => {
     setLoading(true);
-    try { const r = await api.getOpenClawConfig(); if (r.ok) setConfig(r.config || {}); }
+    try {
+      const r = await api.getOpenClawConfig();
+      if (r.ok) {
+        const next = r.config || {};
+        setConfig(next);
+        setOriginConfig(cloneConfig(next));
+      }
+    }
     catch {} finally { setLoading(false); }
   };
 
@@ -169,11 +219,13 @@ export default function SystemConfig() {
     });
   };
 
-  const handleSave = async () => {
+  const doSave = async () => {
     setSaving(true); setMsg('');
     try {
       await api.updateOpenClawConfig(config);
       setMsg(i18n.sysConfig.saveSuccess);
+      setOriginConfig(cloneConfig(config));
+      setShowDiffPreview(false);
       // If on models tab, prompt to restart gateway
       if (tab === 'models') {
         setMsg('✅ 配置已保存！模型配置变更需要重启 OpenClaw 网关才能生效。');
@@ -182,6 +234,17 @@ export default function SystemConfig() {
       setTimeout(() => setMsg(''), 6000);
     } catch (err) { setMsg(i18n.sysConfig.saveFailed + ': ' + String(err)); }
     finally { setSaving(false); }
+  };
+
+  const handleSave = async () => {
+    const diff = buildConfigDiff(originConfig || {}, config || {});
+    if (diff.length === 0) {
+      setMsg('未检测到配置变更');
+      setTimeout(() => setMsg(''), 3000);
+      return;
+    }
+    setDiffItems(diff);
+    setShowDiffPreview(true);
   };
 
   const handleBackup = async () => {
@@ -714,7 +777,8 @@ export default function SystemConfig() {
           ]} getVal={getVal} setVal={setVal} />
           <SudoPasswordSection />
           <details className="card">
-            <summary className="px-4 py-3 text-xs font-medium text-gray-500 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50">查看原始配置 (JSON)</summary>
+            <summary className="px-4 py-3 text-xs font-medium text-gray-500 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50">高级 JSON 只读预览</summary>
+            <div className="px-4 pt-2 text-[11px] text-gray-400">以下内容为当前编辑态配置快照（只读），保存前会先弹出差异预览。</div>
             <pre className="px-4 pb-4 text-[11px] text-gray-600 dark:text-gray-400 overflow-x-auto max-h-96 overflow-y-auto font-mono">{JSON.stringify(config, null, 2)}</pre>
           </details>
         </div>
@@ -982,6 +1046,44 @@ export default function SystemConfig() {
               )}
             </>
           )}
+        </div>
+      )}
+
+      {showDiffPreview && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-4xl max-h-[88vh] overflow-hidden rounded-xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-xl flex flex-col">
+            <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white">保存前差异预览</h3>
+              <button onClick={() => setShowDiffPreview(false)} className="px-2 py-1 text-xs rounded bg-gray-100 dark:bg-gray-700">关闭</button>
+            </div>
+            <div className="p-4 overflow-y-auto space-y-2">
+              <div className="text-xs text-gray-500">共检测到 {diffItems.length} 项变更，确认后将写入 <code className="font-mono">openclaw.json</code>。</div>
+              {diffItems.slice(0, 200).map((item, idx) => (
+                <div key={idx} className="text-xs border border-gray-100 dark:border-gray-700 rounded-lg p-2">
+                  <div className="font-mono text-violet-600 dark:text-violet-300">{item.path}</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1">
+                    <div className="rounded bg-red-50 dark:bg-red-900/20 p-2">
+                      <div className="text-[10px] text-red-500 mb-1">Before</div>
+                      <div className="font-mono text-[11px] break-all text-red-700 dark:text-red-300">{item.before}</div>
+                    </div>
+                    <div className="rounded bg-emerald-50 dark:bg-emerald-900/20 p-2">
+                      <div className="text-[10px] text-emerald-500 mb-1">After</div>
+                      <div className="font-mono text-[11px] break-all text-emerald-700 dark:text-emerald-300">{item.after}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {diffItems.length > 200 && (
+                <div className="text-xs text-gray-400">仅展示前 200 项差异，剩余 {diffItems.length - 200} 项未展开。</div>
+              )}
+            </div>
+            <div className="px-5 py-4 border-t border-gray-100 dark:border-gray-700 flex items-center justify-end gap-2">
+              <button onClick={() => setShowDiffPreview(false)} className="px-4 py-2 text-xs rounded bg-gray-100 dark:bg-gray-700">取消</button>
+              <button onClick={doSave} disabled={saving} className="px-4 py-2 text-xs rounded bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50">
+                {saving ? '保存中...' : '确认保存'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

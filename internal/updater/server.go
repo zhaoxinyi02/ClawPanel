@@ -24,8 +24,8 @@ const (
 	TokenValidDuration = 5 * time.Minute
 	TokenSecret        = "clawpanel-updater-secret-2026"
 
-	GitHubReleaseAPI  = "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases/latest"
-	AccelUpdateJSON   = "http://39.102.53.188:16198/clawpanel/update.json"
+	GitHubReleaseAPI   = "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases/latest"
+	AccelUpdateJSON    = "http://39.102.53.188:16198/clawpanel/update.json"
 	GitHubDownloadBase = "https://github.com/zhaoxinyi02/ClawPanel/releases/download"
 	AccelDownloadBase  = "http://39.102.53.188:16198/clawpanel/releases"
 )
@@ -71,8 +71,8 @@ type Server struct {
 	panelBin       string // path to clawpanel binary
 	panelPort      int
 	mu             sync.Mutex
-	state          UpdateState   // ClawPanel update state
-	ocState        UpdateState   // OpenClaw update state
+	state          UpdateState // ClawPanel update state
+	ocState        UpdateState // OpenClaw update state
 	srv            *http.Server
 	running        bool
 }
@@ -717,7 +717,7 @@ func (s *Server) doOCUpdate() {
 				for _, line := range lines {
 					line = strings.TrimSpace(line)
 					if line != "" {
-						s.ocLog(line)
+						s.ocLog("%s", line)
 						outputMu.Lock()
 						allOutput = append(allOutput, line)
 						outputMu.Unlock()
@@ -1351,7 +1351,7 @@ func (s *Server) downloadFile(url, dest, source string) error {
 			}
 			downloaded += int64(n)
 			if totalSize > 0 {
-				pct := int(float64(downloaded) / float64(totalSize) * 35) + 25 // 25-60%
+				pct := int(float64(downloaded)/float64(totalSize)*35) + 25 // 25-60%
 				s.setProgress(pct)
 				s.setStep(3, "running", fmt.Sprintf("下载中 %.1f MB / %.1f MB (%d%%)",
 					float64(downloaded)/1048576, float64(totalSize)/1048576,
@@ -1374,12 +1374,12 @@ func (s *Server) recordUpdateLog() {
 	s.mu.Unlock()
 
 	logEntry := map[string]interface{}{
-		"time":       time.Now().Format(time.RFC3339),
-		"from":       state.FromVer,
-		"to":         state.ToVer,
-		"source":     state.Source,
-		"result":     state.Phase,
-		"started_at": state.StartedAt,
+		"time":        time.Now().Format(time.RFC3339),
+		"from":        state.FromVer,
+		"to":          state.ToVer,
+		"source":      state.Source,
+		"result":      state.Phase,
+		"started_at":  state.StartedAt,
 		"finished_at": state.FinishedAt,
 	}
 
