@@ -16,12 +16,12 @@ const CHANNEL_DEFS: ChannelDef[] = [
       { key: 'wsUrl', label: 'WebSocket 地址', type: 'text', placeholder: 'ws://127.0.0.1:3001' },
       { key: 'accessToken', label: 'Access Token', type: 'password' },
       { key: 'ownerQQ', label: '主人QQ号', type: 'number', help: '接收通知的QQ号' },
-      { key: 'wakeProbability', label: '唤醒概率 (%)', type: 'number', help: '群聊中Bot回复的概率，0-100' },
-      { key: 'minSendIntervalMs', label: '最小发送间隔 (ms)', type: 'number' },
-      { key: 'wakeTrigger', label: '唤醒触发词', type: 'text', help: '逗号分隔' },
+      { key: 'rateLimit.wakeProbability', label: '唤醒概率 (%)', type: 'number', help: '群聊中Bot回复的概率，0-100' },
+      { key: 'rateLimit.minIntervalSec', label: '最小发送间隔 (秒)', type: 'number' },
+      { key: 'rateLimit.wakeTrigger.keywords', label: '唤醒触发词', type: 'text', help: '逗号分隔关键词' },
       { key: 'pokeReplyText', label: '戳一戳回复内容', type: 'text', placeholder: '别戳我啦~', help: '自定义戳一戳回复文本' },
-      { key: 'autoApproveGroup', label: '自动同意加群', type: 'toggle' },
-      { key: 'autoApproveFriend', label: '自动同意好友', type: 'toggle' },
+      { key: 'autoApprove.group.enabled', label: '自动同意加群', type: 'toggle' },
+      { key: 'autoApprove.friend.enabled', label: '自动同意好友', type: 'toggle' },
       { key: 'notifications.antiRecall', label: '防撤回通知', type: 'toggle', help: '撤回消息时发送通知' },
       { key: 'notifications.memberChange', label: '成员变动通知', type: 'toggle', help: '群成员加入/退出通知' },
       { key: 'notifications.adminChange', label: '管理员变动通知', type: 'toggle', help: '管理员设置/取消通知' },
@@ -248,6 +248,24 @@ export default function Channels() {
   // Get the merged config for the current channel (supports nested keys like notifications.antiRecall)
   const getFieldValue = (channelId: string, key: string) => {
     const chConf = ocChannels[channelId] || {};
+    if (channelId === 'qq') {
+      if (key === 'rateLimit.wakeProbability') {
+        const nested = chConf?.rateLimit?.wakeProbability;
+        return nested ?? chConf?.wakeProbability;
+      }
+      if (key === 'rateLimit.minIntervalSec') {
+        const nested = chConf?.rateLimit?.minIntervalSec;
+        if (nested !== undefined && nested !== null) return nested;
+        const legacyMs = chConf?.minSendIntervalMs;
+        if (legacyMs !== undefined && legacyMs !== null) return Math.round(Number(legacyMs) / 1000);
+      }
+      if (key === 'rateLimit.wakeTrigger.keywords') {
+        const nested = chConf?.rateLimit?.wakeTrigger?.keywords;
+        if (Array.isArray(nested)) return nested.join(',');
+        const legacy = chConf?.wakeTrigger;
+        if (typeof legacy === 'string') return legacy;
+      }
+    }
     return key.split('.').reduce((o: any, k: string) => o?.[k], chConf);
   };
 
@@ -287,7 +305,13 @@ export default function Channels() {
         if (f.type === 'toggle') continue; // toggles handled separately via handleToggleField
         const val = formData.get(f.key);
         if (val !== null && val !== '') {
-          const parsed = f.type === 'number' ? Number(val) : val;
+          let parsed: any = f.type === 'number' ? Number(val) : val;
+          if (currentDef.id === 'qq' && f.key === 'rateLimit.wakeTrigger.keywords') {
+            parsed = String(val)
+              .split(',')
+              .map(v => v.trim())
+              .filter(Boolean);
+          }
           // Support nested keys like welcome.template
           const keys = f.key.split('.');
           if (keys.length === 1) {

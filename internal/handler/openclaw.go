@@ -2,9 +2,11 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/zhaoxinyi02/ClawPanel/internal/config"
@@ -172,6 +174,9 @@ func SaveChannel(cfg *config.Config) gin.HandlerFunc {
 		if channels == nil {
 			channels = map[string]interface{}{}
 		}
+		if id == "qq" {
+			body = normalizeQQChannelConfig(body)
+		}
 		channels[id] = body
 		ocConfig["channels"] = channels
 
@@ -181,6 +186,91 @@ func SaveChannel(cfg *config.Config) gin.HandlerFunc {
 		}
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	}
+}
+
+func normalizeQQChannelConfig(body map[string]interface{}) map[string]interface{} {
+	if body == nil {
+		return map[string]interface{}{}
+	}
+
+	rateLimit := ensureMap(body, "rateLimit")
+	wakeTrigger := ensureMap(rateLimit, "wakeTrigger")
+	autoApprove := ensureMap(body, "autoApprove")
+	friendApprove := ensureMap(autoApprove, "friend")
+	groupApprove := ensureMap(autoApprove, "group")
+
+	if v, ok := toFloat64(body["wakeProbability"]); ok {
+		rateLimit["wakeProbability"] = v
+		delete(body, "wakeProbability")
+	}
+
+	if v, ok := toFloat64(body["minSendIntervalMs"]); ok {
+		rateLimit["minIntervalSec"] = v / 1000
+		delete(body, "minSendIntervalMs")
+	}
+
+	if raw, exists := body["wakeTrigger"]; exists {
+		switch t := raw.(type) {
+		case string:
+			parts := strings.Split(t, ",")
+			keywords := make([]interface{}, 0, len(parts))
+			for _, part := range parts {
+				trimmed := strings.TrimSpace(part)
+				if trimmed != "" {
+					keywords = append(keywords, trimmed)
+				}
+			}
+			wakeTrigger["keywords"] = keywords
+		case []interface{}:
+			wakeTrigger["keywords"] = t
+		}
+		delete(body, "wakeTrigger")
+	}
+
+	if enabled, ok := body["autoApproveFriend"].(bool); ok {
+		friendApprove["enabled"] = enabled
+		delete(body, "autoApproveFriend")
+	}
+
+	if enabled, ok := body["autoApproveGroup"].(bool); ok {
+		groupApprove["enabled"] = enabled
+		delete(body, "autoApproveGroup")
+	}
+
+	return body
+}
+
+func ensureMap(parent map[string]interface{}, key string) map[string]interface{} {
+	if child, ok := parent[key].(map[string]interface{}); ok && child != nil {
+		return child
+	}
+	child := map[string]interface{}{}
+	parent[key] = child
+	return child
+}
+
+func toFloat64(v interface{}) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case int32:
+		return float64(n), true
+	case string:
+		if n == "" {
+			return 0, false
+		}
+		var parsed float64
+		if _, err := fmt.Sscanf(n, "%f", &parsed); err == nil {
+			return parsed, true
+		}
+	}
+	return 0, false
 }
 
 // SavePlugin 保存插件配置
