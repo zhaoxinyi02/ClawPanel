@@ -353,7 +353,7 @@ func (c *Config) WriteOpenClawJSON(data map[string]interface{}) error {
 		return err
 	}
 	// 兼容清洗：避免写入新版 OpenClaw 不接受的 legacy 字段。
-	NormalizeOpenClawConfig(data)
+	NormalizeOpenClawConfigForWrite(data, c.OpenClawDir)
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return err

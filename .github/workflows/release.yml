@@ -1,10 +1,13 @@
+# Release 工作流：在打 tag 或手动触发时构建前端、在 4 个指定系统上原生构建二进制、生成安装包并发布 Release。
 name: Release Build
 
 on:
   push:
+    # 只有 v* tag 才会自动走正式发布链路。
     tags:
       - 'v*'
   workflow_dispatch:
+    # 支持手动触发，并可显式指定版本号（不带前导 v）。
     inputs:
       version:
         description: 'Version without leading v (optional)'
@@ -15,13 +18,15 @@ permissions:
   contents: write
 
 concurrency:
+  # 发布流程不自动取消，避免并发发版时中途打断已开始的构建。
   group: release-${{ github.workflow }}-${{ github.ref_name || github.run_id }}
   cancel-in-progress: false
 
 jobs:
+  # 统一解析版本号，后续所有 job 直接复用这个输出。
   prepare:
     name: Prepare Version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
 
@@ -52,10 +57,11 @@ jobs:
           echo "Resolved version: ${VERSION}"
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
 
+  # 前端只构建一次，后续所有平台二进制都复用这份 dist artifact。
   build-frontend:
     name: Build Frontend
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -83,28 +89,30 @@ jobs:
           path: web/dist/
           retention-days: 3
 
+  # 在 4 个指定系统上原生构建发布二进制，保证产物与目标系统一一对应。
   build-binaries:
-    name: Build ${{ matrix.os }}-${{ matrix.arch }}
+    name: Build ${{ matrix.runner }}
     needs: [prepare, build-frontend]
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
 
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: linux
+          - runner: ubuntu-24.04
+            os: linux
             arch: amd64
             ext: ''
-          - os: linux
+          - runner: ubuntu-24.04-arm
+            os: linux
             arch: arm64
             ext: ''
-          - os: darwin
-            arch: amd64
-            ext: ''
-          - os: darwin
+          - runner: macos-15
+            os: darwin
             arch: arm64
             ext: ''
-          - os: windows
+          - runner: windows-2025
+            os: windows
             arch: amd64
             ext: '.exe'
 
@@ -124,34 +132,37 @@ jobs:
           name: frontend-dist
           path: web/dist
 
-      - name: Embed web dist
+      - name: Embed web dist (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
         run: |
           rm -rf cmd/clawpanel/frontend/dist
           mkdir -p cmd/clawpanel/frontend/dist
-          cp -r web/dist/* cmd/clawpanel/frontend/dist/
+          cp -R web/dist/. cmd/clawpanel/frontend/dist/
+
+      - name: Embed web dist (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force cmd/clawpanel/frontend/dist -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path cmd/clawpanel/frontend/dist | Out-Null
+          Copy-Item -Path "web/dist/*" -Destination "cmd/clawpanel/frontend/dist" -Recurse -Force
 
       - name: Build binary
-        env:
-          VERSION: ${{ needs.prepare.outputs.version }}
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          BINARY_NAME="clawpanel-v${VERSION}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
-          CGO_ENABLED=0 GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} \
-            go build -trimpath -ldflags "-s -w -X main.Version=${VERSION}" \
-            -o "dist/${BINARY_NAME}" ./cmd/clawpanel/
+        run: go build -trimpath -ldflags "-s -w -X main.Version=${{ needs.prepare.outputs.version }}" -o "clawpanel-v${{ needs.prepare.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}" ./cmd/clawpanel/
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.os }}-${{ matrix.arch }}
-          path: dist/clawpanel-v${{ needs.prepare.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
+          path: clawpanel-v${{ needs.prepare.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
           retention-days: 30
 
+  # Windows 安装包复用前面生成好的 Windows 可执行文件，并在 Windows runner 上原生构建。
   build-installer:
     name: Build Windows Installer
     needs: [prepare, build-binaries]
-    runs-on: ubuntu-latest
+    runs-on: windows-2025
 
     steps:
       - name: Checkout
@@ -160,7 +171,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: installer/go.mod
           cache: true
 
       - name: Download windows binary artifact
@@ -170,16 +181,16 @@ jobs:
           path: dist
 
       - name: Build installer
+        shell: pwsh
+        working-directory: installer
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          set -euo pipefail
-          mkdir -p installer/payload dist
-          cp "dist/clawpanel-v${VERSION}-windows-amd64.exe" "installer/payload/clawpanel.exe"
-          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
-            go build -trimpath -ldflags "-s -w" \
-            -o "dist/ClawPanel-Setup-v${VERSION}.exe" ./installer
-          rm -f installer/payload/clawpanel.exe
+          New-Item -ItemType Directory -Force -Path payload | Out-Null
+          New-Item -ItemType Directory -Force -Path ../dist | Out-Null
+          Copy-Item "../dist/clawpanel-v${env:VERSION}-windows-amd64.exe" "payload/clawpanel.exe" -Force
+          go build -trimpath -ldflags "-s -w -X main.VERSION=${env:VERSION}" -o "../dist/ClawPanel-Setup-v${env:VERSION}.exe" .
+          Remove-Item "payload/clawpanel.exe" -Force
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
@@ -188,10 +199,11 @@ jobs:
           path: dist/ClawPanel-Setup-v${{ needs.prepare.outputs.version }}.exe
           retention-days: 30
 
+  # 汇总所有二进制/安装包，并生成统一 checksums。
   bundle:
     name: Bundle Release Assets
     needs: [prepare, build-binaries, build-installer]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Download binary artifacts
@@ -220,11 +232,12 @@ jobs:
           path: release/*
           retention-days: 30
 
+  # 只有真正的 tag 发布才会把资产上传到 GitHub Release 页面。
   publish-release:
     name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [prepare, bundle]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Download bundled artifacts

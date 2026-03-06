@@ -1,6 +1,8 @@
+# CI 工作流：负责常规提交 / PR 的前端构建、跨平台 Go 校验、聚焦 handler 回归和 race+coverage 检查。
 name: CI
 
 on:
+  # 代码推送、Pull Request 和手动触发都执行同一套 CI。
   push:
   pull_request:
   workflow_dispatch:
@@ -9,135 +11,15 @@ permissions:
   contents: read
 
 concurrency:
+  # 同一 workflow + ref 只保留最新一条，避免重复消耗 CI 资源。
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  go-vet:
-    name: Go Vet
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Run go vet
-        run: go vet ./...
-
-  go-test:
-    name: Go Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Run Go tests
-        run: go test -count=1 -shuffle=on ./...
-
-  go-handler-tests:
-    name: Go Handler Unit Tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Run handler unit tests with coverage
-        run: |
-          set -o pipefail
-          go test -count=1 -shuffle=on -coverprofile=handler.coverage.out ./internal/handler/... | tee handler-test.log
-
-      - name: Summarize handler coverage
-        run: |
-          go tool cover -func=handler.coverage.out | tee handler-coverage.txt
-          TOTAL="$(awk '/^total:/ { print $3 }' handler-coverage.txt)"
-          {
-            echo "### Go Handler Coverage"
-            echo ""
-            echo "- Package set: \`./internal/handler/...\`"
-            echo "- Total coverage: \`${TOTAL}\`"
-          } >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Upload handler test artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: go-handler-tests
-          path: |
-            handler-test.log
-            handler.coverage.out
-            handler-coverage.txt
-          retention-days: 14
-          if-no-files-found: ignore
-
-  go-race-coverage:
-    name: Go Race + Coverage
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Run Go tests with race and coverage
-        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
-
-      - name: Summarize coverage
-        run: |
-          go tool cover -func=coverage.out | tee coverage.txt
-          TOTAL="$(awk '/^total:/ { print $3 }' coverage.txt)"
-          {
-            echo "### Go Coverage"
-            echo ""
-            echo "- Total coverage: \`${TOTAL}\`"
-          } >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: go-coverage
-          path: |
-            coverage.out
-            coverage.txt
-          retention-days: 14
-
+  # 前端只构建一次，其余 Go job 统一复用 dist artifact，避免 clean checkout 依赖仓库里的 .keep。
   web-build:
     name: Web Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
@@ -166,11 +48,130 @@ jobs:
           path: web/dist/
           retention-days: 7
 
-  backend-build:
-    name: Backend Build
-    needs: [go-vet, go-test, go-handler-tests, go-race-coverage, web-build]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  # 在 4 个指定 runner 上执行完整 Go 校验：嵌入前端、go vet、go test、原生构建并上传二进制产物。
+  platform-validate:
+    name: Test + Build (${{ matrix.runner }})
+    needs: [web-build]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            binary_name: clawpanel-linux-amd64
+            artifact_name: clawpanel-ci-ubuntu-24.04
+          - runner: ubuntu-24.04-arm
+            binary_name: clawpanel-linux-arm64
+            artifact_name: clawpanel-ci-ubuntu-24.04-arm
+          - runner: windows-2025
+            binary_name: clawpanel-windows-amd64.exe
+            artifact_name: clawpanel-ci-windows-2025
+          - runner: macos-15
+            binary_name: clawpanel-darwin-arm64
+            artifact_name: clawpanel-ci-macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download web dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: web/dist
+
+      - name: Embed web dist (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          rm -rf cmd/clawpanel/frontend/dist
+          mkdir -p cmd/clawpanel/frontend/dist
+          cp -R web/dist/. cmd/clawpanel/frontend/dist/
+
+      - name: Embed web dist (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force cmd/clawpanel/frontend/dist -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path cmd/clawpanel/frontend/dist | Out-Null
+          Copy-Item -Path "web/dist/*" -Destination "cmd/clawpanel/frontend/dist" -Recurse -Force
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run Go tests
+        run: go test -count=1 -shuffle=on ./...
+
+      - name: Build backend binary
+        run: go build -trimpath -ldflags "-s -w" -o "${{ matrix.binary_name }}" ./cmd/clawpanel/
+
+      - name: Upload backend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.binary_name }}
+          retention-days: 7
+
+  # 聚焦后端 handler 单测，专门为多智能体/路由/会话等高风险逻辑提供更直接的信号。
+  go-handler-tests:
+    name: Go Handler Unit Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run handler unit tests with coverage
+        # 这里保留在 Ubuntu-only job 中，因此可以安全使用 pipefail / tee。
+        run: |
+          set -o pipefail
+          go test -count=1 -shuffle=on -coverprofile=handler.coverage.out ./internal/handler/... | tee handler-test.log
+
+      - name: Summarize handler coverage
+        # 把关键 handler 覆盖率直接写到 Step Summary，方便在 Actions 页快速查看。
+        run: |
+          go tool cover -func=handler.coverage.out | tee handler-coverage.txt
+          TOTAL="$(awk '/^total:/ { print $3 }' handler-coverage.txt)"
+          {
+            echo "### Go Handler Coverage"
+            echo ""
+            echo "- Package set: \`./internal/handler/...\`"
+            echo "- Total coverage: \`${TOTAL}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload handler test artifacts
+        # 即使失败也尽量保留日志与覆盖率文件，降低排查成本。
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-handler-tests
+          path: |
+            handler-test.log
+            handler.coverage.out
+            handler-coverage.txt
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # 全量 race + coverage，继续作为 Linux 基线健康检查。
+  go-race-coverage:
+    name: Go Race + Coverage
+    needs: [web-build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -194,12 +195,24 @@ jobs:
           mkdir -p cmd/clawpanel/frontend/dist
           cp -r web/dist/* cmd/clawpanel/frontend/dist/
 
-      - name: Build backend binary
-        run: make backend-only
+      - name: Run Go tests with race and coverage
+        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
 
-      - name: Upload backend binary
+      - name: Summarize coverage
+        run: |
+          go tool cover -func=coverage.out | tee coverage.txt
+          TOTAL="$(awk '/^total:/ { print $3 }' coverage.txt)"
+          {
+            echo "### Go Coverage"
+            echo ""
+            echo "- Total coverage: \`${TOTAL}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
         with:
-          name: clawpanel-linux-amd64-ci
-          path: bin/clawpanel
-          retention-days: 7
+          name: go-coverage
+          path: |
+            coverage.out
+            coverage.txt
+          retention-days: 14

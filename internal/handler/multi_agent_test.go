@@ -243,6 +243,369 @@ func TestGetOpenClawAgentsKeepsExplicitMainNonImplicit(t *testing.T) {
 	}
 }
 
+func TestLoadDefaultAgentIDPrefersListDefaultFlag(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	writeJSON(t, filepath.Join(dir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "main",
+			"list": []interface{}{
+				map[string]interface{}{"id": "main"},
+				map[string]interface{}{"id": "work", "default": true},
+			},
+		},
+	})
+
+	if got := loadDefaultAgentID(cfg); got != "work" {
+		t.Fatalf("expected list default flag to win over legacy agents.default, got %q", got)
+	}
+}
+
+func TestGetOpenClawAgentsKeepsLegacyDefaultForDiskOnlyAgents(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	writeJSON(t, filepath.Join(dir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "work",
+		},
+	})
+	if err := os.MkdirAll(filepath.Join(dir, "agents", "work"), 0755); err != nil {
+		t.Fatalf("mkdir work agent dir: %v", err)
+	}
+
+	r := gin.New()
+	r.GET("/openclaw/agents", GetOpenClawAgents(cfg))
+	req := httptest.NewRequest(http.MethodGet, "/openclaw/agents", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		OK     bool `json:"ok"`
+		Agents struct {
+			Default           string                   `json:"default"`
+			DefaultConfigured bool                     `json:"defaultConfigured"`
+			List              []map[string]interface{} `json:"list"`
+		} `json:"agents"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.OK {
+		t.Fatalf("expected ok=true")
+	}
+	if resp.Agents.Default != "work" {
+		t.Fatalf("expected legacy default work to remain effective for disk-only agents, got %q", resp.Agents.Default)
+	}
+	if !resp.Agents.DefaultConfigured {
+		t.Fatalf("expected legacy default to still be reported as configured")
+	}
+	if len(resp.Agents.List) != 1 || resp.Agents.List[0]["id"] != "work" {
+		t.Fatalf("expected synthesized work agent, got %#v", resp.Agents.List)
+	}
+}
+
+func TestGetOpenClawAgentsKeepsLegacyDefaultWithoutAgentDir(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	writeJSON(t, filepath.Join(dir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "work",
+		},
+	})
+
+	r := gin.New()
+	r.GET("/openclaw/agents", GetOpenClawAgents(cfg))
+	req := httptest.NewRequest(http.MethodGet, "/openclaw/agents", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		OK     bool `json:"ok"`
+		Agents struct {
+			Default           string                   `json:"default"`
+			DefaultConfigured bool                     `json:"defaultConfigured"`
+			List              []map[string]interface{} `json:"list"`
+		} `json:"agents"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.OK {
+		t.Fatalf("expected ok=true")
+	}
+	if resp.Agents.Default != "work" {
+		t.Fatalf("expected legacy default work to remain effective without agent dir, got %q", resp.Agents.Default)
+	}
+	if !resp.Agents.DefaultConfigured {
+		t.Fatalf("expected legacy default to still be reported as configured")
+	}
+	if len(resp.Agents.List) != 1 || resp.Agents.List[0]["id"] != "work" {
+		t.Fatalf("expected synthesized implicit work agent, got %#v", resp.Agents.List)
+	}
+}
+
+func TestGetSessionsAllowsImplicitMainForDiskOnlyConfig(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	writeJSON(t, filepath.Join(dir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "main",
+		},
+	})
+	if err := os.MkdirAll(filepath.Join(dir, "agents", "work", "sessions"), 0755); err != nil {
+		t.Fatalf("mkdir work sessions dir: %v", err)
+	}
+	writeJSON(t, filepath.Join(dir, "agents", "work", "sessions", "sessions.json"), map[string]interface{}{})
+
+	r := gin.New()
+	r.GET("/sessions", GetSessions(cfg))
+	req := httptest.NewRequest(http.MethodGet, "/sessions", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected implicit main default to validate, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestLoadDefaultAgentIDFallsBackToExistingDiskAgentWhenNoDefaultConfigured(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	writeJSON(t, filepath.Join(dir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{},
+	})
+	if err := os.MkdirAll(filepath.Join(dir, "agents", "work"), 0755); err != nil {
+		t.Fatalf("mkdir work agent dir: %v", err)
+	}
+
+	if got := loadDefaultAgentID(cfg); got != "work" {
+		t.Fatalf("expected disk-backed agent work to win when no explicit default is configured, got %q", got)
+	}
+}
+
+func TestLoadDefaultAgentIDKeepsLegacyDefaultWithoutAgentDir(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	writeJSON(t, filepath.Join(dir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "work",
+		},
+	})
+
+	if got := loadDefaultAgentID(cfg); got != "work" {
+		t.Fatalf("expected configured legacy default work to be preserved without agent dir, got %q", got)
+	}
+}
+
+func TestCreateOpenClawAgentWritesExplicitDefaultFlagOnly(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	writeJSON(t, filepath.Join(dir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{
+			"list": []interface{}{
+				map[string]interface{}{"id": "main", "default": true},
+			},
+		},
+	})
+
+	r := gin.New()
+	r.POST("/openclaw/agents", CreateOpenClawAgent(cfg))
+	body := []byte(`{"id":"work","default":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/openclaw/agents", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	saved, err := cfg.ReadOpenClawJSON()
+	if err != nil {
+		t.Fatalf("read openclaw.json: %v", err)
+	}
+	agents, _ := saved["agents"].(map[string]interface{})
+	if agents == nil {
+		t.Fatalf("agents should exist")
+	}
+	if _, ok := agents["default"]; ok {
+		t.Fatalf("legacy agents.default should not be written anymore")
+	}
+	list, _ := agents["list"].([]interface{})
+	if len(list) != 2 {
+		t.Fatalf("expected 2 agents, got %d", len(list))
+	}
+	defaultByID := map[string]interface{}{}
+	for _, raw := range list {
+		item, _ := raw.(map[string]interface{})
+		id := strings.TrimSpace(getString(item, "id"))
+		defaultByID[id] = item["default"]
+	}
+	if got := defaultByID["work"]; got != true {
+		t.Fatalf("expected work to be the only explicit default, got %#v", defaultByID)
+	}
+	if got, ok := defaultByID["main"]; ok && got != nil {
+		t.Fatalf("expected non-default main agent to omit default flag, got %#v", defaultByID)
+	}
+}
+
+func TestCreateOpenClawAgentRejectsDuplicateExplicitAgentID(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	writeJSON(t, filepath.Join(dir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{
+			"list": []interface{}{
+				map[string]interface{}{"id": "main", "default": true},
+				map[string]interface{}{"id": "work"},
+			},
+		},
+	})
+
+	r := gin.New()
+	r.POST("/openclaw/agents", CreateOpenClawAgent(cfg))
+	body := []byte(`{"id":"work","name":"Duplicate"}`)
+	req := httptest.NewRequest(http.MethodPost, "/openclaw/agents", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected duplicate explicit create to be rejected, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateOpenClawAgentMaterializesDiskOnlyAgentsWithoutDroppingOthers(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	writeJSON(t, filepath.Join(dir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "main",
+		},
+	})
+	if err := os.MkdirAll(filepath.Join(dir, "agents", "work"), 0755); err != nil {
+		t.Fatalf("mkdir work agent dir: %v", err)
+	}
+
+	r := gin.New()
+	r.POST("/openclaw/agents", CreateOpenClawAgent(cfg))
+	body := []byte(`{"id":"work","name":"Work","default":false}`)
+	req := httptest.NewRequest(http.MethodPost, "/openclaw/agents", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	saved, err := cfg.ReadOpenClawJSON()
+	if err != nil {
+		t.Fatalf("read openclaw.json: %v", err)
+	}
+	agents, _ := saved["agents"].(map[string]interface{})
+	list, _ := agents["list"].([]interface{})
+	if len(list) != 2 {
+		t.Fatalf("expected implicit main and disk work to both remain materialized, got %#v", list)
+	}
+	var ids []string
+	var workItem map[string]interface{}
+	for _, raw := range list {
+		item, _ := raw.(map[string]interface{})
+		if item == nil {
+			continue
+		}
+		id := strings.TrimSpace(getString(item, "id"))
+		if id != "" {
+			ids = append(ids, id)
+		}
+		if id == "work" {
+			workItem = item
+		}
+	}
+	if strings.Join(ids, ",") != "main,work" {
+		t.Fatalf("expected materialized list to preserve main placeholder and work agent, got %v", ids)
+	}
+	if workItem == nil || getString(workItem, "name") != "Work" {
+		t.Fatalf("expected work agent fields to be merged into disk-discovered agent, got %#v", workItem)
+	}
+}
+
+func TestCreateOpenClawAgentPreservesLegacyDefaultWithoutAgentDir(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	writeJSON(t, filepath.Join(dir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "work",
+		},
+	})
+
+	r := gin.New()
+	r.POST("/openclaw/agents", CreateOpenClawAgent(cfg))
+	body := []byte(`{"id":"support","name":"Support"}`)
+	req := httptest.NewRequest(http.MethodPost, "/openclaw/agents", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	saved, err := cfg.ReadOpenClawJSON()
+	if err != nil {
+		t.Fatalf("read openclaw.json: %v", err)
+	}
+	agents, _ := saved["agents"].(map[string]interface{})
+	list, _ := agents["list"].([]interface{})
+	if len(list) != 2 {
+		t.Fatalf("expected legacy default work and new support agent to both be materialized, got %#v", list)
+	}
+	defaultByID := map[string]interface{}{}
+	for _, raw := range list {
+		item, _ := raw.(map[string]interface{})
+		id := strings.TrimSpace(getString(item, "id"))
+		defaultByID[id] = item["default"]
+	}
+	if got := defaultByID["work"]; got != true {
+		t.Fatalf("expected legacy default work to stay explicit after create, got %#v", defaultByID)
+	}
+}
+
 func TestGetOpenClawAgentsMarksSynthesizedDiskAgentsImplicit(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)

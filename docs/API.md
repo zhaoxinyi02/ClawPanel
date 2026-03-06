@@ -432,19 +432,19 @@ Authorization: Bearer <token>
 
 > v5.1.0+：保存前会校验每个任务的 `sessionTarget` 必须存在于 Agent 列表。
 >
-> v5.1.0+：当 `sessionTarget` 为空时，后端会自动回填为 `agents.default`（若默认值无效，则回退到已存在 Agent，最终兜底 `main`）。
+> v5.1.0+：当 `sessionTarget` 为空时，后端会自动回填为“当前有效默认 Agent”（优先 `agents.list[].default=true`，若未显式配置则回退到已存在 Agent，最终兜底 `main`）。
 
 ## 会话管理
 
 ### GET `/api/sessions?agent=<agentId>|all`
 获取会话列表。`agent=all` 时聚合全部 Agent 会话，并返回 `agentId` 字段。
-当 `agent` 省略时默认使用 `agents.default`（若默认值无效，则回退到已存在 Agent，最终兜底 `main`）。
+当 `agent` 省略时默认使用“当前有效默认 Agent”（优先 `agents.list[].default=true`，若未显式配置则回退到已存在 Agent，最终兜底 `main`）。
 
 ### GET `/api/sessions/:id?agent=<agentId>`
-获取指定会话详情（`agent=all` 不支持）。当 `agent` 省略时默认使用 `agents.default`（默认值无效时自动回退）。
+获取指定会话详情（`agent=all` 不支持）。当 `agent` 省略时默认使用“当前有效默认 Agent”（`agents.list[].default=true` 优先，未显式配置时自动回退）。
 
 ### DELETE `/api/sessions/:id?agent=<agentId>`
-删除指定会话（`agent=all` 不支持）。当 `agent` 省略时默认使用 `agents.default`（默认值无效时自动回退）。
+删除指定会话（`agent=all` 不支持）。当 `agent` 省略时默认使用“当前有效默认 Agent”（`agents.list[].default=true` 优先，未显式配置时自动回退）。
 
 ### GET `/api/system/docs`
 获取 OpenClaw 目录下的文档列表。

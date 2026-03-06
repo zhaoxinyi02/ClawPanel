@@ -79,6 +79,21 @@ func TestReadOpenClawJSONSupportsJSON5AndWriteCreatesBackup(t *testing.T) {
 	if _, ok := written["session"]; !ok {
 		t.Fatalf("written config should preserve session")
 	}
+	agents, _ := written["agents"].(map[string]interface{})
+	if agents == nil {
+		t.Fatalf("written config should preserve agents")
+	}
+	if _, ok := agents["default"]; ok {
+		t.Fatalf("legacy agents.default should be removed on write")
+	}
+	list, _ := agents["list"].([]interface{})
+	if len(list) != 1 {
+		t.Fatalf("expected one agent in list, got %d", len(list))
+	}
+	item, _ := list[0].(map[string]interface{})
+	if item == nil || item["default"] != true {
+		t.Fatalf("legacy default agent should migrate to agents.list[].default=true, got %#v", item)
+	}
 }
 
 func TestWriteOpenClawJSONNormalizesLegacyAgentModelFields(t *testing.T) {
@@ -126,6 +141,220 @@ func TestWriteOpenClawJSONNormalizesLegacyAgentModelFields(t *testing.T) {
 	}
 	if _, ok := model["maxTokens"]; ok {
 		t.Fatalf("agents.defaults.model.maxTokens should be removed")
+	}
+}
+
+func TestWriteOpenClawJSONNormalizesLegacyAgentSandboxModes(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &Config{OpenClawDir: dir}
+
+	input := map[string]interface{}{
+		"agents": map[string]interface{}{
+			"defaults": map[string]interface{}{
+				"sandbox": map[string]interface{}{
+					"mode": "danger-full-access",
+				},
+			},
+			"list": []interface{}{
+				map[string]interface{}{
+					"id": "main",
+					"sandbox": map[string]interface{}{
+						"mode": "workspace-write",
+					},
+				},
+				map[string]interface{}{
+					"id":      "work",
+					"default": true,
+					"sandbox": map[string]interface{}{
+						"mode": "read-only",
+					},
+				},
+			},
+		},
+	}
+
+	if err := cfg.WriteOpenClawJSON(input); err != nil {
+		t.Fatalf("WriteOpenClawJSON failed: %v", err)
+	}
+
+	saved, err := cfg.ReadOpenClawJSON()
+	if err != nil {
+		t.Fatalf("ReadOpenClawJSON failed: %v", err)
+	}
+
+	agents, _ := saved["agents"].(map[string]interface{})
+	defaults, _ := agents["defaults"].(map[string]interface{})
+	defaultSandbox, _ := defaults["sandbox"].(map[string]interface{})
+	if got, _ := defaultSandbox["mode"].(string); got != "off" {
+		t.Fatalf("expected defaults sandbox.mode to normalize to off, got %q", got)
+	}
+
+	list, _ := agents["list"].([]interface{})
+	if len(list) != 2 {
+		t.Fatalf("expected two agents, got %d", len(list))
+	}
+	mainItem, _ := list[0].(map[string]interface{})
+	mainSandbox, _ := mainItem["sandbox"].(map[string]interface{})
+	if got, _ := mainSandbox["mode"].(string); got != "all" {
+		t.Fatalf("expected workspace-write to normalize mode=all, got %q", got)
+	}
+	if got, _ := mainSandbox["workspaceAccess"].(string); got != "rw" {
+		t.Fatalf("expected workspace-write to normalize workspaceAccess=rw, got %q", got)
+	}
+	workItem, _ := list[1].(map[string]interface{})
+	workSandbox, _ := workItem["sandbox"].(map[string]interface{})
+	if got, _ := workSandbox["mode"].(string); got != "all" {
+		t.Fatalf("expected read-only to normalize mode=all, got %q", got)
+	}
+	if got, _ := workSandbox["workspaceAccess"].(string); got != "ro" {
+		t.Fatalf("expected read-only to normalize workspaceAccess=ro, got %q", got)
+	}
+}
+
+func TestWriteOpenClawJSONPrefersListDefaultOverLegacyKey(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &Config{OpenClawDir: dir}
+
+	input := map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "main",
+			"list": []interface{}{
+				map[string]interface{}{"id": "main"},
+				map[string]interface{}{"id": "work", "default": true},
+			},
+		},
+	}
+
+	if err := cfg.WriteOpenClawJSON(input); err != nil {
+		t.Fatalf("WriteOpenClawJSON failed: %v", err)
+	}
+
+	saved, err := cfg.ReadOpenClawJSON()
+	if err != nil {
+		t.Fatalf("ReadOpenClawJSON failed: %v", err)
+	}
+
+	agents, _ := saved["agents"].(map[string]interface{})
+	if _, ok := agents["default"]; ok {
+		t.Fatalf("legacy agents.default should be removed")
+	}
+	list, _ := agents["list"].([]interface{})
+	if len(list) != 2 {
+		t.Fatalf("expected two agents, got %d", len(list))
+	}
+	first, _ := list[0].(map[string]interface{})
+	second, _ := list[1].(map[string]interface{})
+	if _, ok := first["default"]; ok {
+		t.Fatalf("expected main to stay non-default when list default already exists, got %#v", first)
+	}
+	if got := second["default"]; got != true {
+		t.Fatalf("expected work to remain explicit default, got %#v", second)
+	}
+}
+
+func TestWriteOpenClawJSONMaterializesDiskOnlyLegacyDefault(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &Config{OpenClawDir: dir}
+	if err := os.MkdirAll(filepath.Join(dir, "agents", "main"), 0755); err != nil {
+		t.Fatalf("mkdir main agent dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "agents", "work"), 0755); err != nil {
+		t.Fatalf("mkdir work agent dir: %v", err)
+	}
+
+	input := map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "work",
+		},
+	}
+
+	if err := cfg.WriteOpenClawJSON(input); err != nil {
+		t.Fatalf("WriteOpenClawJSON failed: %v", err)
+	}
+
+	saved, err := cfg.ReadOpenClawJSON()
+	if err != nil {
+		t.Fatalf("ReadOpenClawJSON failed: %v", err)
+	}
+
+	agents, _ := saved["agents"].(map[string]interface{})
+	if _, ok := agents["default"]; ok {
+		t.Fatalf("legacy agents.default should be removed")
+	}
+	list, _ := agents["list"].([]interface{})
+	if len(list) != 2 {
+		t.Fatalf("expected synthesized list for disk agents, got %#v", list)
+	}
+	var workItem map[string]interface{}
+	for _, raw := range list {
+		item, _ := raw.(map[string]interface{})
+		if item != nil && item["id"] == "work" {
+			workItem = item
+			break
+		}
+	}
+	if workItem == nil || workItem["default"] != true {
+		t.Fatalf("expected disk-backed work agent to become explicit default, got %#v", list)
+	}
+}
+
+func TestWriteOpenClawJSONMaterializesLegacyMainWithoutDiskDir(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &Config{OpenClawDir: dir}
+
+	input := map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "main",
+		},
+	}
+
+	if err := cfg.WriteOpenClawJSON(input); err != nil {
+		t.Fatalf("WriteOpenClawJSON failed: %v", err)
+	}
+
+	saved, err := cfg.ReadOpenClawJSON()
+	if err != nil {
+		t.Fatalf("ReadOpenClawJSON failed: %v", err)
+	}
+
+	agents, _ := saved["agents"].(map[string]interface{})
+	if _, ok := agents["default"]; ok {
+		t.Fatalf("legacy agents.default should be removed")
+	}
+	list, _ := agents["list"].([]interface{})
+	if len(list) != 1 {
+		t.Fatalf("expected synthesized explicit main agent, got %#v", list)
+	}
+	item, _ := list[0].(map[string]interface{})
+	if item == nil || item["id"] != "main" || item["default"] != true {
+		t.Fatalf("expected main to be materialized as explicit default, got %#v", item)
+	}
+}
+
+func TestNormalizeOpenClawConfigKeepsDiskOnlyLegacyDefaultWithoutStateDir(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "work",
+		},
+	}
+
+	if changed := NormalizeOpenClawConfig(input); changed {
+		t.Fatalf("NormalizeOpenClawConfig should not drop legacy default when no list/state dir is available")
+	}
+
+	agents, _ := input["agents"].(map[string]interface{})
+	if got, _ := agents["default"].(string); got != "work" {
+		t.Fatalf("expected legacy default to remain for runtime compatibility, got %q", got)
 	}
 }
 

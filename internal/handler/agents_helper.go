@@ -24,7 +24,16 @@ func loadAgentIDs(cfg *config.Config) ([]string, map[string]struct{}) {
 	if len(list) > 0 {
 		return collectAgentIDsFromList(list)
 	}
-	return collectAgentIDsFromConfigAndDisk(cfg, ocConfig)
+	ids, agentSet := collectAgentIDsFromConfigAndDisk(cfg, ocConfig)
+	defaultID := strings.TrimSpace(loadDefaultAgentID(cfg))
+	if defaultID != "" {
+		if _, ok := agentSet[defaultID]; !ok {
+			agentSet[defaultID] = struct{}{}
+			ids = append(ids, defaultID)
+			sortAgentIDs(ids)
+		}
+	}
+	return ids, agentSet
 }
 
 func loadDefaultAgentID(cfg *config.Config) string {
@@ -34,6 +43,7 @@ func loadDefaultAgentID(cfg *config.Config) string {
 	ocConfig, _ := cfg.ReadOpenClawJSON()
 	list := parseAgentsListFromConfig(ocConfig)
 	defaultID := strings.TrimSpace(getDefaultAgentID(ocConfig, list))
+	defaultConfigured := hasExplicitDefaultAgent(ocConfig, list)
 	if len(list) > 0 {
 		if defaultID != "" {
 			for _, item := range list {
@@ -52,6 +62,9 @@ func loadDefaultAgentID(cfg *config.Config) string {
 
 	agentIDs, agentSet := collectAgentIDsFromConfigAndDisk(cfg, ocConfig)
 	if defaultID != "" {
+		if defaultConfigured {
+			return defaultID
+		}
 		if _, ok := agentSet[defaultID]; ok {
 			return defaultID
 		}
@@ -63,6 +76,25 @@ func loadDefaultAgentID(cfg *config.Config) string {
 		}
 	}
 	return "main"
+}
+
+func hasExplicitDefaultAgent(ocConfig map[string]interface{}, list []map[string]interface{}) bool {
+	if configuredDefaultAgentIDFromList(list) != "" {
+		return true
+	}
+	legacyDefault := legacyConfiguredDefaultAgentID(ocConfig)
+	if legacyDefault == "" {
+		return false
+	}
+	if len(list) == 0 {
+		return true
+	}
+	for _, item := range list {
+		if strings.TrimSpace(toString(item["id"])) == legacyDefault {
+			return true
+		}
+	}
+	return false
 }
 
 func collectAgentIDsFromList(list []map[string]interface{}) ([]string, map[string]struct{}) {
@@ -105,7 +137,7 @@ func collectAgentIDsFromConfigAndDisk(cfg *config.Config, ocConfig map[string]in
 		}
 	}
 
-	if len(agentSet) == 0 {
+	if len(agentSet) == 0 && legacyConfiguredDefaultAgentID(ocConfig) == "" {
 		agentSet["main"] = struct{}{}
 	}
 
@@ -155,13 +187,30 @@ func getDefaultAgentID(ocConfig map[string]interface{}, list []map[string]interf
 	if isLegacySingleAgentMode() {
 		return "main"
 	}
-	if ocConfig != nil {
-		if agents, ok := ocConfig["agents"].(map[string]interface{}); ok {
-			if v, ok := agents["default"].(string); ok && strings.TrimSpace(v) != "" {
-				return strings.TrimSpace(v)
+	if id := configuredDefaultAgentIDFromList(list); id != "" {
+		return id
+	}
+	if legacyDefault := legacyConfiguredDefaultAgentID(ocConfig); legacyDefault != "" {
+		if len(list) == 0 {
+			return legacyDefault
+		}
+		for _, item := range list {
+			if strings.TrimSpace(toString(item["id"])) == legacyDefault {
+				return legacyDefault
 			}
 		}
 	}
+	if len(list) > 0 {
+		for _, item := range list {
+			if id := strings.TrimSpace(toString(item["id"])); id != "" {
+				return id
+			}
+		}
+	}
+	return "main"
+}
+
+func configuredDefaultAgentIDFromList(list []map[string]interface{}) string {
 	for _, item := range list {
 		if asBool(item["default"]) {
 			if id := strings.TrimSpace(toString(item["id"])); id != "" {
@@ -169,7 +218,18 @@ func getDefaultAgentID(ocConfig map[string]interface{}, list []map[string]interf
 			}
 		}
 	}
-	return "main"
+	return ""
+}
+
+func legacyConfiguredDefaultAgentID(ocConfig map[string]interface{}) string {
+	if ocConfig != nil {
+		if agents, ok := ocConfig["agents"].(map[string]interface{}); ok {
+			if v, ok := agents["default"].(string); ok && strings.TrimSpace(v) != "" {
+				return strings.TrimSpace(v)
+			}
+		}
+	}
+	return ""
 }
 
 func asBool(v interface{}) bool {

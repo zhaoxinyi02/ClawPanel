@@ -15,10 +15,11 @@ import (
 var payload embed.FS
 
 const (
-	VERSION      = "5.0.0"
 	SERVICE_NAME = "ClawPanel"
 	PORT         = "19527"
 )
+
+var VERSION = "5.0.0"
 
 func main() {
 	printBanner()

@@ -102,9 +102,9 @@ const AGENT_FORM_SECTIONS: { id: AgentFormSection; title: string; description: s
 ];
 const SANDBOX_STARTERS = [
   { key: 'inherit', label: '继承默认', help: '不写 sandbox 覆盖，沿用全局或默认 Agent 配置。', text: '' },
-  { key: 'read-only', label: '只读沙箱', help: '起步示例：限制为只读模式。请按官方字段继续微调。', text: '{\n  "mode": "read-only"\n}' },
-  { key: 'workspace-write', label: '工作区可写', help: '起步示例：允许在 workspace 内写入。', text: '{\n  "mode": "workspace-write"\n}' },
-  { key: 'danger-full-access', label: '高权限', help: '起步示例：放宽限制，适合受信环境。', text: '{\n  "mode": "danger-full-access"\n}' },
+  { key: 'read-only', label: '只读沙箱', help: '官方语义：始终启用 sandbox，并把 agent workspace 以只读方式挂载进去。', text: '{\n  "mode": "all",\n  "workspaceAccess": "ro"\n}' },
+  { key: 'workspace-write', label: '工作区可写', help: '官方语义：始终启用 sandbox，并允许在 workspace 内读写。', text: '{\n  "mode": "all",\n  "workspaceAccess": "rw"\n}' },
+  { key: 'danger-full-access', label: '高权限', help: '官方语义：关闭 sandbox，让工具直接在宿主机环境运行。', text: '{\n  "mode": "off"\n}' },
 ] as const;
 
 const DEFAULT_AGENT_FORM: AgentFormState = {
@@ -457,6 +457,21 @@ function extractModelDraft(raw: any): { primary: string; fallbacks: string } {
 function detectSandboxStarter(raw: string): string {
   const text = raw.trim();
   if (!text) return 'inherit';
+  try {
+    const parsed = JSON.parse(text);
+    if (isPlainObject(parsed)) {
+      const mode = String(parsed.mode || '').trim();
+      const workspaceAccess = String(parsed.workspaceAccess || '').trim();
+      if (mode === 'read-only') return 'read-only';
+      if (mode === 'workspace-write') return 'workspace-write';
+      if (mode === 'danger-full-access') return 'danger-full-access';
+      if (mode === 'all' && workspaceAccess === 'ro') return 'read-only';
+      if (mode === 'all' && workspaceAccess === 'rw') return 'workspace-write';
+      if (mode === 'off') return 'danger-full-access';
+    }
+  } catch {
+    // fall through to exact-text detection for freeform JSON
+  }
   for (const starter of SANDBOX_STARTERS) {
     if (!starter.text) continue;
     if (starter.text.trim() === text) return starter.key;

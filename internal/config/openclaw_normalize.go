@@ -1,6 +1,9 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -12,7 +15,20 @@ import (
 //  1. 旧版面板曾写入 agents.defaults.model.contextTokens / maxTokens，
 //     但新版 OpenClaw 仅允许 model 为 string 或 {primary,fallbacks}。
 //  2. 将 legacy contextTokens 迁移到 agents.defaults.contextTokens。
+//  3. 旧版面板曾把默认 Agent 写成 agents.default，需要迁移为 agents.list[].default。
+//  4. 旧版 Agents 表单曾写入 Codex 风格 sandbox.mode（workspace-write/read-only/
+//     danger-full-access），需要迁移为当前 OpenClaw sandbox schema。
 func NormalizeOpenClawConfig(cfg map[string]interface{}) bool {
+	return normalizeOpenClawConfig(cfg, "")
+}
+
+// NormalizeOpenClawConfigForWrite 与 NormalizeOpenClawConfig 类似，但允许结合本地
+// OpenClaw 状态目录补全 disk-only agents 的默认 Agent 迁移。
+func NormalizeOpenClawConfigForWrite(cfg map[string]interface{}, openClawDir string) bool {
+	return normalizeOpenClawConfig(cfg, openClawDir)
+}
+
+func normalizeOpenClawConfig(cfg map[string]interface{}, openClawDir string) bool {
 	if cfg == nil {
 		return false
 	}
@@ -20,7 +36,17 @@ func NormalizeOpenClawConfig(cfg map[string]interface{}) bool {
 
 	agents, ok := cfg["agents"].(map[string]interface{})
 	if ok && agents != nil {
+		if normalizeLegacyAgentDefault(agents, openClawDir) {
+			changed = true
+		}
+
 		if defaults, ok := agents["defaults"].(map[string]interface{}); ok && defaults != nil {
+			if sandbox, ok := defaults["sandbox"].(map[string]interface{}); ok && sandbox != nil {
+				if normalizeSandboxConfig(sandbox) {
+					changed = true
+				}
+			}
+
 			modelRaw, exists := defaults["model"]
 			if exists {
 				switch m := modelRaw.(type) {
@@ -99,6 +125,20 @@ func NormalizeOpenClawConfig(cfg map[string]interface{}) bool {
 						changed = true
 					default:
 						delete(compaction, "mode")
+						changed = true
+					}
+				}
+			}
+		}
+
+		if rawList, ok := agents["list"].([]interface{}); ok {
+			for _, raw := range rawList {
+				item, ok := raw.(map[string]interface{})
+				if !ok || item == nil {
+					continue
+				}
+				if sandbox, ok := item["sandbox"].(map[string]interface{}); ok && sandbox != nil {
+					if normalizeSandboxConfig(sandbox) {
 						changed = true
 					}
 				}
@@ -192,4 +232,160 @@ func toPositiveInt(v interface{}) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+func normalizeLegacyAgentDefault(agents map[string]interface{}, openClawDir string) bool {
+	if agents == nil {
+		return false
+	}
+	rawList, _ := agents["list"].([]interface{})
+	legacyDefault := strings.TrimSpace(stringValue(agents["default"]))
+	changed := false
+	if len(rawList) == 0 && legacyDefault != "" && openClawDir != "" {
+		if synthesized := synthesizeAgentListFromDisk(openClawDir, legacyDefault); len(synthesized) > 0 {
+			agents["list"] = synthesized
+			rawList = synthesized
+			changed = true
+		}
+	}
+	if len(rawList) == 0 {
+		return changed
+	}
+	if _, ok := agents["default"]; ok {
+		delete(agents, "default")
+		changed = true
+	}
+
+	desiredDefault := ""
+	for _, raw := range rawList {
+		item, ok := raw.(map[string]interface{})
+		if !ok || item == nil {
+			continue
+		}
+		if !boolValue(item["default"]) {
+			continue
+		}
+		if id := strings.TrimSpace(stringValue(item["id"])); id != "" {
+			desiredDefault = id
+			break
+		}
+	}
+	if desiredDefault == "" && legacyDefault != "" {
+		for _, raw := range rawList {
+			item, ok := raw.(map[string]interface{})
+			if !ok || item == nil {
+				continue
+			}
+			if strings.TrimSpace(stringValue(item["id"])) == legacyDefault {
+				desiredDefault = legacyDefault
+				break
+			}
+		}
+	}
+
+	for _, raw := range rawList {
+		item, ok := raw.(map[string]interface{})
+		if !ok || item == nil {
+			continue
+		}
+		id := strings.TrimSpace(stringValue(item["id"]))
+		if desiredDefault != "" && id == desiredDefault {
+			if !boolValue(item["default"]) {
+				item["default"] = true
+				changed = true
+			}
+			continue
+		}
+		if _, ok := item["default"]; ok {
+			delete(item, "default")
+			changed = true
+		}
+	}
+	return changed
+}
+
+func synthesizeAgentListFromDisk(openClawDir, legacyDefault string) []interface{} {
+	agentsDir := filepath.Join(openClawDir, "agents")
+	idSet := map[string]struct{}{}
+	if legacyDefault != "" {
+		idSet[legacyDefault] = struct{}{}
+	}
+	if entries, err := os.ReadDir(agentsDir); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			id := strings.TrimSpace(entry.Name())
+			if id == "" {
+				continue
+			}
+			idSet[id] = struct{}{}
+		}
+	}
+	if len(idSet) == 0 {
+		return nil
+	}
+
+	ids := make([]string, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+
+	sort.Slice(ids, func(i, j int) bool {
+		if ids[i] == "main" {
+			return true
+		}
+		if ids[j] == "main" {
+			return false
+		}
+		return ids[i] < ids[j]
+	})
+
+	list := make([]interface{}, 0, len(ids))
+	for _, id := range ids {
+		item := map[string]interface{}{"id": id}
+		if id == legacyDefault {
+			item["default"] = true
+		}
+		list = append(list, item)
+	}
+	return list
+}
+
+func normalizeSandboxConfig(sandbox map[string]interface{}) bool {
+	if sandbox == nil {
+		return false
+	}
+	mode := strings.TrimSpace(stringValue(sandbox["mode"]))
+	switch mode {
+	case "read-only":
+		sandbox["mode"] = "all"
+		if strings.TrimSpace(stringValue(sandbox["workspaceAccess"])) != "ro" {
+			sandbox["workspaceAccess"] = "ro"
+		}
+		return true
+	case "workspace-write":
+		sandbox["mode"] = "all"
+		if strings.TrimSpace(stringValue(sandbox["workspaceAccess"])) != "rw" {
+			sandbox["workspaceAccess"] = "rw"
+		}
+		return true
+	case "danger-full-access":
+		sandbox["mode"] = "off"
+		return true
+	default:
+		return false
+	}
+}
+
+func stringValue(v interface{}) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+func boolValue(v interface{}) bool {
+	b, _ := v.(bool)
+	return b
 }

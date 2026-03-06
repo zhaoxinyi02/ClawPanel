@@ -41,11 +41,8 @@ func GetOpenClawAgents(cfg *config.Config) gin.HandlerFunc {
 		agentsCfg := ensureAgentsConfig(ocConfig)
 		list := parseAgentsListFromConfig(ocConfig)
 		hasExplicitList := len(list) > 0
-		defaultConfigured := strings.TrimSpace(toString(agentsCfg["default"])) != ""
-		defaultID := getDefaultAgentID(ocConfig, list)
-		if hasExplicitList {
-			defaultID = loadDefaultAgentID(cfg)
-		}
+		defaultConfigured := hasExplicitDefaultAgent(ocConfig, list)
+		defaultID := loadDefaultAgentID(cfg)
 		if defaultID == "" {
 			defaultID = "main"
 		}
@@ -125,21 +122,50 @@ func CreateOpenClawAgent(cfg *config.Config) gin.HandlerFunc {
 			ocConfig = map[string]interface{}{}
 		}
 		agentsCfg := ensureAgentsConfig(ocConfig)
-		list := parseAgentsListFromConfig(ocConfig)
-
-		workspace := strings.TrimSpace(toString(payload["workspace"]))
-		agentDir := strings.TrimSpace(toString(payload["agentDir"]))
-		if err := validateAgentUniqueness(list, id, workspace, agentDir, ""); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
-			return
-		}
+		explicitList := parseAgentsListFromConfig(ocConfig)
+		list := materializeAgentList(cfg, ocConfig)
 
 		newItem := deepCloneMap(payload)
 		newItem["id"] = id
-		list = append(list, newItem)
+		existingIdx := -1
+		for i, item := range list {
+			if strings.TrimSpace(toString(item["id"])) == id {
+				existingIdx = i
+				break
+			}
+		}
+		if existingIdx >= 0 {
+			if len(explicitList) > 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": fmt.Sprintf("agent id 已存在: %s", id)})
+				return
+			}
+			merged := deepCloneMap(list[existingIdx])
+			for k, v := range newItem {
+				if k == "id" {
+					continue
+				}
+				merged[k] = deepCloneAny(v)
+			}
+			merged["id"] = id
+			workspace := strings.TrimSpace(toString(merged["workspace"]))
+			agentDir := strings.TrimSpace(toString(merged["agentDir"]))
+			if err := validateAgentUniqueness(list, id, workspace, agentDir, id); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+				return
+			}
+			list[existingIdx] = merged
+		} else {
+			workspace := strings.TrimSpace(toString(newItem["workspace"]))
+			agentDir := strings.TrimSpace(toString(newItem["agentDir"]))
+			if err := validateAgentUniqueness(list, id, workspace, agentDir, ""); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+				return
+			}
+			list = append(list, newItem)
+		}
 
-		defaultID := strings.TrimSpace(toString(agentsCfg["default"]))
-		if asBool(newItem["default"]) || defaultID == "" {
+		defaultID := getDefaultAgentID(ocConfig, list)
+		if asBool(newItem["default"]) {
 			defaultID = id
 		}
 		writeAgentsList(agentsCfg, list, defaultID)
@@ -181,7 +207,7 @@ func UpdateOpenClawAgent(cfg *config.Config) gin.HandlerFunc {
 			ocConfig = map[string]interface{}{}
 		}
 		agentsCfg := ensureAgentsConfig(ocConfig)
-		list := parseAgentsListFromConfig(ocConfig)
+		list := materializeAgentList(cfg, ocConfig)
 
 		idx := -1
 		for i, item := range list {
@@ -212,7 +238,7 @@ func UpdateOpenClawAgent(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		list[idx] = merged
-		defaultID := strings.TrimSpace(toString(agentsCfg["default"]))
+		defaultID := getDefaultAgentID(ocConfig, list)
 		if asBool(merged["default"]) {
 			defaultID = id
 		} else if defaultID == id && hasExplicitDefaultFalse(payload) {
@@ -251,7 +277,7 @@ func DeleteOpenClawAgent(cfg *config.Config) gin.HandlerFunc {
 			ocConfig = map[string]interface{}{}
 		}
 		agentsCfg := ensureAgentsConfig(ocConfig)
-		list := parseAgentsListFromConfig(ocConfig)
+		list := materializeAgentList(cfg, ocConfig)
 
 		filtered := make([]map[string]interface{}, 0, len(list))
 		found := false
@@ -281,7 +307,7 @@ func DeleteOpenClawAgent(cfg *config.Config) gin.HandlerFunc {
 		}
 		setBindingsToConfig(ocConfig, agentsCfg, nextBindings)
 
-		defaultID := strings.TrimSpace(toString(agentsCfg["default"]))
+		defaultID := getDefaultAgentID(ocConfig, list)
 		if defaultID == id {
 			defaultID = pickFallbackDefault(filtered)
 		}
@@ -1139,17 +1165,46 @@ func stringSliceFromAny(v interface{}) []string {
 }
 
 func writeAgentsList(agentsCfg map[string]interface{}, list []map[string]interface{}, defaultID string) {
-	if strings.TrimSpace(defaultID) == "" {
+	if strings.TrimSpace(defaultID) == "" || !listContainsAgent(list, defaultID) {
 		defaultID = pickFallbackDefault(list)
 	}
-	agentsCfg["default"] = defaultID
+	delete(agentsCfg, "default")
 
 	for _, item := range list {
 		id := strings.TrimSpace(toString(item["id"]))
 		item["id"] = id
-		item["default"] = id != "" && id == defaultID
+		if id != "" && id == defaultID {
+			item["default"] = true
+			continue
+		}
+		delete(item, "default")
 	}
 	agentsCfg["list"] = mapSliceToAny(list)
+}
+
+func materializeAgentList(cfg *config.Config, ocConfig map[string]interface{}) []map[string]interface{} {
+	list := parseAgentsListFromConfig(ocConfig)
+	if len(list) > 0 {
+		return list
+	}
+
+	ids, agentSet := collectAgentIDsFromConfigAndDisk(cfg, ocConfig)
+	defaultID := loadDefaultAgentID(cfg)
+	if defaultID != "" {
+		if _, ok := agentSet[defaultID]; !ok {
+			ids = append(ids, defaultID)
+			sortAgentIDs(ids)
+		}
+	}
+
+	materialized := make([]map[string]interface{}, 0, len(ids))
+	for _, id := range ids {
+		if strings.TrimSpace(id) == "" {
+			continue
+		}
+		materialized = append(materialized, map[string]interface{}{"id": id})
+	}
+	return materialized
 }
 
 func mapSliceToAny(list []map[string]interface{}) []interface{} {
@@ -1215,6 +1270,19 @@ func pickFallbackDefault(list []map[string]interface{}) string {
 		}
 	}
 	return "main"
+}
+
+func listContainsAgent(list []map[string]interface{}, agentID string) bool {
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return false
+	}
+	for _, item := range list {
+		if strings.TrimSpace(toString(item["id"])) == agentID {
+			return true
+		}
+	}
+	return false
 }
 
 func getAgentSessionStats(cfg *config.Config, agentID string) (int, int64) {
