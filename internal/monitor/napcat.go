@@ -56,11 +56,11 @@ type NapCatMonitor struct {
 	maxLogs        int
 	stopCh         chan struct{}
 	running        bool
-	paused         bool          // true when QQ channel is disabled — skip checks
+	paused         bool // true when QQ channel is disabled — skip checks
 	checkInterval  time.Duration
-	reconnecting   bool          // true while a reconnect is in progress
-	offlineCount   int           // consecutive offline checks before triggering reconnect
-	loginFailCount int           // consecutive login check failures before declaring login_expired
+	reconnecting   bool // true while a reconnect is in progress
+	offlineCount   int  // consecutive offline checks before triggering reconnect
+	loginFailCount int  // consecutive login check failures before declaring login_expired
 }
 
 // NewNapCatMonitor creates a new NapCat monitor
@@ -442,7 +442,7 @@ var (
 )
 
 func isContainerRunning(name string) bool {
-	out, err := exec.Command("docker", "inspect", "--format", "{{.State.Running}}", name).Output()
+	out, err := dockerOutput("inspect", "--format", "{{.State.Running}}", name)
 	return err == nil && strings.TrimSpace(string(out)) == "true"
 }
 
@@ -470,7 +470,7 @@ func StopNapCatPlatform() {
 		exec.Command("taskkill", "/F", "/IM", "napcat.exe").Run()
 		exec.Command("taskkill", "/F", "/IM", "QQ.exe").Run()
 	} else {
-		exec.Command("docker", "stop", "openclaw-qq").Run()
+		dockerRun("stop", "openclaw-qq")
 	}
 }
 
@@ -510,8 +510,7 @@ func restartNapCatPlatform(cfg *config.Config) ([]byte, error) {
 		return []byte("No napcat.bat or NapCatWinBootMain.exe found"), fmt.Errorf("NapCat executable not found")
 	}
 	// Linux/macOS: Docker
-	cmd := exec.Command("docker", "restart", "openclaw-qq")
-	return cmd.CombinedOutput()
+	return dockerOutput("restart", "openclaw-qq")
 }
 
 // findNapCatShellDir finds the NapCat Shell installation directory on Windows
@@ -598,7 +597,7 @@ func doCheckQQLoginStatus(cfg *config.Config) (loggedIn bool, nickname string, q
 				}
 			}
 		} else {
-			out, err := exec.Command("docker", "exec", "openclaw-qq", "cat", "/app/napcat/config/webui.json").Output()
+			out, err := dockerOutput("exec", "openclaw-qq", "cat", "/app/napcat/config/webui.json")
 			if err == nil {
 				var webui map[string]interface{}
 				if json.Unmarshal(out, &webui) == nil {
@@ -700,4 +699,53 @@ func doCheckQQLoginStatus(cfg *config.Config) (loggedIn bool, nickname string, q
 	}
 
 	return true, nickname, qqID
+}
+
+func dockerOutput(args ...string) ([]byte, error) {
+	bins := []string{"docker", "/usr/local/bin/docker", "/opt/homebrew/bin/docker"}
+	for _, bin := range bins {
+		cmd := exec.Command(bin, args...)
+		cmd.Env = dockerEnv()
+		if out, err := cmd.CombinedOutput(); err == nil {
+			return out, nil
+		}
+		if runtime.GOOS == "darwin" {
+			for _, archFlag := range []string{"-arm64", "-x86_64"} {
+				altArgs := append([]string{archFlag, bin}, args...)
+				alt := exec.Command("arch", altArgs...)
+				alt.Env = dockerEnv()
+				if out, err := alt.CombinedOutput(); err == nil {
+					return out, nil
+				}
+			}
+		}
+	}
+	return nil, fmt.Errorf("docker not available")
+}
+
+func dockerRun(args ...string) error {
+	_, err := dockerOutput(args...)
+	return err
+}
+
+func dockerEnv() []string {
+	home := os.Getenv("HOME")
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
+	if home == "" {
+		if runtime.GOOS == "darwin" {
+			home = "/var/root"
+		} else {
+			home = "/root"
+		}
+	}
+	path := os.Getenv("PATH")
+	extra := "/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/opt/homebrew/sbin"
+	if path == "" {
+		path = extra
+	} else {
+		path = path + ":" + extra
+	}
+	return append(os.Environ(), "PATH="+path, "HOME="+home)
 }

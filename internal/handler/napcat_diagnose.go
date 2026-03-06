@@ -119,7 +119,7 @@ func diagnoseNapCatLinux(cfg *config.Config, repair bool) []DiagnoseStep {
 	var steps []DiagnoseStep
 
 	// Step 1: Check Docker installed
-	dockerVer, err := exec.Command("docker", "--version").Output()
+	dockerVer, err := dockerOutput("--version")
 	if err != nil {
 		steps = append(steps, DiagnoseStep{
 			Step: "Docker 安装检测", Status: "error",
@@ -135,7 +135,7 @@ func diagnoseNapCatLinux(cfg *config.Config, repair bool) []DiagnoseStep {
 	})
 
 	// Step 2: Check Docker daemon running
-	err = exec.Command("docker", "info").Run()
+	err = dockerRun("info")
 	if err != nil {
 		steps = append(steps, DiagnoseStep{
 			Step: "Docker 服务状态", Status: "error",
@@ -151,7 +151,7 @@ func diagnoseNapCatLinux(cfg *config.Config, repair bool) []DiagnoseStep {
 
 	// Step 3: Check container exists
 	containerStatus := ""
-	out, err := exec.Command("docker", "inspect", "--format", "{{.State.Status}}", "openclaw-qq").Output()
+	out, err := dockerOutput("inspect", "--format", "{{.State.Status}}", "openclaw-qq")
 	if err != nil {
 		steps = append(steps, DiagnoseStep{
 			Step: "NapCat 容器检测", Status: "error",
@@ -168,9 +168,9 @@ func diagnoseNapCatLinux(cfg *config.Config, repair bool) []DiagnoseStep {
 		})
 	} else {
 		if repair {
-			exec.Command("docker", "start", "openclaw-qq").Run()
+			dockerRun("start", "openclaw-qq")
 			time.Sleep(5 * time.Second)
-			out2, _ := exec.Command("docker", "inspect", "--format", "{{.State.Status}}", "openclaw-qq").Output()
+			out2, _ := dockerOutput("inspect", "--format", "{{.State.Status}}", "openclaw-qq")
 			if strings.TrimSpace(string(out2)) == "running" {
 				steps = append(steps, DiagnoseStep{
 					Step: "NapCat 容器检测", Status: "fixed",
@@ -196,7 +196,7 @@ func diagnoseNapCatLinux(cfg *config.Config, repair bool) []DiagnoseStep {
 	}
 
 	// Step 4: Check port mappings
-	portOut, _ := exec.Command("docker", "port", "openclaw-qq").Output()
+	portOut, _ := dockerOutput("port", "openclaw-qq")
 	portStr := string(portOut)
 	has6099 := strings.Contains(portStr, "6099")
 	has3001 := strings.Contains(portStr, "3001")
@@ -225,7 +225,7 @@ func diagnoseNapCatLinux(cfg *config.Config, repair bool) []DiagnoseStep {
 	}
 
 	// Step 5: Check onebot11.json config
-	obOut, err := exec.Command("docker", "exec", "openclaw-qq", "cat", "/app/napcat/config/onebot11.json").Output()
+	obOut, err := dockerOutput("exec", "openclaw-qq", "cat", "/app/napcat/config/onebot11.json")
 	if err != nil {
 		if repair {
 			err2 := writeDefaultOneBot11Config(cfg)
@@ -306,13 +306,11 @@ func diagnoseNapCatLinux(cfg *config.Config, repair bool) []DiagnoseStep {
 	}
 
 	// Step 6: Check webui.json
-	webuiOut, err := exec.Command("docker", "exec", "openclaw-qq", "cat", "/app/napcat/config/webui.json").Output()
+	webuiOut, err := dockerOutput("exec", "openclaw-qq", "cat", "/app/napcat/config/webui.json")
 	if err != nil {
 		if repair {
 			defaultWebUI := `{"host":"0.0.0.0","port":6099,"token":"clawpanel-qq","loginRate":3}`
-			cmd := exec.Command("docker", "exec", "openclaw-qq", "bash", "-c",
-				fmt.Sprintf("cat > /app/napcat/config/webui.json << 'EOF'\n%s\nEOF", defaultWebUI))
-			if cmd.Run() == nil {
+			if dockerRun("exec", "openclaw-qq", "bash", "-c", fmt.Sprintf("cat > /app/napcat/config/webui.json << 'EOF'\n%s\nEOF", defaultWebUI)) == nil {
 				steps = append(steps, DiagnoseStep{
 					Step: "WebUI 配置检测", Status: "fixed",
 					Message: "已创建默认 webui.json 配置",
@@ -343,9 +341,7 @@ func diagnoseNapCatLinux(cfg *config.Config, repair bool) []DiagnoseStep {
 				if repair {
 					webuiData["token"] = "clawpanel-qq"
 					jsonBytes, _ := json.MarshalIndent(webuiData, "", "  ")
-					cmd := exec.Command("docker", "exec", "openclaw-qq", "bash", "-c",
-						fmt.Sprintf("cat > /app/napcat/config/webui.json << 'EOF'\n%s\nEOF", string(jsonBytes)))
-					if cmd.Run() == nil {
+					if dockerRun("exec", "openclaw-qq", "bash", "-c", fmt.Sprintf("cat > /app/napcat/config/webui.json << 'EOF'\n%s\nEOF", string(jsonBytes))) == nil {
 						steps = append(steps, DiagnoseStep{
 							Step: "WebUI 配置检测", Status: "fixed",
 							Message: "已设置 WebUI Token",
@@ -372,7 +368,7 @@ func diagnoseNapCatLinux(cfg *config.Config, repair bool) []DiagnoseStep {
 	}
 	// Read Docker WEBUI_TOKEN env
 	dockerEnvToken := ""
-	envOut, envErr := exec.Command("docker", "inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", "openclaw-qq").Output()
+	envOut, envErr := dockerOutput("inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", "openclaw-qq")
 	if envErr == nil {
 		for _, line := range strings.Split(string(envOut), "\n") {
 			if strings.HasPrefix(line, "WEBUI_TOKEN=") {
@@ -391,9 +387,7 @@ func diagnoseNapCatLinux(cfg *config.Config, repair bool) []DiagnoseStep {
 			}
 			webuiFixData["token"] = dockerEnvToken
 			fixBytes, _ := json.MarshalIndent(webuiFixData, "", "  ")
-			cmd := exec.Command("docker", "exec", "openclaw-qq", "bash", "-c",
-				fmt.Sprintf("cat > /app/napcat/config/webui.json << 'FIXEOF'\n%s\nFIXEOF", string(fixBytes)))
-			if cmd.Run() == nil {
+			if dockerRun("exec", "openclaw-qq", "bash", "-c", fmt.Sprintf("cat > /app/napcat/config/webui.json << 'FIXEOF'\n%s\nFIXEOF", string(fixBytes))) == nil {
 				webuiJsonToken = dockerEnvToken
 				steps = append(steps, DiagnoseStep{
 					Step: "Token 一致性检测", Status: "fixed",
@@ -440,9 +434,7 @@ func diagnoseNapCatLinux(cfg *config.Config, repair bool) []DiagnoseStep {
 					defaultToken := "clawpanel-qq"
 					fixData := map[string]interface{}{"host": "0.0.0.0", "port": 6099, "token": defaultToken, "loginRate": 3}
 					fixBytes, _ := json.MarshalIndent(fixData, "", "  ")
-					cmd := exec.Command("docker", "exec", "openclaw-qq", "bash", "-c",
-						fmt.Sprintf("cat > /app/napcat/config/webui.json << 'FIXEOF'\n%s\nFIXEOF", string(fixBytes)))
-					cmd.Run()
+					dockerRun("exec", "openclaw-qq", "bash", "-c", fmt.Sprintf("cat > /app/napcat/config/webui.json << 'FIXEOF'\n%s\nFIXEOF", string(fixBytes)))
 					steps = append(steps, DiagnoseStep{
 						Step: "WebUI 鉴权测试", Status: "fixed",
 						Message: "WebUI 鉴权失败，已重置 Token 为默认值",
@@ -478,7 +470,7 @@ func diagnoseNapCatLinux(cfg *config.Config, repair bool) []DiagnoseStep {
 		}
 	}
 	if needsRestart && repair {
-		exec.Command("docker", "restart", "openclaw-qq").Run()
+		dockerRun("restart", "openclaw-qq")
 		steps = append(steps, DiagnoseStep{
 			Step: "重启容器", Status: "ok",
 			Message: "已重启 openclaw-qq 容器使配置生效",
@@ -599,7 +591,7 @@ func diagnoseNapCatWindows(cfg *config.Config, repair bool) []DiagnoseStep {
 
 // checkQQLoginStatusDirect checks QQ login via WebUI using docker exec to read token
 func checkQQLoginStatusDirect() (bool, string, string) {
-	out, err := exec.Command("docker", "exec", "openclaw-qq", "cat", "/app/napcat/config/webui.json").Output()
+	out, err := dockerOutput("exec", "openclaw-qq", "cat", "/app/napcat/config/webui.json")
 	if err != nil {
 		return false, "", ""
 	}
@@ -743,7 +735,10 @@ func SystemDiagnose(cfg *config.Config) gin.HandlerFunc {
 
 		// Software versions
 		lines = append(lines, "--- 软件环境 ---")
-		swChecks := []struct{ name, cmd string; args []string }{
+		swChecks := []struct {
+			name, cmd string
+			args      []string
+		}{
 			{"Node.js", "node", []string{"--version"}},
 			{"npm", "npm", []string{"--version"}},
 			{"Docker", "docker", []string{"--version"}},
@@ -887,7 +882,7 @@ func SystemDiagnose(cfg *config.Config) gin.HandlerFunc {
 				lines = append(lines, "状态: 未安装")
 			}
 		} else {
-			containerOut, _ := exec.Command("docker", "inspect", "--format", "{{.State.Status}}", "openclaw-qq").Output()
+			containerOut, _ := dockerOutput("inspect", "--format", "{{.State.Status}}", "openclaw-qq")
 			cs := strings.TrimSpace(string(containerOut))
 			if cs != "" {
 				lines = append(lines, "安装模式: Docker 容器")
@@ -1020,4 +1015,53 @@ func runDiagCmd(name string, args ...string) string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+func dockerOutput(args ...string) ([]byte, error) {
+	bins := []string{"docker", "/usr/local/bin/docker", "/opt/homebrew/bin/docker"}
+	for _, bin := range bins {
+		cmd := exec.Command(bin, args...)
+		cmd.Env = dockerEnv()
+		if out, err := cmd.CombinedOutput(); err == nil {
+			return out, nil
+		}
+		if runtime.GOOS == "darwin" {
+			for _, archFlag := range []string{"-arm64", "-x86_64"} {
+				altArgs := append([]string{archFlag, bin}, args...)
+				alt := exec.Command("arch", altArgs...)
+				alt.Env = dockerEnv()
+				if out, err := alt.CombinedOutput(); err == nil {
+					return out, nil
+				}
+			}
+		}
+	}
+	return nil, fmt.Errorf("docker not available")
+}
+
+func dockerRun(args ...string) error {
+	_, err := dockerOutput(args...)
+	return err
+}
+
+func dockerEnv() []string {
+	home := os.Getenv("HOME")
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
+	if home == "" {
+		if runtime.GOOS == "darwin" {
+			home = "/var/root"
+		} else {
+			home = "/root"
+		}
+	}
+	path := os.Getenv("PATH")
+	extra := "/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/opt/homebrew/sbin"
+	if path == "" {
+		path = extra
+	} else {
+		path = path + ":" + extra
+	}
+	return append(os.Environ(), "PATH="+path, "HOME="+home)
 }
