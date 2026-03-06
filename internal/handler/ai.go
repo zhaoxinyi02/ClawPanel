@@ -44,7 +44,7 @@ func ModelHealthCheck() gin.HandlerFunc {
 		headers := map[string]string{"Content-Type": "application/json"}
 
 		switch req.APIType {
-		case "anthropic":
+		case "anthropic", "anthropic-messages":
 			headers["x-api-key"] = req.APIKey
 			headers["anthropic-version"] = "2023-06-01"
 			url = baseURL + "/messages"
@@ -52,7 +52,7 @@ func ModelHealthCheck() gin.HandlerFunc {
 				"model": testModel, "max_tokens": 5,
 				"messages": []map[string]string{{"role": "user", "content": "hi"}},
 			})
-		case "google-genai":
+		case "google-genai", "google-generative-ai":
 			url = fmt.Sprintf("%s/models/%s:generateContent?key=%s", baseURL, testModel, req.APIKey)
 			body, _ = json.Marshal(map[string]interface{}{
 				"contents":         []map[string]interface{}{{"parts": []map[string]string{{"text": "hi"}}}},
@@ -233,7 +233,7 @@ func AIChat(cfg *config.Config) gin.HandlerFunc {
 		headers := map[string]string{"Content-Type": "application/json"}
 
 		switch apiType {
-		case "anthropic":
+		case "anthropic", "anthropic-messages":
 			headers["x-api-key"] = apiKey
 			headers["anthropic-version"] = "2023-06-01"
 			url = baseURL + "/messages"
@@ -250,7 +250,7 @@ func AIChat(cfg *config.Config) gin.HandlerFunc {
 				"model": mid, "max_tokens": 2048,
 				"system": sysContent, "messages": nonSys,
 			})
-		case "google-genai":
+		case "google-genai", "google-generative-ai":
 			url = fmt.Sprintf("%s/models/%s:generateContent?key=%s", baseURL, mid, apiKey)
 			var contents []map[string]interface{}
 			sysContent := ""
@@ -321,13 +321,13 @@ func AIChat(cfg *config.Config) gin.HandlerFunc {
 		// 提取回复
 		var reply string
 		switch apiType {
-		case "anthropic":
+		case "anthropic", "anthropic-messages":
 			if content, ok := data["content"].([]interface{}); ok && len(content) > 0 {
 				if first, ok := content[0].(map[string]interface{}); ok {
 					reply, _ = first["text"].(string)
 				}
 			}
-		case "google-genai":
+		case "google-genai", "google-generative-ai":
 			if candidates, ok := data["candidates"].([]interface{}); ok && len(candidates) > 0 {
 				if cand, ok := candidates[0].(map[string]interface{}); ok {
 					if content, ok := cand["content"].(map[string]interface{}); ok {

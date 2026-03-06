@@ -439,6 +439,25 @@ func checkOpenClawConfig(cfg *config.Config) ([]ConfigIssue, int) {
 				if provMap == nil {
 					continue
 				}
+				apiType, _ := provMap["api"].(string)
+				switch apiType {
+				case "anthropic":
+					issues = append(issues, ConfigIssue{
+						ID: "openclaw-provider-" + pid + "-legacy-api", Severity: "error", Component: "openclaw",
+						Title: fmt.Sprintf("模型提供商 %s 使用了旧 API 类型", pid),
+						Description: fmt.Sprintf("providers.%s.api 应为 anthropic-messages，当前为 anthropic", pid),
+						Fixable: false, CurrentVal: "anthropic", ExpectedVal: "anthropic-messages",
+						FilePath: filepath.Join(cfg.OpenClawDir, "openclaw.json"),
+					})
+				case "google-genai":
+					issues = append(issues, ConfigIssue{
+						ID: "openclaw-provider-" + pid + "-legacy-api", Severity: "error", Component: "openclaw",
+						Title: fmt.Sprintf("模型提供商 %s 使用了旧 API 类型", pid),
+						Description: fmt.Sprintf("providers.%s.api 应为 google-generative-ai，当前为 google-genai", pid),
+						Fixable: false, CurrentVal: "google-genai", ExpectedVal: "google-generative-ai",
+						FilePath: filepath.Join(cfg.OpenClawDir, "openclaw.json"),
+					})
+				}
 				apiKey, _ := provMap["apiKey"].(string)
 				if apiKey == "" {
 					issues = append(issues, ConfigIssue{
