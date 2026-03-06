@@ -83,7 +83,7 @@ jobs:
         run: npm run build
 
       - name: Upload web dist artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
           path: web/dist/
@@ -156,7 +156,7 @@ jobs:
         run: go build -trimpath -ldflags "-s -w -X main.Version=${{ needs.prepare.outputs.version }}" -o "clawpanel-v${{ needs.prepare.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}" ./cmd/clawpanel/
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binary-${{ matrix.os }}-${{ matrix.arch }}
           path: clawpanel-v${{ needs.prepare.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
@@ -197,7 +197,7 @@ jobs:
           Remove-Item "payload/clawpanel.exe" -Force
 
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-installer
           path: dist/ClawPanel-Setup-v${{ needs.prepare.outputs.version }}.exe
@@ -230,7 +230,7 @@ jobs:
           sha256sum * | sort > checksums.txt
 
       - name: Upload bundled artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-bundle-${{ needs.prepare.outputs.version }}
           path: release/*

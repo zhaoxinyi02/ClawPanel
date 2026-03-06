@@ -42,7 +42,7 @@ jobs:
         run: npm run build
 
       - name: Upload web dist artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
           path: web/dist/
@@ -113,7 +113,7 @@ jobs:
         run: go build -trimpath -ldflags "-s -w" -o "${{ matrix.binary_name }}" ./cmd/clawpanel/
 
       - name: Upload backend artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.binary_name }}
@@ -156,7 +156,7 @@ jobs:
       - name: Upload handler test artifacts
         # 即使失败也尽量保留日志与覆盖率文件，降低排查成本。
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: go-handler-tests
           path: |
@@ -209,7 +209,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: go-coverage
           path: |
