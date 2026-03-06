@@ -1272,15 +1272,28 @@ fi
 
 if ! docker info &>/dev/null; then
   echo "⚠️ Docker 服务未运行，正在启动..."
-  systemctl start docker
-  sleep 2
+  if [ "$(uname)" = "Darwin" ]; then
+    open -a Docker 2>/dev/null || true
+    for i in $(seq 1 30); do
+      if docker info &>/dev/null; then
+        break
+      fi
+      sleep 2
+    done
+  else
+    systemctl start docker
+    sleep 2
+  fi
 fi
 
-# Configure Docker mirror (always ensure, even if Docker was pre-installed)
-if [ ! -f /etc/docker/daemon.json ] || ! grep -q "registry-mirrors" /etc/docker/daemon.json 2>/dev/null; then
-  echo "🔧 配置 Docker 镜像加速器..."
-  mkdir -p /etc/docker
-  cat > /etc/docker/daemon.json << 'DOCKEREOF'
+# Configure Docker mirror (Linux only)
+if [ "$(uname)" = "Darwin" ]; then
+  echo "ℹ️ macOS 跳过 /etc/docker/daemon.json 镜像配置"
+else
+  if [ ! -f /etc/docker/daemon.json ] || ! grep -q "registry-mirrors" /etc/docker/daemon.json 2>/dev/null; then
+    echo "🔧 配置 Docker 镜像加速器..."
+    mkdir -p /etc/docker
+    cat > /etc/docker/daemon.json << 'DOCKEREOF'
 {
   "registry-mirrors": [
     "https://docker.1ms.run",
@@ -1288,9 +1301,15 @@ if [ ! -f /etc/docker/daemon.json ] || ! grep -q "registry-mirrors" /etc/docker/
   ]
 }
 DOCKEREOF
-  systemctl daemon-reload
-  systemctl restart docker
-  sleep 2
+    systemctl daemon-reload
+    systemctl restart docker
+    sleep 2
+  fi
+fi
+
+if ! docker info &>/dev/null; then
+  echo "❌ Docker 服务仍未就绪，请手动启动 Docker Desktop 后重试"
+  exit 1
 fi
 
 # Check if already exists
