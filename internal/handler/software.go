@@ -634,8 +634,21 @@ if [ "$(uname)" = "Darwin" ]; then
   echo "⚠️ macOS 请手动安装 Docker Desktop: https://www.docker.com/products/docker-desktop"
   echo "或使用 Homebrew: brew install --cask docker"
   if command -v brew &>/dev/null; then
-    brew install --cask docker
-    echo "✅ Docker Desktop 已安装，请从应用程序中启动"
+    if [ "$(id -u)" -eq 0 ]; then
+      CONSOLE_USER=$(stat -f%Su /dev/console 2>/dev/null || true)
+      if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && id "$CONSOLE_USER" &>/dev/null; then
+        USER_HOME=$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+        [ -z "$USER_HOME" ] && USER_HOME="/Users/$CONSOLE_USER"
+        echo "📥 检测到 root 环境，切换到用户 $CONSOLE_USER 执行 brew..."
+        sudo -u "$CONSOLE_USER" HOME="$USER_HOME" PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" brew install --cask docker
+      else
+        echo "❌ 未检测到可用登录用户，无法自动执行 brew 安装"
+        exit 1
+      fi
+    else
+      brew install --cask docker
+    fi
+    echo "✅ Docker Desktop 已安装，请从应用程序中启动 Docker"
   else
     exit 1
   fi
