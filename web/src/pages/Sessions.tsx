@@ -22,6 +22,15 @@ interface ChatMessage {
   timestamp: string;
 }
 
+type MessageSide = 'user' | 'assistant';
+
+function getMessageSide(role?: string): MessageSide {
+  const r = (role || '').toLowerCase();
+  // Only explicit user roles render on the right.
+  if (r === 'user' || r === 'human') return 'user';
+  return 'assistant';
+}
+
 export default function Sessions() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -208,29 +217,33 @@ export default function Sessions() {
                     <MessageSquare size={24} className="mb-2 opacity-30" />
                     <p className="text-xs">暂无消息记录</p>
                   </div>
-                ) : messages.map((m, i) => (
-                  <div key={m.id || i} className={`flex gap-3 ${m.role === 'assistant' ? '' : 'flex-row-reverse'}`}>
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                      m.role === 'assistant' ? 'bg-violet-100 dark:bg-violet-900/30 text-violet-600' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600'
-                    }`}>
-                      {m.role === 'assistant' ? <Bot size={16} /> : <User size={16} />}
-                    </div>
-                    <div className={`max-w-[75%] ${m.role === 'assistant' ? '' : 'text-right'}`}>
-                      <div className={`inline-block px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${
-                        m.role === 'assistant'
-                          ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-tl-md'
-                          : 'bg-violet-600 text-white rounded-tr-md'
+                ) : messages.map((m, i) => {
+                  const side = getMessageSide(m.role);
+                  const isUser = side === 'user';
+                  return (
+                    <div key={m.id || i} className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                        isUser ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600' : 'bg-violet-100 dark:bg-violet-900/30 text-violet-600'
                       }`}>
-                        {m.content}
+                        {isUser ? <User size={16} /> : <Bot size={16} />}
                       </div>
-                      {m.timestamp && (
-                        <p className={`text-[10px] text-gray-400 mt-1 ${m.role === 'assistant' ? '' : 'text-right'}`}>
-                          {new Date(m.timestamp).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                        </p>
-                      )}
+                      <div className={`max-w-[75%] flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+                        <div className={`inline-block px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${
+                          isUser
+                            ? 'bg-violet-600 text-white rounded-tr-md'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-tl-md'
+                        }`}>
+                          {m.content}
+                        </div>
+                        {m.timestamp && (
+                          <p className={`text-[10px] text-gray-400 mt-1 ${isUser ? 'text-right' : 'text-left'}`}>
+                            {new Date(m.timestamp).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </>
           )}
