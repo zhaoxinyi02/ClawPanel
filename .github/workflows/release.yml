@@ -131,7 +131,7 @@ jobs:
           cache: true
 
       - name: Download web dist artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: frontend-dist
           path: web/dist
@@ -179,7 +179,7 @@ jobs:
           cache: true
 
       - name: Download windows binary artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: binary-windows-amd64
           path: dist
@@ -211,14 +211,14 @@ jobs:
 
     steps:
       - name: Download binary artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: binary-*
           path: release
           merge-multiple: true
 
       - name: Download installer artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: windows-installer
           path: release
@@ -245,7 +245,7 @@ jobs:
 
     steps:
       - name: Download bundled artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-bundle-${{ needs.prepare.outputs.version }}
           path: release
