@@ -148,19 +148,17 @@ func launchAsInteractiveUser(cmdLine, workDir string, extraEnv []string) error {
 	// Build the final env block (user env merged with extraEnv overrides).
 	var finalEnvBlock uintptr
 	var mergedEnv []uint16
-	if len(extraEnv) > 0 {
-		if createEnvOK {
+	if createEnvOK {
+		if len(extraEnv) > 0 {
 			mergedEnv = mergeEnvBlock(rawEnvBlock, extraEnv)
-			procDestroyEnvironmentBlock.Call(uintptr(unsafe.Pointer(rawEnvBlock)))
+			finalEnvBlock = uintptr(unsafe.Pointer(&mergedEnv[0]))
 		} else {
-			mergedEnv = mergeEnvPairs(os.Environ(), extraEnv)
+			finalEnvBlock = uintptr(unsafe.Pointer(rawEnvBlock))
 		}
-		finalEnvBlock = uintptr(unsafe.Pointer(&mergedEnv[0]))
+		defer procDestroyEnvironmentBlock.Call(uintptr(unsafe.Pointer(rawEnvBlock)))
 	} else {
-		finalEnvBlock = uintptr(unsafe.Pointer(rawEnvBlock))
-		if createEnvOK {
-			defer procDestroyEnvironmentBlock.Call(uintptr(unsafe.Pointer(rawEnvBlock)))
-		}
+		mergedEnv = mergeEnvPairs(os.Environ(), extraEnv)
+		finalEnvBlock = uintptr(unsafe.Pointer(&mergedEnv[0]))
 	}
 
 	// Build command line UTF16 pointer

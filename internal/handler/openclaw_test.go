@@ -130,3 +130,106 @@ func TestPatchModelsJSONForAgentUsesConfiguredAgentDir(t *testing.T) {
 		t.Fatalf("expected compat.supportsDeveloperRole to be forced false")
 	}
 }
+
+func TestSwitchFeishuVariantRejectsUninstalledTarget(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	initial := map[string]interface{}{
+		"plugins": map[string]interface{}{
+			"entries": map[string]interface{}{
+				"feishu": map[string]interface{}{"enabled": true},
+			},
+			"installs": map[string]interface{}{
+				"feishu": map[string]interface{}{"installPath": filepath.Join(dir, "extensions", "feishu")},
+			},
+		},
+	}
+	raw, _ := json.Marshal(initial)
+	if err := os.MkdirAll(filepath.Join(dir, "extensions", "feishu"), 0755); err != nil {
+		t.Fatalf("mkdir feishu extension: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "openclaw.json"), raw, 0644); err != nil {
+		t.Fatalf("write openclaw.json: %v", err)
+	}
+
+	r := gin.New()
+	r.POST("/openclaw/feishu-variant", SwitchFeishuVariant(cfg, nil))
+	body := []byte(`{"variant":"official"}`)
+	req := httptest.NewRequest(http.MethodPost, "/openclaw/feishu-variant", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	saved, err := cfg.ReadOpenClawJSON()
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	entries := saved["plugins"].(map[string]interface{})["entries"].(map[string]interface{})
+	if enabled, _ := entries["feishu"].(map[string]interface{})["enabled"].(bool); !enabled {
+		t.Fatalf("expected existing feishu variant to remain enabled")
+	}
+	if entries["feishu-openclaw-plugin"] != nil {
+		t.Fatalf("expected official variant entry not to be synthesized when not installed")
+	}
+}
+
+func TestSwitchFeishuVariantEnablesInstalledTarget(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	if err := os.MkdirAll(filepath.Join(dir, "extensions", "feishu"), 0755); err != nil {
+		t.Fatalf("mkdir feishu extension: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "extensions", "feishu-openclaw-plugin"), 0755); err != nil {
+		t.Fatalf("mkdir official extension: %v", err)
+	}
+	initial := map[string]interface{}{
+		"plugins": map[string]interface{}{
+			"entries": map[string]interface{}{
+				"feishu":                 map[string]interface{}{"enabled": true},
+				"feishu-openclaw-plugin": map[string]interface{}{"enabled": false},
+			},
+			"installs": map[string]interface{}{
+				"feishu":                 map[string]interface{}{"installPath": filepath.Join(dir, "extensions", "feishu")},
+				"feishu-openclaw-plugin": map[string]interface{}{"installPath": filepath.Join(dir, "extensions", "feishu-openclaw-plugin")},
+			},
+		},
+	}
+	raw, _ := json.Marshal(initial)
+	if err := os.WriteFile(filepath.Join(dir, "openclaw.json"), raw, 0644); err != nil {
+		t.Fatalf("write openclaw.json: %v", err)
+	}
+
+	r := gin.New()
+	r.POST("/openclaw/feishu-variant", SwitchFeishuVariant(cfg, nil))
+	body := []byte(`{"variant":"official"}`)
+	req := httptest.NewRequest(http.MethodPost, "/openclaw/feishu-variant", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	saved, err := cfg.ReadOpenClawJSON()
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	entries := saved["plugins"].(map[string]interface{})["entries"].(map[string]interface{})
+	if enabled, _ := entries["feishu-openclaw-plugin"].(map[string]interface{})["enabled"].(bool); !enabled {
+		t.Fatalf("expected official variant to be enabled")
+	}
+	if enabled, _ := entries["feishu"].(map[string]interface{})["enabled"].(bool); enabled {
+		t.Fatalf("expected clawteam variant to be disabled")
+	}
+}

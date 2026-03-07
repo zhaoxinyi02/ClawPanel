@@ -144,6 +144,11 @@ function getFeishuPluginEntryId(ocConfig: any): string {
   return 'feishu';
 }
 
+function isFeishuVariantInstalled(installedPlugins: any[], variant: 'official' | 'clawteam') {
+  const id = variant === 'official' ? 'feishu-openclaw-plugin' : 'feishu';
+  return installedPlugins.some((p: any) => p.id === id);
+}
+
 // Determine channel status: 'enabled' (green), 'configured' (red/orange), 'unconfigured' (gray)
 function getChannelStatus(ch: ChannelDef, ocConfig: any): 'enabled' | 'configured' | 'unconfigured' {
   const chConf = ocConfig?.channels?.[ch.id] || {};
@@ -277,7 +282,7 @@ export default function Channels() {
       return chConf.enabled || pluginConf.enabled;
     });
     if (firstEnabled) setSelectedChannel(firstEnabled.id);
-    else setSelectedChannel('feishu');
+    else setSelectedChannel('qq');
   }, [ocConfig, selectedChannel]);
   useEffect(() => {
     const timer = setInterval(loadNapcatStatus, 30000);
@@ -401,6 +406,11 @@ export default function Channels() {
 
   // 飞书版本切换
   const handleSwitchFeishuVariant = async (variant: 'official' | 'clawteam') => {
+    if (!isFeishuVariantInstalled(installedPlugins, variant)) {
+      setMsg('目标飞书插件未安装，请先安装后再切换');
+      setTimeout(() => setMsg(''), 3000);
+      return;
+    }
     try {
       const r = await api.switchFeishuVariant(variant);
       if (r.ok) {
@@ -942,11 +952,13 @@ export default function Channels() {
                     }`}>
                       <input type="radio" name="feishu-variant" value="official"
                         checked={getActiveFeishuVariant(ocConfig) === 'official'}
+                        disabled={!isFeishuVariantInstalled(installedPlugins, 'official')}
                         onChange={() => handleSwitchFeishuVariant('official')}
                         className="mt-0.5 accent-violet-600" />
                       <div>
                         <div className="text-sm font-medium text-gray-900 dark:text-white">飞书官方版</div>
                         <div className="text-[11px] text-gray-500 mt-0.5">支持用户身份授权、文档/日历/任务操作、流式卡片、话题独立上下文</div>
+                        {!isFeishuVariantInstalled(installedPlugins, 'official') && <div className="text-[11px] text-amber-600 mt-1">未安装</div>}
                       </div>
                     </label>
                     <label className={`flex-1 flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
@@ -956,11 +968,13 @@ export default function Channels() {
                     }`}>
                       <input type="radio" name="feishu-variant" value="clawteam"
                         checked={getActiveFeishuVariant(ocConfig) === 'clawteam'}
+                        disabled={!isFeishuVariantInstalled(installedPlugins, 'clawteam')}
                         onChange={() => handleSwitchFeishuVariant('clawteam')}
                         className="mt-0.5 accent-violet-600" />
                       <div>
                         <div className="text-sm font-medium text-gray-900 dark:text-white">ClawTeam 社区版</div>
                         <div className="text-[11px] text-gray-500 mt-0.5">社区维护的基础飞书通道插件，支持话题回复、输入提示等</div>
+                        {!isFeishuVariantInstalled(installedPlugins, 'clawteam') && <div className="text-[11px] text-amber-600 mt-1">未安装</div>}
                       </div>
                     </label>
                   </div>

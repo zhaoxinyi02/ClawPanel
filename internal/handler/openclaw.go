@@ -690,6 +690,38 @@ func resolveActiveFeishuEntryID(entries map[string]interface{}) string {
 	return "feishu"
 }
 
+func feishuVariantEntryID(variant string) string {
+	if variant == "official" {
+		return "feishu-openclaw-plugin"
+	}
+	return "feishu"
+}
+
+func pluginInstallKnown(cfg *config.Config, plugins map[string]interface{}, id string) bool {
+	if plugins != nil {
+		if installs, ok := plugins["installs"].(map[string]interface{}); ok {
+			if install, ok := installs[id].(map[string]interface{}); ok && install != nil {
+				if installPath, _ := install["installPath"].(string); strings.TrimSpace(installPath) != "" {
+					if info, err := os.Stat(strings.TrimSpace(installPath)); err == nil && info.IsDir() {
+						return true
+					}
+				}
+				return true
+			}
+		}
+	}
+
+	for _, candidate := range []string{
+		filepath.Join(cfg.OpenClawDir, "extensions", id),
+		filepath.Join(filepath.Dir(cfg.OpenClawDir), "extensions", id),
+	} {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
 // SwitchFeishuVariant 切换飞书插件版本（官方版 / ClawTeam 版）
 func SwitchFeishuVariant(cfg *config.Config, procMgr *process.Manager, sysLog ...*eventlog.SystemLogger) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -716,13 +748,18 @@ func SwitchFeishuVariant(cfg *config.Config, procMgr *process.Manager, sysLog ..
 		}
 
 		// 互斥设置 enabled
-		enableID := "feishu"
-		disableID := "feishu-openclaw-plugin"
+		enableID := feishuVariantEntryID(req.Variant)
+		disableID := feishuVariantEntryID("clawteam")
 		label := "ClawTeam 社区版"
 		if req.Variant == "official" {
-			enableID = "feishu-openclaw-plugin"
-			disableID = "feishu"
 			label = "飞书官方版"
+		} else {
+			disableID = "feishu-openclaw-plugin"
+		}
+
+		if !pluginInstallKnown(cfg, plugins, enableID) {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "目标飞书插件未安装，请先安装后再切换"})
+			return
 		}
 
 		enableEntry, _ := entries[enableID].(map[string]interface{})

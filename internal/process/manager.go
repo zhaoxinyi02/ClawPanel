@@ -719,13 +719,21 @@ func (m *Manager) isOpenClawGateway(host, port string) bool {
 		return false
 	}
 	text := strings.ToLower(string(body))
-	return strings.Contains(text, "openclaw control") || strings.Contains(text, "<openclaw-app")
+	return strings.Contains(text, "openclaw") || strings.Contains(text, "<openclaw-app")
+}
+
+func (m *Manager) gatewayReachable(force bool) bool {
+	if m.gatewayListening(force) {
+		return true
+	}
+	port := m.getGatewayPort()
+	return port != "" && m.isPortListening(port)
 }
 
 func (m *Manager) waitForGatewayReady(timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for {
-		if m.gatewayListening(true) {
+		if m.gatewayReachable(true) {
 			return true
 		}
 		if time.Now().After(deadline) {
@@ -762,7 +770,7 @@ func (m *Manager) monitorDaemon() {
 		if !running || !daemonized {
 			return // manually stopped
 		}
-		if m.gatewayListening(true) {
+		if m.gatewayReachable(true) {
 			failCount = 0
 			continue
 		}
