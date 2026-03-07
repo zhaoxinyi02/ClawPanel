@@ -1464,10 +1464,12 @@ func TestDeleteOpenClawAgentRewritesCronTargets(t *testing.T) {
 func TestValidateAgentUniquenessNormalizesPaths(t *testing.T) {
 	t.Parallel()
 
-	cfg := &config.Config{OpenClawDir: "/opt/openclaw"}
+	base := t.TempDir()
+	dataDir := filepath.Join(base, "data", "work")
+	cfg := &config.Config{OpenClawDir: base}
 	err := validateAgentUniqueness(cfg, []map[string]interface{}{
-		{"id": "main", "workspace": "/data/work/", "agentDir": "agents/main/"},
-	}, "work", "/data/work", "agents/main", "")
+		{"id": "main", "workspace": dataDir + "/", "agentDir": "agents/main/"},
+	}, "work", dataDir, "agents/main", "")
 	if err == nil {
 		t.Fatalf("expected normalized path conflict")
 	}
@@ -1476,7 +1478,8 @@ func TestValidateAgentUniquenessNormalizesPaths(t *testing.T) {
 func TestValidateAgentUniquenessRejectsAgentDirOutsideBase(t *testing.T) {
 	t.Parallel()
 
-	cfg := &config.Config{OpenClawDir: "/opt/openclaw"}
+	base := t.TempDir()
+	cfg := &config.Config{OpenClawDir: base}
 	err := validateAgentUniqueness(cfg, []map[string]interface{}{{"id": "main"}}, "work", "workspace/work", "../../tmp/evil", "")
 	if err == nil || !strings.Contains(err.Error(), "agentDir 必须位于 OpenClaw 目录内") {
 		t.Fatalf("expected out-of-base agentDir rejection, got %v", err)
@@ -1486,9 +1489,11 @@ func TestValidateAgentUniquenessRejectsAgentDirOutsideBase(t *testing.T) {
 func TestValidateAgentUniquenessRejectsAbsoluteAliasConflict(t *testing.T) {
 	t.Parallel()
 
-	cfg := &config.Config{OpenClawDir: "/opt/openclaw"}
+	base := t.TempDir()
+	cfg := &config.Config{OpenClawDir: base}
+	absDir := filepath.Join(base, "custom", "work-agent")
 	err := validateAgentUniqueness(cfg, []map[string]interface{}{
-		{"id": "main", "agentDir": "/opt/openclaw/custom/work-agent"},
+		{"id": "main", "agentDir": absDir},
 	}, "work", "", "custom/work-agent", "")
 	if err == nil {
 		t.Fatalf("expected absolute alias conflict")
