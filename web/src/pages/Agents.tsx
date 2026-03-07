@@ -38,6 +38,14 @@ interface AgentFormState {
   identityName: string;
   identityDescription: string;
   identityTone: string;
+  sandboxMode: '' | 'off' | 'non-main' | 'all';
+  sandboxScope: '' | 'session' | 'agent' | 'shared';
+  sandboxWorkspaceAccess: '' | 'none' | 'ro' | 'rw';
+  sandboxWorkspaceRoot: string;
+  sandboxDockerNetwork: string;
+  sandboxDockerReadOnlyRoot: InheritToggle;
+  sandboxDockerSetupCommand: string;
+  sandboxDockerBinds: string;
   groupChatMode: InheritToggle;
   agentToAgentMode: InheritToggle;
   agentToAgentAllow: string;
@@ -57,6 +65,7 @@ interface AgentStructuredTouchedState {
   model: boolean;
   params: boolean;
   identity: boolean;
+  sandbox: boolean;
   groupChat: boolean;
   tools: boolean;
   subagents: boolean;
@@ -143,6 +152,7 @@ const AGENT_FORM_SECTIONS: { id: AgentFormSection; title: string; description: s
 ];
 const SANDBOX_STARTERS = [
   { key: 'inherit', label: '继承默认', help: '不写 sandbox 覆盖，沿用全局或默认 Agent 配置。', text: '' },
+  { key: 'non-main', label: '仅非主会话沙箱', help: '官方常见起步：主会话继续在宿主机运行，群聊 / channel / 非 main 会话进入 sandbox。', text: '{\n  "mode": "non-main",\n  "scope": "session",\n  "workspaceAccess": "none"\n}' },
   { key: 'read-only', label: '只读沙箱', help: '官方语义：始终启用 sandbox，并把 agent workspace 以只读方式挂载进去。', text: '{\n  "mode": "all",\n  "workspaceAccess": "ro"\n}' },
   { key: 'workspace-write', label: '工作区可写', help: '官方语义：始终启用 sandbox，并允许在 workspace 内读写。', text: '{\n  "mode": "all",\n  "workspaceAccess": "rw"\n}' },
   { key: 'danger-full-access', label: '高权限', help: '官方语义：关闭 sandbox，让工具直接在宿主机环境运行。', text: '{\n  "mode": "off"\n}' },
@@ -162,6 +172,14 @@ const DEFAULT_AGENT_FORM: AgentFormState = {
   identityName: '',
   identityDescription: '',
   identityTone: '',
+  sandboxMode: '',
+  sandboxScope: '',
+  sandboxWorkspaceAccess: '',
+  sandboxWorkspaceRoot: '',
+  sandboxDockerNetwork: '',
+  sandboxDockerReadOnlyRoot: 'inherit',
+  sandboxDockerSetupCommand: '',
+  sandboxDockerBinds: '',
   groupChatMode: 'inherit',
   agentToAgentMode: 'inherit',
   agentToAgentAllow: '',
@@ -181,6 +199,7 @@ const DEFAULT_AGENT_STRUCTURED_TOUCHED: AgentStructuredTouchedState = {
   model: false,
   params: false,
   identity: false,
+  sandbox: false,
   groupChat: false,
   tools: false,
   subagents: false,
@@ -423,6 +442,16 @@ function parseCSV(input: string): string[] {
   return (input || '').split(',').map(x => x.trim()).filter(Boolean);
 }
 
+function parseLineList(input: string): string[] {
+  return (input || '').split('\n').map(x => x.trim()).filter(Boolean);
+}
+
+function stringifyLineList(raw: any): string {
+  if (Array.isArray(raw)) return raw.map(item => String(item).trim()).filter(Boolean).join('\n');
+  if (typeof raw === 'string') return raw.trim();
+  return '';
+}
+
 function matchPriorityLabel(matchRaw: any): string {
   const match = compactMatch(matchRaw);
   if ('sender' in match) return 'sender';
@@ -566,19 +595,119 @@ function describeSessionVisibility(raw: '' | 'same-agent' | 'all-agents'): strin
 }
 
 function describeSandboxMode(raw: any): string {
-  const starter = detectSandboxStarter(stringifyJSON(raw));
-  switch (starter) {
-    case 'inherit':
-      return '继承默认';
-    case 'read-only':
-      return '只读沙箱';
-    case 'workspace-write':
-      return '工作区可写';
-    case 'danger-full-access':
-      return '高权限';
-    default:
-      return '自定义 JSON';
+  const draft = extractSandboxDraft(raw);
+  if (!draft.mode && !draft.scope && !draft.workspaceAccess && !draft.workspaceRoot && !draft.dockerNetwork && draft.dockerReadOnlyRoot === 'inherit' && !draft.dockerSetupCommand && !draft.dockerBinds) {
+    return '继承默认';
   }
+  if (draft.mode === 'non-main') return '仅非主会话沙箱';
+  if (draft.mode === 'off') return '高权限';
+  if (draft.mode === 'all' && draft.workspaceAccess === 'ro') return '只读沙箱';
+  if (draft.mode === 'all' && draft.workspaceAccess === 'rw') return '工作区可写';
+  if (draft.mode === 'all') return '全部会话沙箱';
+  return '自定义 JSON';
+}
+
+function describeSandboxModeValue(raw: string): string {
+  switch (raw) {
+    case 'off':
+      return '关闭（off，宿主机运行）';
+    case 'non-main':
+      return '仅非主会话（non-main）';
+    case 'all':
+      return '全部会话（all）';
+    default:
+      return '继承默认';
+  }
+}
+
+function describeSandboxScopeValue(raw: string): string {
+  switch (raw) {
+    case 'session':
+      return '每会话一个容器（session）';
+    case 'agent':
+      return '每 Agent 一个容器（agent）';
+    case 'shared':
+      return '全部共享一个容器（shared）';
+    default:
+      return '继承默认';
+  }
+}
+
+function describeWorkspaceAccessValue(raw: string): string {
+  switch (raw) {
+    case 'none':
+      return '仅沙箱工作区（none）';
+    case 'ro':
+      return '只读挂载 Agent workspace（ro）';
+    case 'rw':
+      return '可写挂载 Agent workspace（rw）';
+    default:
+      return '继承默认';
+  }
+}
+
+function describeToggleValue(raw: InheritToggle, enabledLabel: string, disabledLabel: string): string {
+  if (raw === 'enabled') return enabledLabel;
+  if (raw === 'disabled') return disabledLabel;
+  return '继承默认';
+}
+
+function normalizeLegacySandboxDraft(raw: any): Record<string, any> {
+  if (!isPlainObject(raw)) return {};
+  const next = deepClone(raw);
+  const mode = String(next.mode || '').trim();
+  if (mode === 'read-only') {
+    next.mode = 'all';
+    if (next.workspaceAccess === undefined) next.workspaceAccess = 'ro';
+  } else if (mode === 'workspace-write') {
+    next.mode = 'all';
+    if (next.workspaceAccess === undefined) next.workspaceAccess = 'rw';
+  } else if (mode === 'danger-full-access') {
+    next.mode = 'off';
+  }
+  return next;
+}
+
+function extractSandboxDraft(raw: any) {
+  const sandbox = normalizeLegacySandboxDraft(raw);
+  const docker = isPlainObject(sandbox.docker) ? sandbox.docker : {};
+  return {
+    mode: (() => {
+      const mode = String(sandbox.mode || '').trim();
+      return mode === 'off' || mode === 'non-main' || mode === 'all' ? mode : '';
+    })(),
+    scope: (() => {
+      const scope = String(sandbox.scope || '').trim();
+      return scope === 'session' || scope === 'agent' || scope === 'shared' ? scope : '';
+    })(),
+    workspaceAccess: (() => {
+      const access = String(sandbox.workspaceAccess || '').trim();
+      return access === 'none' || access === 'ro' || access === 'rw' ? access : '';
+    })(),
+    workspaceRoot: String(sandbox.workspaceRoot || '').trim(),
+    dockerNetwork: docker.network === undefined ? '' : String(docker.network).trim(),
+    dockerReadOnlyRoot: docker.readOnlyRoot === true ? 'enabled' : docker.readOnlyRoot === false ? 'disabled' : 'inherit',
+    dockerSetupCommand: String(docker.setupCommand || '').trim(),
+    dockerBinds: stringifyLineList(docker.binds),
+  } as const;
+}
+
+function buildStructuredSandboxPreview(form: Pick<AgentFormState, 'sandboxMode' | 'sandboxScope' | 'sandboxWorkspaceAccess' | 'sandboxWorkspaceRoot' | 'sandboxDockerNetwork' | 'sandboxDockerReadOnlyRoot' | 'sandboxDockerSetupCommand' | 'sandboxDockerBinds'>): any {
+  const sandbox: Record<string, any> = {};
+  if (form.sandboxMode) sandbox.mode = form.sandboxMode;
+  if (form.sandboxScope) sandbox.scope = form.sandboxScope;
+  if (form.sandboxWorkspaceAccess) sandbox.workspaceAccess = form.sandboxWorkspaceAccess;
+  if (form.sandboxWorkspaceRoot.trim()) sandbox.workspaceRoot = form.sandboxWorkspaceRoot.trim();
+
+  const docker: Record<string, any> = {};
+  if (form.sandboxDockerNetwork.trim()) docker.network = form.sandboxDockerNetwork.trim();
+  const readOnlyRoot = triStateToValue(form.sandboxDockerReadOnlyRoot);
+  if (readOnlyRoot !== undefined) docker.readOnlyRoot = readOnlyRoot;
+  if (form.sandboxDockerSetupCommand.trim()) docker.setupCommand = form.sandboxDockerSetupCommand.trim();
+  const binds = parseLineList(form.sandboxDockerBinds);
+  if (binds.length > 0) docker.binds = binds;
+  if (Object.keys(docker).length > 0) sandbox.docker = docker;
+  return cleanupObject(sandbox);
 }
 
 function formatCronSchedule(schedule: CronJob['schedule'] | undefined): string {
@@ -751,6 +880,7 @@ function detectSandboxStarter(raw: string): string {
     if (isPlainObject(parsed)) {
       const mode = String(parsed.mode || '').trim();
       const workspaceAccess = String(parsed.workspaceAccess || '').trim();
+      if (mode === 'non-main') return 'non-main';
       if (mode === 'read-only') return 'read-only';
       if (mode === 'workspace-write') return 'workspace-write';
       if (mode === 'danger-full-access') return 'danger-full-access';
@@ -766,6 +896,31 @@ function detectSandboxStarter(raw: string): string {
     if (starter.text.trim() === text) return starter.key;
   }
   return 'custom';
+}
+
+function getUnsupportedSandboxStructuredMessages(raw: string): string[] {
+  const text = raw.trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    if (!isPlainObject(parsed)) return ['当前 sandbox 不是对象，结构化表单无法安全编辑。'];
+    const messages: string[] = [];
+    const mode = String(parsed.mode || '').trim();
+    if (mode && !['off', 'non-main', 'all', 'read-only', 'workspace-write', 'danger-full-access'].includes(mode)) {
+      messages.push(`sandbox.mode=${mode}`);
+    }
+    const scope = String(parsed.scope || '').trim();
+    if (scope && !['session', 'agent', 'shared'].includes(scope)) {
+      messages.push(`sandbox.scope=${scope}`);
+    }
+    const workspaceAccess = String(parsed.workspaceAccess || '').trim();
+    if (workspaceAccess && !['none', 'ro', 'rw'].includes(workspaceAccess)) {
+      messages.push(`sandbox.workspaceAccess=${workspaceAccess}`);
+    }
+    return messages;
+  } catch {
+    return [];
+  }
 }
 
 function extractProviderModelOptions(raw: any): string[] {
@@ -816,6 +971,7 @@ function createAgentFormState(agent?: AgentItem): AgentFormState {
   const tools = isPlainObject(agent?.tools) ? agent?.tools : {};
   const subagents = isPlainObject(agent?.subagents) ? agent?.subagents : {};
   const groupChat = isPlainObject(agent?.groupChat) ? agent?.groupChat : {};
+  const sandboxDraft = extractSandboxDraft(agent?.sandbox);
 
   return {
     ...DEFAULT_AGENT_FORM,
@@ -832,6 +988,14 @@ function createAgentFormState(agent?: AgentItem): AgentFormState {
     identityName: String(identity.name || '').trim(),
     identityDescription: String(identity.description || '').trim(),
     identityTone: String(identity.tone || '').trim(),
+    sandboxMode: sandboxDraft.mode,
+    sandboxScope: sandboxDraft.scope,
+    sandboxWorkspaceAccess: sandboxDraft.workspaceAccess,
+    sandboxWorkspaceRoot: sandboxDraft.workspaceRoot,
+    sandboxDockerNetwork: sandboxDraft.dockerNetwork,
+    sandboxDockerReadOnlyRoot: sandboxDraft.dockerReadOnlyRoot,
+    sandboxDockerSetupCommand: sandboxDraft.dockerSetupCommand,
+    sandboxDockerBinds: sandboxDraft.dockerBinds,
     groupChatMode: triStateFromValue(getNestedValue(groupChat, 'enabled')),
     agentToAgentMode: triStateFromValue(getNestedValue(tools, 'agentToAgent.enabled')),
     agentToAgentAllow: parseStringList(getNestedValue(tools, 'agentToAgent.allow')).join(', '),
@@ -934,6 +1098,7 @@ export default function Agents() {
   const [showForm, setShowForm] = useState(false);
   const [formSection, setFormSection] = useState<AgentFormSection>('basic');
   const [form, setForm] = useState<AgentFormState>(DEFAULT_AGENT_FORM);
+  const [sandboxClearIntent, setSandboxClearIntent] = useState(false);
   const [saveAttempted, setSaveAttempted] = useState(false);
   const [structuredTouched, setStructuredTouched] = useState<AgentStructuredTouchedState>(DEFAULT_AGENT_STRUCTURED_TOUCHED);
 
@@ -965,7 +1130,14 @@ export default function Agents() {
     return agents.find(agent => agent.id !== editingId && String(agent.workspace || '').trim() === value) || null;
   }, [agents, editingId, form.workspace]);
 
-  const sandboxStarter = useMemo(() => detectSandboxStarter(form.sandboxText), [form.sandboxText]);
+  const sandboxStarter = useMemo(() => {
+    if (structuredTouched.sandbox) {
+      return detectSandboxStarter(stringifyJSON(buildStructuredSandboxPreview(form)));
+    }
+    return detectSandboxStarter(form.sandboxText);
+  }, [form, structuredTouched.sandbox]);
+  const sandboxStructuredIssues = useMemo(() => getUnsupportedSandboxStructuredMessages(form.sandboxText), [form.sandboxText]);
+  const sandboxStructuredLocked = sandboxStructuredIssues.length > 0;
   const isBlankAgentID = !form.id.trim();
   const agentIDError = useMemo(() => {
     const value = form.id.trim();
@@ -1089,9 +1261,15 @@ export default function Agents() {
     if (touchKey) touchStructured(touchKey);
   };
 
+  const updateSandboxForm = (patch: Partial<AgentFormState>) => {
+    updateForm(patch, 'sandbox');
+    setSandboxClearIntent(false);
+  };
+
   const closeForm = () => {
     setShowForm(false);
     setMaterializingImplicitAgent(false);
+    setSandboxClearIntent(false);
     setSaveAttempted(false);
     setStructuredTouched(DEFAULT_AGENT_STRUCTURED_TOUCHED);
   };
@@ -1303,6 +1481,7 @@ export default function Agents() {
   const openCreate = (section: AgentFormSection = 'basic') => {
     setMsg('');
     setMaterializingImplicitAgent(false);
+    setSandboxClearIntent(false);
     setSaveAttempted(false);
     setStructuredTouched(DEFAULT_AGENT_STRUCTURED_TOUCHED);
     setEditingId(null);
@@ -1315,6 +1494,7 @@ export default function Agents() {
     setMsg('');
     const implicitAgent = isImplicitAgent(agent);
     setMaterializingImplicitAgent(implicitAgent);
+    setSandboxClearIntent(false);
     setSaveAttempted(false);
     setStructuredTouched(DEFAULT_AGENT_STRUCTURED_TOUCHED);
     setEditingId(agent.id);
@@ -1336,18 +1516,34 @@ export default function Agents() {
   const applySandboxStarter = (starterKey: string) => {
     const starter = SANDBOX_STARTERS.find(item => item.key === starterKey);
     if (!starter) return;
-    setForm(prev => ({ ...prev, sandboxText: starter.text }));
+    const sandboxObj = parseJSONText(starter.text, 'sandbox');
+    const draft = extractSandboxDraft(sandboxObj);
+    setForm(prev => ({
+      ...prev,
+      sandboxMode: draft.mode,
+      sandboxScope: draft.scope,
+      sandboxWorkspaceAccess: draft.workspaceAccess,
+      sandboxWorkspaceRoot: draft.workspaceRoot,
+      sandboxDockerNetwork: draft.dockerNetwork,
+      sandboxDockerReadOnlyRoot: draft.dockerReadOnlyRoot,
+      sandboxDockerSetupCommand: draft.dockerSetupCommand,
+      sandboxDockerBinds: draft.dockerBinds,
+    }));
+    touchStructured('sandbox');
+    setSandboxClearIntent(starterKey === 'inherit');
   };
 
   const syncStructuredFieldsFromAdvanced = () => {
     try {
       const modelObj = parseJSONText(form.modelText, 'model');
       const toolsObj = parseJSONText(form.toolsText, 'tools');
+      const sandboxObj = parseJSONText(form.sandboxText, 'sandbox');
       const groupChatObj = parseJSONText(form.groupChatText, 'groupChat');
       const identityObj = parseJSONText(form.identityText, 'identity');
       const subagentsObj = parseJSONText(form.subagentsText, 'subagents');
       const paramsObj = parseJSONText(form.paramsText, 'params');
       const modelDraft = extractModelDraft(modelObj);
+      const sandboxDraft = extractSandboxDraft(sandboxObj);
       setForm(prev => ({
         ...prev,
         modelPrimary: modelDraft.primary,
@@ -1358,6 +1554,14 @@ export default function Agents() {
         identityName: isPlainObject(identityObj) ? String(identityObj.name || '').trim() : '',
         identityDescription: isPlainObject(identityObj) ? String(identityObj.description || '').trim() : '',
         identityTone: isPlainObject(identityObj) ? String(identityObj.tone || '').trim() : '',
+        sandboxMode: sandboxDraft.mode,
+        sandboxScope: sandboxDraft.scope,
+        sandboxWorkspaceAccess: sandboxDraft.workspaceAccess,
+        sandboxWorkspaceRoot: sandboxDraft.workspaceRoot,
+        sandboxDockerNetwork: sandboxDraft.dockerNetwork,
+        sandboxDockerReadOnlyRoot: sandboxDraft.dockerReadOnlyRoot,
+        sandboxDockerSetupCommand: sandboxDraft.dockerSetupCommand,
+        sandboxDockerBinds: sandboxDraft.dockerBinds,
         groupChatMode: triStateFromValue(isPlainObject(groupChatObj) ? getNestedValue(groupChatObj, 'enabled') : undefined),
         agentToAgentMode: triStateFromValue(isPlainObject(toolsObj) ? getNestedValue(toolsObj, 'agentToAgent.enabled') : undefined),
         agentToAgentAllow: isPlainObject(toolsObj) ? parseStringList(getNestedValue(toolsObj, 'agentToAgent.allow')).join(', ') : '',
@@ -1367,6 +1571,7 @@ export default function Agents() {
         })(),
         subagentAllowAgents: isPlainObject(subagentsObj) ? parseStringList(getNestedValue(subagentsObj, 'allowAgents')).join(', ') : '',
       }));
+      setSandboxClearIntent(false);
       setMsg('已从 Advanced JSON 同步结构化字段');
       setTimeout(() => setMsg(''), 3000);
     } catch (err) {
@@ -1380,6 +1585,11 @@ export default function Agents() {
     if (saveBlockedReason) {
       setFormSection('basic');
       setMsg(saveBlockedReason);
+      return;
+    }
+    if (sandboxStructuredLocked && structuredTouched.sandbox) {
+      setFormSection('advanced');
+      setMsg('当前 sandbox 含有结构化表单不支持的值，请先在 Advanced JSON 中调整。');
       return;
     }
     const id = form.id.trim();
@@ -1480,6 +1690,36 @@ export default function Agents() {
         toolsObj = cleanupObject(nextTools);
       }
 
+      if (structuredTouched.sandbox) {
+        if (sandboxObj !== undefined && !isPlainObject(sandboxObj)) {
+          throw new Error('sandbox JSON 必须是对象才能与结构化字段合并');
+        }
+        const nextSandbox = isPlainObject(sandboxObj) ? deepClone(sandboxObj) : {};
+        if (form.sandboxMode) nextSandbox.mode = form.sandboxMode;
+        else delete nextSandbox.mode;
+        if (form.sandboxScope) nextSandbox.scope = form.sandboxScope;
+        else delete nextSandbox.scope;
+        if (form.sandboxWorkspaceAccess) nextSandbox.workspaceAccess = form.sandboxWorkspaceAccess;
+        else delete nextSandbox.workspaceAccess;
+        if (form.sandboxWorkspaceRoot.trim()) nextSandbox.workspaceRoot = form.sandboxWorkspaceRoot.trim();
+        else delete nextSandbox.workspaceRoot;
+
+        const nextDocker = isPlainObject(nextSandbox.docker) ? nextSandbox.docker : {};
+        if (form.sandboxDockerNetwork.trim()) nextDocker.network = form.sandboxDockerNetwork.trim();
+        else delete nextDocker.network;
+        const readOnlyRoot = triStateToValue(form.sandboxDockerReadOnlyRoot);
+        if (readOnlyRoot === undefined) delete nextDocker.readOnlyRoot;
+        else nextDocker.readOnlyRoot = readOnlyRoot;
+        if (form.sandboxDockerSetupCommand.trim()) nextDocker.setupCommand = form.sandboxDockerSetupCommand.trim();
+        else delete nextDocker.setupCommand;
+        const binds = parseLineList(form.sandboxDockerBinds);
+        if (binds.length > 0) nextDocker.binds = binds;
+        else delete nextDocker.binds;
+        if (Object.keys(nextDocker).length > 0) nextSandbox.docker = nextDocker;
+        else delete nextSandbox.docker;
+        sandboxObj = cleanupObject(nextSandbox);
+      }
+
       if (structuredTouched.subagents) {
         if (subagentsObj !== undefined && !isPlainObject(subagentsObj)) {
           throw new Error('subagents JSON 必须是对象才能与结构化字段合并');
@@ -1502,9 +1742,11 @@ export default function Agents() {
       agentDir: form.agentDir.trim() || undefined,
       default: effectiveIsDefault,
     };
+    const clearsSandboxOverride = structuredTouched.sandbox && sandboxObj === undefined && form.sandboxText.trim() !== '' && !!editingId;
     if (modelObj !== undefined) payload.model = modelObj;
     if (toolsObj !== undefined) payload.tools = toolsObj;
-    if (sandboxObj !== undefined) payload.sandbox = sandboxObj;
+    if (clearsSandboxOverride && editingId) payload.sandbox = null;
+    else if (sandboxObj !== undefined) payload.sandbox = sandboxObj;
     if (groupChatObj !== undefined) payload.groupChat = groupChatObj;
     if (identityObj !== undefined) payload.identity = identityObj;
     if (subagentsObj !== undefined) payload.subagents = subagentsObj;
@@ -1826,6 +2068,7 @@ export default function Agents() {
   const selectedTools = isPlainObject(selectedAgent?.tools) ? selectedAgent.tools : {};
   const selectedSubagents = isPlainObject(selectedAgent?.subagents) ? selectedAgent.subagents : {};
   const selectedGroupChat = isPlainObject(selectedAgent?.groupChat) ? selectedAgent.groupChat : {};
+  const selectedSandboxDraft = extractSandboxDraft(selectedAgent?.sandbox);
   const selectedAdvancedBlocks = summarizeAdvancedBlocks(selectedAgent);
   const selectedRouteCount = selectedAgentBindings.length;
   const selectedToolAllow = parseStringList(getNestedValue(selectedTools, 'allow'));
@@ -2209,7 +2452,7 @@ export default function Agents() {
                         <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
                           <div>
                             <h4 className="text-sm font-semibold text-gray-900 dark:text-white">工具策略与执行权限（Tool Policy & Sandbox）</h4>
-                            <p className="text-xs text-gray-500 mt-1">对齐官方 Tools 面板的思路，优先展示 profile、allow/deny 与 sandbox 摘要。</p>
+                            <p className="text-xs text-gray-500 mt-1">这里把 “能不能调用工具” 和 “工具在哪里执行” 分开看，避免把 sandbox 误当成完整权限模型。</p>
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                             <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
@@ -2218,15 +2461,28 @@ export default function Agents() {
                               <div className="mt-1 text-xs text-gray-500">allow {selectedToolAllow.length} 项 · deny {selectedToolDeny.length} 项</div>
                             </div>
                             <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
-                              <div className="text-xs text-gray-400">Sandbox</div>
-                              <div className="mt-1 text-gray-900 dark:text-white">{describeSandboxMode(selectedAgent.sandbox)}</div>
+                              <div className="text-xs text-gray-400">Sandbox 模式</div>
+                              <div className="mt-1 text-gray-900 dark:text-white">{describeSandboxModeValue(selectedSandboxDraft.mode)}</div>
+                              <div className="mt-1 text-xs text-gray-500">scope：{describeSandboxScopeValue(selectedSandboxDraft.scope)}</div>
                             </div>
                             <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
-                              <div className="text-xs text-gray-400">工作区（Workspace）</div>
+                              <div className="text-xs text-gray-400">工作区挂载（workspaceAccess）</div>
+                              <div className="mt-1 text-gray-900 dark:text-white">{describeWorkspaceAccessValue(selectedSandboxDraft.workspaceAccess)}</div>
+                              <div className="mt-1 text-xs text-gray-500 font-mono">{selectedSandboxDraft.workspaceRoot || '使用默认 sandbox workspace'}</div>
+                            </div>
+                            <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
+                              <div className="text-xs text-gray-400">Docker 覆盖</div>
+                              <div className="mt-1 text-gray-900 dark:text-white">{selectedSandboxDraft.dockerBinds ? `${parseLineList(selectedSandboxDraft.dockerBinds).length} 条 bind` : '未设置 bind'}</div>
+                              <div className="mt-1 text-xs text-gray-500">network：{selectedSandboxDraft.dockerNetwork || '默认'} · readOnlyRoot：{describeToggleValue(selectedSandboxDraft.dockerReadOnlyRoot, '启用', '关闭')}</div>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            <div className="rounded-lg border border-gray-100 dark:border-gray-700 px-3 py-3">
+                              <div className="text-gray-400">工作区（Workspace）</div>
                               <div className="mt-1 font-mono text-gray-700 dark:text-gray-200">{selectedAgent.workspace || '未设置'}</div>
                             </div>
-                            <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
-                              <div className="text-xs text-gray-400">Agent 目录（AgentDir）</div>
+                            <div className="rounded-lg border border-gray-100 dark:border-gray-700 px-3 py-3">
+                              <div className="text-gray-400">Agent 目录（AgentDir）</div>
                               <div className="mt-1 font-mono text-gray-700 dark:text-gray-200">{selectedAgent.agentDir || '未设置'}</div>
                             </div>
                           </div>
@@ -3168,7 +3424,7 @@ export default function Agents() {
                   <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-[12px] text-amber-700 space-y-1.5">
                     <div><span className="font-medium">workspace</span> 只是默认工作目录，方便文件与上下文定位；它不是硬隔离边界。</div>
                     <div>如果需要更严格的执行限制，请在 <span className="font-medium">Access &amp; Safety</span> 里设置 <span className="font-mono">sandbox</span> 覆盖。</div>
-                    <div>后端会校验唯一性：同一个 <span className="font-mono">agentDir</span> 不要复用；当前实现里 <span className="font-mono">workspace</span> 也不能与其它 Agent 重复。</div>
+                    <div>当前 Panel 还会把 <span className="font-mono">workspace</span> / <span className="font-mono">agentDir</span> 约束在 OpenClaw 受管目录内；同一个 <span className="font-mono">agentDir</span> 不要复用，<span className="font-mono">workspace</span> 目前也不能与其它 Agent 重复。</div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3200,10 +3456,10 @@ export default function Agents() {
                       <input
                         value={form.workspace}
                         onChange={e => updateForm({ workspace: e.target.value })}
-                        placeholder="/data/workspaces/support"
+                        placeholder="workspaces/support"
                         className="w-full mt-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
                       />
-                      <p className="mt-1 text-[11px] text-gray-400">用于默认文件读写位置，不代表执行隔离。</p>
+                      <p className="mt-1 text-[11px] text-gray-400">用于默认文件读写位置，不代表执行隔离；当前 Panel 只接受 OpenClaw 受管目录内的路径。</p>
                       {workspaceConflict && (
                         <p className="mt-1 text-[11px] text-red-600">该 workspace 已被 Agent “{workspaceConflict.id}” 使用。</p>
                       )}
@@ -3374,17 +3630,31 @@ export default function Agents() {
 
               {formSection === 'access' && (
                 <div className="space-y-5">
+                  <div className="rounded-xl border border-sky-100 bg-sky-50 px-4 py-3 text-[12px] text-sky-700 space-y-1.5">
+                    <div><span className="font-medium">workspace</span> 只是默认 cwd；真正决定“在哪里执行”的是 <span className="font-medium">sandbox</span>。</div>
+                    <div><span className="font-medium">workspaceAccess</span> 决定工作区如何挂载，<span className="font-medium">docker.binds</span> 则会额外挂入宿主机目录，两者彼此独立。</div>
+                    <div><span className="font-medium">tools.allow / deny / sandbox.tools / elevated</span> 仍属于工具策略，不在 <span className="font-mono">sandbox</span> JSON 里；它们会继续在 Tools JSON 中生效。</div>
+                  </div>
+
+                  {sandboxStructuredLocked && (
+                    <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-[12px] text-amber-700 space-y-1.5">
+                      <div className="font-medium">当前 sandbox 含有结构化表单暂不支持的值。</div>
+                      <div>为避免保存时丢失未知枚举，已锁定结构化 sandbox 编辑；请先到 Advanced JSON 调整这些字段：<span className="font-mono">{sandboxStructuredIssues.join(', ')}</span></div>
+                    </div>
+                  )}
+
                   <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
                     <div>
                       <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Sandbox 起步模板（Starter Preset）</h4>
-                      <p className="text-xs text-gray-500 mt-1">这里提供低门槛模板，方便快速开始；如需官方完整字段，请在 Advanced 里继续编辑 <span className="font-mono">sandbox</span> JSON。</p>
+                      <p className="text-xs text-gray-500 mt-1">先用模板建立正确心智模型，再按需补充 mode / scope / docker 覆盖；更高阶字段仍可回到 Advanced JSON。</p>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-[220px,1fr] gap-4">
                       <div>
-                          <label className="text-xs text-gray-500">起步模板（Starter Preset）</label>
+                        <label className="text-xs text-gray-500">起步模板（Starter Preset）</label>
                         <select
                           value={sandboxStarter}
                           onChange={e => applySandboxStarter(e.target.value)}
+                          disabled={sandboxStructuredLocked}
                           className="w-full mt-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
                         >
                           {SANDBOX_STARTERS.map(starter => (
@@ -3399,6 +3669,145 @@ export default function Agents() {
                           : SANDBOX_STARTERS.find(item => item.key === sandboxStarter)?.help}
                       </div>
                     </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs text-gray-500">运行模式（sandbox.mode）</label>
+                        <select
+                          value={form.sandboxMode}
+                          onChange={e => updateSandboxForm({ sandboxMode: e.target.value as '' | 'off' | 'non-main' | 'all' })}
+                          disabled={sandboxStructuredLocked}
+                          className="w-full mt-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
+                        >
+                          <option value="">继承默认</option>
+                          <option value="off">关闭（off，宿主机运行）</option>
+                          <option value="non-main">仅非主会话（non-main）</option>
+                          <option value="all">全部会话（all）</option>
+                        </select>
+                        <p className="mt-1 text-[11px] text-gray-400">官方里 <span className="font-mono">non-main</span> 是常见默认值；群聊 / channel / thread 会话通常都会落入这个分支。</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">容器复用范围（sandbox.scope）</label>
+                        <select
+                          value={form.sandboxScope}
+                          onChange={e => updateSandboxForm({ sandboxScope: e.target.value as '' | 'session' | 'agent' | 'shared' })}
+                          disabled={sandboxStructuredLocked}
+                          className="w-full mt-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
+                        >
+                          <option value="">继承默认</option>
+                          <option value="session">每会话一个容器（session）</option>
+                          <option value="agent">每 Agent 一个容器（agent）</option>
+                          <option value="shared">全部共享一个容器（shared）</option>
+                        </select>
+                        <p className="mt-1 text-[11px] text-gray-400">若选 <span className="font-mono">shared</span>，官方语义下 per-agent <span className="font-mono">docker.binds</span> 会被忽略。</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">工作区挂载方式（workspaceAccess）</label>
+                        <select
+                          value={form.sandboxWorkspaceAccess}
+                          onChange={e => updateSandboxForm({ sandboxWorkspaceAccess: e.target.value as '' | 'none' | 'ro' | 'rw' })}
+                          disabled={sandboxStructuredLocked}
+                          className="w-full mt-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
+                        >
+                          <option value="">继承默认</option>
+                          <option value="none">仅沙箱工作区（none）</option>
+                          <option value="ro">只读挂载 Agent workspace（ro）</option>
+                          <option value="rw">可写挂载 Agent workspace（rw）</option>
+                        </select>
+                        <p className="mt-1 text-[11px] text-gray-400"><span className="font-mono">none</span> 才是官方默认；<span className="font-mono">ro/rw</span> 只影响 workspace 挂载，不会自动影响其它 bind mount。</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">沙箱工作区根（workspaceRoot）</label>
+                        <input
+                          value={form.sandboxWorkspaceRoot}
+                          onChange={e => updateSandboxForm({ sandboxWorkspaceRoot: e.target.value })}
+                          disabled={sandboxStructuredLocked}
+                          placeholder="例如 /workspace 或 /agent"
+                          className="w-full mt-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
+                        />
+                        <p className="mt-1 text-[11px] text-gray-400">只在你需要自定义容器内工作区根时覆盖；留空表示继承默认。</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Docker 覆盖（sandbox.docker）</h4>
+                      <p className="text-xs text-gray-500 mt-1">这些字段决定容器根文件系统、网络和额外挂载；它们不会替代工具 allow/deny。</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs text-gray-500">容器网络（docker.network）</label>
+                        <input
+                          value={form.sandboxDockerNetwork}
+                          onChange={e => updateSandboxForm({ sandboxDockerNetwork: e.target.value })}
+                          disabled={sandboxStructuredLocked}
+                          placeholder="例如 none / bridge / custom-network"
+                          className="w-full mt-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
+                        />
+                        <p className="mt-1 text-[11px] text-gray-400">官方默认是无网络；只有确实需要下载依赖或联网工具时再显式开放。</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">根文件系统只读（docker.readOnlyRoot）</label>
+                        <select
+                          value={form.sandboxDockerReadOnlyRoot}
+                          onChange={e => updateSandboxForm({ sandboxDockerReadOnlyRoot: e.target.value as InheritToggle })}
+                          disabled={sandboxStructuredLocked}
+                          className="w-full mt-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
+                        >
+                          <option value="inherit">继承默认</option>
+                          <option value="enabled">显式只读</option>
+                          <option value="disabled">显式可写</option>
+                        </select>
+                        <p className="mt-1 text-[11px] text-gray-400">如果你依赖 <span className="font-mono">setupCommand</span> 做包安装，通常需要关闭只读根并允许网络。</p>
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="text-xs text-gray-500">一次性初始化命令（docker.setupCommand）</label>
+                        <textarea
+                          rows={3}
+                          value={form.sandboxDockerSetupCommand}
+                          onChange={e => updateSandboxForm({ sandboxDockerSetupCommand: e.target.value })}
+                          disabled={sandboxStructuredLocked}
+                          placeholder="例如 apt-get update && apt-get install -y nodejs"
+                          className="w-full mt-1 px-3 py-2 text-sm font-mono border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
+                        />
+                        <p className="mt-1 text-[11px] text-gray-400">它只在容器创建时执行一次；如果需要 root / 可写根 / 网络，请与上面的字段一起配置。</p>
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="text-xs text-gray-500">额外挂载（docker.binds，一行一个）</label>
+                        <textarea
+                          rows={4}
+                          value={form.sandboxDockerBinds}
+                          onChange={e => updateSandboxForm({ sandboxDockerBinds: e.target.value })}
+                          disabled={sandboxStructuredLocked}
+                          placeholder={"/host/source:/source:ro\n/var/data/myapp:/data:rw"}
+                          className="w-full mt-1 px-3 py-2 text-sm font-mono border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
+                        />
+                        <p className="mt-1 text-[11px] text-amber-600">注意：<span className="font-mono">docker.binds</span> 会直接暴露宿主机路径；即使 <span className="font-mono">workspaceAccess</span> 是 <span className="font-mono">none/ro</span>，bind 仍然可能扩大访问面。</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">工具策略与逃逸口（Tool Policy & Elevated）</h4>
+                      <p className="text-xs text-gray-500 mt-1">这里不直接改 <span className="font-mono">tools.sandbox.tools</span> / <span className="font-mono">tools.elevated</span>，但要先理解它们和 sandbox 的关系。</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                      <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3 text-gray-600 dark:text-gray-300">
+                        <div className="font-medium text-gray-900 dark:text-white">Sandbox</div>
+                        <div className="mt-1">决定工具是在宿主机还是 Docker 里运行。</div>
+                      </div>
+                      <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3 text-gray-600 dark:text-gray-300">
+                        <div className="font-medium text-gray-900 dark:text-white">Tool Policy</div>
+                        <div className="mt-1"><span className="font-mono">tools.allow / deny / sandbox.tools</span> 决定“这个工具能不能被调用”。</div>
+                      </div>
+                      <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3 text-gray-600 dark:text-gray-300">
+                        <div className="font-medium text-gray-900 dark:text-white">Elevated</div>
+                        <div className="mt-1"><span className="font-mono">tools.elevated</span> 只是 <span className="font-mono">exec</span> 的宿主机逃逸口，不会授予被 deny 的工具。</div>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-gray-400">如果你要进一步配置 <span className="font-mono">tools.sandbox.tools</span>、<span className="font-mono">tools.elevated</span>、<span className="font-mono">sandbox.browser.*</span>、<span className="font-mono">docker.image/user/env</span>，请继续在 Advanced JSON 里编辑。</p>
                   </div>
 
                   <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
@@ -3406,6 +3815,11 @@ export default function Agents() {
                       <h4 className="text-sm font-semibold text-gray-900 dark:text-white">群聊行为（Group Chat）</h4>
                       <p className="text-xs text-gray-500 mt-1">用于设置本 Agent 是否显式覆盖 <span className="font-mono">groupChat.enabled</span>。留在“继承默认”时，不会写入额外覆盖。</p>
                     </div>
+                    {sandboxClearIntent && editingId && (
+                      <div className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-[12px] text-amber-700">
+                        你当前选择了“继承默认”。保存时会优先移除结构化 sandbox 字段；如果当前 override 里只剩这些字段，就会删除整块 <span className="font-mono">sandbox</span>。若还有 <span className="font-mono">sandbox.browser.*</span> 等 Advanced 字段，它们会继续保留。
+                      </div>
+                    )}
                     <div className="max-w-xs">
                         <label className="text-xs text-gray-500">群聊开关（groupChat.enabled）</label>
                       <select
@@ -3489,7 +3903,7 @@ export default function Agents() {
                 <div className="space-y-5">
                   <div className="rounded-xl border border-violet-100 bg-violet-50 dark:bg-violet-900/10 dark:border-violet-900/30 px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div className="text-[12px] text-violet-700 dark:text-violet-200">
-                      高级 JSON（Advanced）保留完整编辑能力。保存时，结构化表单会覆盖相同路径上的值；如果你在这里改了结构化字段对应的 JSON，可先点击“从 JSON 同步结构化字段”。
+                      高级 JSON（Advanced）保留完整编辑能力。保存时，结构化表单会覆盖相同路径上的值；如果你在这里改了结构化字段对应的 JSON，可先点击“从 JSON 同步结构化字段”。像 <span className="font-mono">tools.sandbox.tools</span>、<span className="font-mono">tools.elevated</span>、<span className="font-mono">sandbox.browser.*</span>、<span className="font-mono">docker.image/user/env</span> 这类高阶字段，仍建议直接在这里编辑。
                     </div>
                     <button
                       onClick={syncStructuredFieldsFromAdvanced}
@@ -3573,7 +3987,29 @@ export default function Agents() {
                         name="agentSandboxJson"
                         rows={8}
                         value={form.sandboxText}
-                        onChange={e => setForm(prev => ({ ...prev, sandboxText: e.target.value }))}
+                        onChange={e => {
+                          const value = e.target.value;
+                          setForm(prev => {
+                            const next = { ...prev, sandboxText: value };
+                            try {
+                              const parsed = value.trim() ? JSON.parse(value) : undefined;
+                              const draft = extractSandboxDraft(parsed);
+                              next.sandboxMode = draft.mode;
+                              next.sandboxScope = draft.scope;
+                              next.sandboxWorkspaceAccess = draft.workspaceAccess;
+                              next.sandboxWorkspaceRoot = draft.workspaceRoot;
+                              next.sandboxDockerNetwork = draft.dockerNetwork;
+                              next.sandboxDockerReadOnlyRoot = draft.dockerReadOnlyRoot;
+                              next.sandboxDockerSetupCommand = draft.dockerSetupCommand;
+                              next.sandboxDockerBinds = draft.dockerBinds;
+                            } catch {
+                              // Keep the last structured snapshot until the JSON becomes valid again.
+                            }
+                            return next;
+                          });
+                          setStructuredTouched(prev => ({ ...prev, sandbox: false }));
+                          setSandboxClearIntent(false);
+                        }}
                         className="w-full mt-1 px-3 py-2 text-xs font-mono border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900"
                       />
                     </div>

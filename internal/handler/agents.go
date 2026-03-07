@@ -144,6 +144,10 @@ func CreateOpenClawAgent(cfg *config.Config) gin.HandlerFunc {
 				if k == "id" {
 					continue
 				}
+				if v == nil {
+					delete(merged, k)
+					continue
+				}
 				merged[k] = deepCloneAny(v)
 			}
 			merged["id"] = id
@@ -224,6 +228,10 @@ func UpdateOpenClawAgent(cfg *config.Config) gin.HandlerFunc {
 		merged := deepCloneMap(list[idx])
 		for k, v := range payload {
 			if k == "id" {
+				continue
+			}
+			if v == nil {
+				delete(merged, k)
 				continue
 			}
 			merged[k] = deepCloneAny(v)

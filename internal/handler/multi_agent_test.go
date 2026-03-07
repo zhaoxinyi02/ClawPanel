@@ -1290,6 +1290,66 @@ func TestCreateOpenClawAgentPreservesLegacyDefaultWithoutAgentDir(t *testing.T) 
 	}
 }
 
+func TestUpdateOpenClawAgentAllowsClearingSandboxOverrideWithNull(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	writeJSON(t, filepath.Join(dir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "main",
+			"list": []interface{}{
+				map[string]interface{}{"id": "main", "default": true},
+				map[string]interface{}{
+					"id":   "work",
+					"name": "Work",
+					"sandbox": map[string]interface{}{
+						"mode":            "non-main",
+						"workspaceAccess": "none",
+						"browser": map[string]interface{}{
+							"allowHostControl": true,
+						},
+					},
+				},
+			},
+		},
+	})
+
+	r := gin.New()
+	r.PUT("/openclaw/agents/:id", UpdateOpenClawAgent(cfg))
+	body := []byte(`{"sandbox":null}`)
+	req := httptest.NewRequest(http.MethodPut, "/openclaw/agents/work", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	saved, err := cfg.ReadOpenClawJSON()
+	if err != nil {
+		t.Fatalf("read openclaw.json: %v", err)
+	}
+	agents, _ := saved["agents"].(map[string]interface{})
+	list, _ := agents["list"].([]interface{})
+	var workItem map[string]interface{}
+	for _, raw := range list {
+		item, _ := raw.(map[string]interface{})
+		if strings.TrimSpace(getString(item, "id")) == "work" {
+			workItem = item
+			break
+		}
+	}
+	if workItem == nil {
+		t.Fatalf("expected work agent to remain present")
+	}
+	if _, ok := workItem["sandbox"]; ok {
+		t.Fatalf("expected sandbox override to be removed, got %#v", workItem["sandbox"])
+	}
+}
+
 func TestGetOpenClawAgentsMarksSynthesizedDiskAgentsImplicit(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
