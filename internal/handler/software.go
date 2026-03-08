@@ -845,25 +845,134 @@ echo "✅ $(python3 --version) 安装完成"
 $ErrorActionPreference = "Continue"
 Write-Output "📦 安装 OpenClaw..."
 
+# ---- 工具函数 ----
+function Refresh-Path {
+  $machinePath = [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
+  $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+  $paths = @()
+  if ($machinePath) { $paths += $machinePath }
+  if ($userPath) { $paths += $userPath }
+
+  $commonBins = @()
+  if ($env:ProgramFiles) { $commonBins += (Join-Path $env:ProgramFiles "nodejs") }
+  if (${env:ProgramFiles(x86)}) { $commonBins += (Join-Path ${env:ProgramFiles(x86)} "nodejs") }
+  if ($env:APPDATA) { $commonBins += (Join-Path $env:APPDATA "npm") }
+  foreach ($bin in $commonBins) {
+    if ($bin -and (Test-Path $bin)) { $paths += $bin }
+  }
+
+  $env:PATH = ($paths | Where-Object { $_ } | Select-Object -Unique) -join ";"
+}
+
+function Get-NodeCommand {
+  $cmd = Get-Command node -ErrorAction SilentlyContinue
+  if ($cmd) { return $cmd }
+
+  $candidates = @()
+  if ($env:ProgramFiles) { $candidates += (Join-Path $env:ProgramFiles "nodejs\node.exe") }
+  if (${env:ProgramFiles(x86)}) { $candidates += (Join-Path ${env:ProgramFiles(x86)} "nodejs\node.exe") }
+
+  $nvmRoots = @(
+    [System.Environment]::GetEnvironmentVariable("NVM_HOME", "Machine"),
+    [System.Environment]::GetEnvironmentVariable("NVM_HOME", "User"),
+    $(if ($env:APPDATA) { Join-Path $env:APPDATA "nvm" })
+  ) | Where-Object { $_ -and (Test-Path $_) }
+
+  foreach ($root in $nvmRoots) {
+    $versions = Get-ChildItem $root -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending
+    foreach ($versionDir in $versions) {
+      $candidates += (Join-Path $versionDir.FullName "node.exe")
+    }
+  }
+
+  foreach ($candidate in $candidates | Where-Object { $_ }) {
+    if (Test-Path $candidate) {
+      return Get-Item $candidate
+    }
+  }
+
+  return $null
+}
+
+function Get-NodeVersionText {
+  param([object]$NodeCmd)
+
+  if (-not $NodeCmd) { return $null }
+  $nodePath = if ($NodeCmd.Source) { $NodeCmd.Source } else { $NodeCmd.FullName }
+  if (-not $nodePath) { return $null }
+  return (& $nodePath --version 2>$null)
+}
+
+Refresh-Path
+
 # ---- 检查并自动安装 Node.js ----
-$nodeCheck = Get-Command node -ErrorAction SilentlyContinue
+$nodeCheck = Get-NodeCommand
 if (-not $nodeCheck) {
   Write-Output "⚠️ 未检测到 Node.js，正在自动安装..."
   $wingetCheck = Get-Command winget -ErrorAction SilentlyContinue
   if ($wingetCheck) {
     Write-Output "📥 通过 winget 安装 Node.js LTS..."
     winget install OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements --silent 2>&1
-    # 刷新 PATH
-    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
-    $nodeCheck = Get-Command node -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+    Refresh-Path
+    $nodeCheck = Get-NodeCommand
     if (-not $nodeCheck) {
-      Write-Output "❌ Node.js 自动安装失败，请手动从 https://nodejs.org 下载安装后重试"
-      exit 1
+      Write-Output "⚠️ winget 安装后仍未检测到 node，尝试从常见目录再次探测..."
+      $nodeCheck = Get-NodeCommand
     }
-    Write-Output "✅ Node.js $(node --version) 安装完成"
-  } else {
-    Write-Output "❌ 未找到 winget，请手动从 https://nodejs.org 下载安装 Node.js 后重试"
+  }
+
+  if (-not $nodeCheck) {
+    Write-Output "📥 尝试下载安装 Node.js 官方 MSI..."
+    $arch = if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "x86" }
+    $nodeVersion = "v22.14.0"
+    $msiName = "node-$nodeVersion-$arch.msi"
+    $downloadUrls = @(
+      "https://npmmirror.com/mirrors/node/$nodeVersion/$msiName",
+      "https://nodejs.org/dist/$nodeVersion/$msiName"
+    )
+    $msiPath = Join-Path $env:TEMP $msiName
+    $downloaded = $false
+
+    foreach ($url in $downloadUrls) {
+      try {
+        Write-Output "🌐 下载: $url"
+        Invoke-WebRequest -Uri $url -OutFile $msiPath -UseBasicParsing
+        if (Test-Path $msiPath) {
+          $downloaded = $true
+          break
+        }
+      } catch {
+        Write-Output "⚠️ 下载失败: $url"
+      }
+    }
+
+    if ($downloaded) {
+      $installProc = Start-Process msiexec.exe -ArgumentList "/i", "`"$msiPath`"", "/qn", "/norestart" -Wait -PassThru
+      if ($installProc.ExitCode -ne 0) {
+        Write-Output "⚠️ MSI 安装返回码: $($installProc.ExitCode)"
+      }
+      Remove-Item $msiPath -Force -ErrorAction SilentlyContinue
+      Start-Sleep -Seconds 2
+      Refresh-Path
+      $nodeCheck = Get-NodeCommand
+    }
+  }
+
+  if (-not $nodeCheck) {
+    if (-not $wingetCheck) {
+      Write-Output "❌ 未找到 winget，且官方 Node.js 安装也失败，请手动从 https://nodejs.org 下载安装后重试"
+    } else {
+      Write-Output "❌ Node.js 自动安装失败，请手动从 https://nodejs.org 下载安装后重试"
+    }
     exit 1
+  }
+
+  $nodeVersionText = Get-NodeVersionText $nodeCheck
+  if ($nodeVersionText) {
+    Write-Output "✅ Node.js $nodeVersionText 安装完成"
+  } else {
+    Write-Output "✅ Node.js 已安装完成"
   }
 }
 
@@ -899,7 +1008,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Refresh PATH so we can find openclaw.cmd
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+Refresh-Path
 # Also add npm global bin to PATH
 if ($npmPrefix -and (Test-Path $npmPrefix)) {
   $env:Path = "$npmPrefix;$env:Path"
