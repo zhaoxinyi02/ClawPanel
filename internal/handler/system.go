@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -174,9 +176,19 @@ func Restore(cfg *config.Config) gin.HandlerFunc {
 func RestartGateway(cfg *config.Config, procMgr *process.Manager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		patchModelsJSON(cfg)
+		status := procMgr.GetStatus()
+
+		if status.ManagedExternally || status.Daemonized {
+			if err := restartGatewayViaCLI(cfg, procMgr); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": "通过 CLI 重启网关失败: " + err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"ok": true, "message": "已通过 CLI 发起网关重启"})
+			return
+		}
 
 		// If OpenClaw process is not running, start it
-		if !procMgr.GetStatus().Running {
+		if !status.Running {
 			if err := procMgr.Start(); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": "启动 OpenClaw 失败: " + err.Error()})
 				return
@@ -185,16 +197,150 @@ func RestartGateway(cfg *config.Config, procMgr *process.Manager) gin.HandlerFun
 			return
 		}
 
-		signalPath := filepath.Join(cfg.OpenClawDir, "restart-gateway-signal.json")
-		data, _ := json.Marshal(map[string]interface{}{
-			"requestedAt": time.Now().Format(time.RFC3339),
-		})
-		if err := os.WriteFile(signalPath, data, 0644); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+		if err := procMgr.Restart(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": "重启 OpenClaw 网关失败: " + err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"ok": true, "message": "网关重启请求已发送"})
+		c.JSON(http.StatusOK, gin.H{"ok": true, "message": "OpenClaw 网关已重启"})
 	}
+}
+
+func restartGatewayViaCLI(cfg *config.Config, procMgr *process.Manager) error {
+	bins := candidateOpenClawBins(cfg)
+	errMsgs := make([]string, 0, len(bins))
+	for _, bin := range bins {
+		if err := restartGatewayWithBinary(cfg, procMgr, bin); err == nil {
+			return nil
+		} else {
+			errMsgs = append(errMsgs, err.Error())
+		}
+	}
+	if len(errMsgs) > 0 {
+		return fmt.Errorf(strings.Join(errMsgs, " | "))
+	}
+	return fmt.Errorf("未找到可用的 openclaw 启动命令")
+}
+
+func candidateOpenClawBins(cfg *config.Config) []string {
+	bins := []string{}
+	if p := config.DetectOpenClawBinaryPath(); p != "" {
+		bins = append(bins, p)
+	}
+	if cfg != nil {
+		if app := strings.TrimSpace(cfg.OpenClawApp); app != "" {
+			if runtime.GOOS == "windows" {
+				bins = append(bins,
+					filepath.Join(filepath.Dir(app), "npm-global", "openclaw.cmd"),
+					filepath.Join(filepath.Dir(app), "npm-global", "node_modules", ".bin", "openclaw.cmd"),
+				)
+			} else {
+				bins = append(bins,
+					filepath.Join(filepath.Dir(app), ".npm-global", "bin", "openclaw"),
+				)
+			}
+		}
+		if runtime.GOOS == "windows" {
+			bins = append(bins,
+				filepath.Join(filepath.Dir(cfg.OpenClawDir), "npm-global", "openclaw.cmd"),
+				filepath.Join(filepath.Dir(cfg.OpenClawDir), "npm-global", "node_modules", ".bin", "openclaw.cmd"),
+			)
+		}
+	}
+	bins = append(bins, "openclaw")
+
+	seen := map[string]struct{}{}
+	uniq := make([]string, 0, len(bins))
+	for _, bin := range bins {
+		bin = strings.TrimSpace(bin)
+		if bin == "" {
+			continue
+		}
+		if _, ok := seen[bin]; ok {
+			continue
+		}
+		seen[bin] = struct{}{}
+		uniq = append(uniq, bin)
+	}
+	return uniq
+}
+
+func restartGatewayWithBinary(cfg *config.Config, procMgr *process.Manager, bin string) error {
+	env := append(config.BuildExecEnv(),
+		fmt.Sprintf("OPENCLAW_DIR=%s", cfg.OpenClawDir),
+		fmt.Sprintf("OPENCLAW_STATE_DIR=%s", cfg.OpenClawDir),
+		fmt.Sprintf("OPENCLAW_CONFIG_PATH=%s", filepath.Join(cfg.OpenClawDir, "openclaw.json")),
+	)
+
+	stopErr, stopOut := runGatewayCommand(cfg, env, bin, "gateway", "stop")
+	if stopErr != nil {
+		_ = stopOut
+	}
+
+	downObserved := false
+	if procMgr != nil {
+		downObserved = waitGatewayState(procMgr, false, 8*time.Second)
+	}
+
+	startVariants := [][]string{{"gateway"}, {"gateway", "start"}}
+	startErrs := make([]string, 0, len(startVariants))
+	for _, args := range startVariants {
+		cmd := exec.Command(bin, args...)
+		cmd.Dir = cfg.OpenClawDir
+		cmd.Env = env
+		if err := cmd.Start(); err != nil {
+			startErrs = append(startErrs, fmt.Sprintf("%s: %v", strings.Join(args, " "), err))
+			continue
+		}
+		go func(c *exec.Cmd) {
+			_, _ = c.Process.Wait()
+		}(cmd)
+
+		if procMgr == nil {
+			return nil
+		}
+		if waitGatewayState(procMgr, true, 12*time.Second) {
+			if downObserved || stopErr == nil {
+				return nil
+			}
+			startErrs = append(startErrs, fmt.Sprintf("%s: 网关持续在线，未确认重启", strings.Join(args, " ")))
+			continue
+		}
+		startErrs = append(startErrs, fmt.Sprintf("%s: 网关未在超时时间内就绪", strings.Join(args, " ")))
+	}
+
+	msg := fmt.Sprintf("%s 重启失败", bin)
+	if stopErr != nil {
+		msg += "; stop: " + strings.TrimSpace(stopOut)
+	}
+	if len(startErrs) > 0 {
+		msg += "; start: " + strings.Join(startErrs, " | ")
+	}
+	return fmt.Errorf("%s", msg)
+}
+
+func runGatewayCommand(cfg *config.Config, env []string, bin string, args ...string) (error, string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Dir = cfg.OpenClawDir
+	cmd.Env = env
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("命令超时"), string(out)
+	}
+	return err, string(out)
+}
+
+func waitGatewayState(procMgr *process.Manager, expected bool, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		running := procMgr.GatewayListening()
+		if running == expected {
+			return true
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return procMgr.GatewayListening() == expected
 }
 
 // RestartPanel 重启 ClawPanel 自身 (通过 systemctl)

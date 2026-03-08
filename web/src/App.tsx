@@ -20,6 +20,7 @@ export default function App() {
   const enableAgents = import.meta.env.VITE_FEATURE_AGENTS !== 'false';
   const auth = useAuth();
   const ws = useWebSocket();
+  const openClawConfigured = ws.statusReady ? !!ws.openclawStatus?.configured : true;
 
   if (!auth.isLoggedIn) {
     return (
@@ -37,14 +38,14 @@ export default function App() {
       <Route element={<Layout onLogout={auth.logout} napcatStatus={ws.napcatStatus} wechatStatus={ws.wechatStatus} openclawStatus={ws.openclawStatus} processStatus={ws.processStatus} wsMessages={ws.wsMessages} />}>
         <Route path="/" element={<Dashboard ws={ws} />} />
         <Route path="/logs" element={<ActivityLog ws={ws} />} />
-        <Route path="/channels" element={<OpenClawRequired configured={!!ws.openclawStatus?.configured}><Channels /></OpenClawRequired>} />
-        <Route path="/skills" element={<OpenClawRequired configured={!!ws.openclawStatus?.configured}><Skills /></OpenClawRequired>} />
-        <Route path="/plugins" element={<OpenClawRequired configured={!!ws.openclawStatus?.configured}><Plugins /></OpenClawRequired>} />
+        <Route path="/channels" element={<OpenClawRequired configured={openClawConfigured}><Channels /></OpenClawRequired>} />
+        <Route path="/skills" element={<OpenClawRequired configured={openClawConfigured}><Skills /></OpenClawRequired>} />
+        <Route path="/plugins" element={<OpenClawRequired configured={openClawConfigured}><Plugins /></OpenClawRequired>} />
         {enableAgents && (
-          <Route path="/agents" element={<OpenClawRequired configured={!!ws.openclawStatus?.configured}><Agents /></OpenClawRequired>} />
+          <Route path="/agents" element={<OpenClawRequired configured={openClawConfigured}><Agents /></OpenClawRequired>} />
         )}
-        <Route path="/cron" element={<OpenClawRequired configured={!!ws.openclawStatus?.configured}><CronJobs /></OpenClawRequired>} />
-        <Route path="/sessions" element={<OpenClawRequired configured={!!ws.openclawStatus?.configured}><Sessions /></OpenClawRequired>} />
+        <Route path="/cron" element={<OpenClawRequired configured={openClawConfigured}><CronJobs /></OpenClawRequired>} />
+        <Route path="/sessions" element={<OpenClawRequired configured={openClawConfigured}><Sessions /></OpenClawRequired>} />
         <Route path="/config" element={<SystemConfig />} />
         <Route path="/workspace" element={<Workspace />} />
       </Route>

@@ -639,6 +639,8 @@ func (c *Config) OpenClawInstalled() bool {
 		winPaths := []string{
 			filepath.Join(home, "AppData", "Roaming", "npm", "openclaw.cmd"),
 			filepath.Join(home, "AppData", "Roaming", "npm", "openclaw"),
+			`C:\ClawPanel\npm-global\openclaw.cmd`,
+			`C:\ClawPanel\npm-global\node_modules\.bin\openclaw.cmd`,
 		}
 		// Also check real user profiles (when running as SYSTEM service)
 		for _, userHome := range getWindowsUserHomes() {

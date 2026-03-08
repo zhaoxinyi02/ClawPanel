@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../lib/api';
+import { ensureOpenClawInstallPrerequisites } from '../lib/openclawPrereq';
 import {
   Save, RefreshCw, ChevronDown, ChevronRight,
   Brain, MessageSquare, Globe, Terminal, Webhook,
@@ -1741,6 +1742,13 @@ function SoftwareEnvironment({ envInfo, onRefresh }: { envInfo: any; onRefresh: 
     setInstalling(id);
     setInstallMsg('');
     try {
+      if (id === 'openclaw') {
+        const okToInstall = await ensureOpenClawInstallPrerequisites();
+        if (!okToInstall) {
+          setInstallMsg('❌ 请先手动安装 Node.js / Git 后再安装 OpenClaw');
+          return;
+        }
+      }
       const r = await api.installSoftware(id);
       if (r.ok) {
         setInstallMsg(`✅ ${id} 安装任务已创建，请在消息中心查看进度`);

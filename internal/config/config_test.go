@@ -339,6 +339,42 @@ func TestWriteOpenClawJSONMaterializesLegacyMainWithoutDiskDir(t *testing.T) {
 	}
 }
 
+func TestWriteOpenClawJSONMaterializesDiskOnlyMainWithoutLegacyDefault(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &Config{OpenClawDir: dir}
+	if err := os.MkdirAll(filepath.Join(dir, "agents", "main"), 0755); err != nil {
+		t.Fatalf("mkdir main agent dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "agents", "work"), 0755); err != nil {
+		t.Fatalf("mkdir work agent dir: %v", err)
+	}
+
+	input := map[string]interface{}{
+		"agents": map[string]interface{}{},
+	}
+
+	if err := cfg.WriteOpenClawJSON(input); err != nil {
+		t.Fatalf("WriteOpenClawJSON failed: %v", err)
+	}
+
+	saved, err := cfg.ReadOpenClawJSON()
+	if err != nil {
+		t.Fatalf("ReadOpenClawJSON failed: %v", err)
+	}
+
+	agents, _ := saved["agents"].(map[string]interface{})
+	list, _ := agents["list"].([]interface{})
+	if len(list) != 2 {
+		t.Fatalf("expected synthesized list for disk agents, got %#v", list)
+	}
+	item, _ := list[0].(map[string]interface{})
+	if item == nil || item["id"] != "main" || item["default"] != true {
+		t.Fatalf("expected main to become explicit default for disk-only agents, got %#v", list)
+	}
+}
+
 func TestNormalizeOpenClawConfigKeepsDiskOnlyLegacyDefaultWithoutStateDir(t *testing.T) {
 	t.Parallel()
 

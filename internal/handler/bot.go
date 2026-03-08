@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -227,49 +228,7 @@ func readNapCatWebuiToken(cfg *config.Config) string {
 		if napcatDir == "" {
 			return ""
 		}
-		// Walk up from bootmain dir to find the napcat logs directory
-		// Structure: <install>/versions/<ver>/resources/app/napcat/logs
-		logsDir := ""
-		filepath.WalkDir(napcatDir, func(path string, d os.DirEntry, err error) error {
-			if err != nil || logsDir != "" {
-				return nil
-			}
-			if d.IsDir() && strings.EqualFold(d.Name(), "logs") {
-				// Verify it looks like a napcat logs dir (has .log files)
-				entries, _ := os.ReadDir(path)
-				for _, e := range entries {
-					if strings.HasSuffix(strings.ToLower(e.Name()), ".log") {
-						logsDir = path
-						return filepath.SkipAll
-					}
-				}
-			}
-			return nil
-		})
-		// Also check parent dirs up 6 levels from napcatDir
-		if logsDir == "" {
-			dir := napcatDir
-			for i := 0; i < 8; i++ {
-				candidate := filepath.Join(dir, "logs")
-				if entries, err := os.ReadDir(candidate); err == nil {
-					for _, e := range entries {
-						if strings.HasSuffix(strings.ToLower(e.Name()), ".log") {
-							logsDir = candidate
-							break
-						}
-					}
-				}
-				if logsDir != "" {
-					break
-				}
-				parent := filepath.Dir(dir)
-				if parent == dir {
-					break
-				}
-				dir = parent
-			}
-		}
-		if logsDir != "" {
+		for _, logsDir := range findNapCatLogDirs(napcatDir) {
 			if tok := tokenFromNapCatLogs(logsDir); tok != "" {
 				return tok
 			}
@@ -298,34 +257,116 @@ func readNapCatWebuiToken(cfg *config.Config) string {
 	return ""
 }
 
+func findNapCatLogDirs(napcatDir string) []string {
+	var dirs []string
+	seen := map[string]struct{}{}
+
+	addDir := func(path string) {
+		if path == "" {
+			return
+		}
+		if _, ok := seen[path]; ok {
+			return
+		}
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".log") {
+				dirs = append(dirs, path)
+				seen[path] = struct{}{}
+				return
+			}
+		}
+	}
+
+	filepath.WalkDir(napcatDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() && strings.EqualFold(d.Name(), "logs") {
+			addDir(path)
+		}
+		return nil
+	})
+
+	dir := napcatDir
+	for i := 0; i < 8; i++ {
+		addDir(filepath.Join(dir, "logs"))
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	sort.Slice(dirs, func(i, j int) bool {
+		return latestNapCatLogModTime(dirs[i]).After(latestNapCatLogModTime(dirs[j]))
+	})
+
+	return dirs
+}
+
+func latestNapCatLogModTime(logsDir string) time.Time {
+	entries, err := os.ReadDir(logsDir)
+	if err != nil {
+		return time.Time{}
+	}
+	var latest time.Time
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".log") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(latest) {
+			latest = info.ModTime()
+		}
+	}
+	return latest
+}
+
 // tokenFromNapCatLogs finds the most recent NapCat log file and extracts the WebUI token.
 func tokenFromNapCatLogs(logsDir string) string {
 	entries, err := os.ReadDir(logsDir)
 	if err != nil {
 		return ""
 	}
-	// Find the newest .log file
-	var newest os.DirEntry
+	type logEntry struct {
+		name    string
+		modTime time.Time
+	}
+	var files []logEntry
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".log") {
-			if newest == nil || e.Name() > newest.Name() {
-				newest = e
-			}
+		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".log") {
+			continue
 		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, logEntry{name: e.Name(), modTime: info.ModTime()})
 	}
-	if newest == nil {
+	if len(files) == 0 {
 		return ""
 	}
-	data, err := os.ReadFile(filepath.Join(logsDir, newest.Name()))
-	if err != nil {
-		return ""
-	}
-	// Look for: [WebUi] WebUi Token: <token>
-	for _, line := range strings.Split(string(data), "\n") {
-		if idx := strings.Index(line, "[WebUi] WebUi Token: "); idx >= 0 {
-			tok := strings.TrimSpace(line[idx+len("[WebUi] WebUi Token: "):])
-			if tok != "" {
-				return tok
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].modTime.After(files[j].modTime)
+	})
+	for _, f := range files {
+		data, err := os.ReadFile(filepath.Join(logsDir, f.name))
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if idx := strings.Index(line, "[WebUi] WebUi Token: "); idx >= 0 {
+				tok := strings.TrimSpace(line[idx+len("[WebUi] WebUi Token: "):])
+				if tok != "" {
+					return tok
+				}
 			}
 		}
 	}

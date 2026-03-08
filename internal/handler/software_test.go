@@ -59,3 +59,40 @@ func TestBuildNapCatInstallScriptUsesConfiguredQQToken(t *testing.T) {
 		t.Fatalf("script should inject the JSON-encoded token into onebot11.json")
 	}
 }
+
+func TestFormatOpenClawManualPrerequisiteError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		platform string
+		nodeVer string
+		gitVer  string
+		want    string
+	}{
+		{name: "windows missing both", platform: "windows", want: "检测到 windows 平台缺少 Node.js (>=20) 和 Git"},
+		{name: "windows missing git only", platform: "windows", nodeVer: "v22.14.0", want: "检测到 windows 平台缺少 Git"},
+		{name: "mac low node and missing git", platform: "darwin", nodeVer: "v18.20.1", want: "检测到 macOS 平台缺少 Node.js >=20 (当前 v18.20.1) 和 Git"},
+		{name: "ready", platform: "windows", nodeVer: "v22.14.0", gitVer: "git version 2.53.0.windows.1", want: ""},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := formatOpenClawManualPrerequisiteError(tt.platform, tt.nodeVer, tt.gitVer)
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("expected nil error, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected error %q, got nil", tt.want)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected error to contain %q, got %q", tt.want, err.Error())
+			}
+		})
+	}
+}

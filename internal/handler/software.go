@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -194,6 +195,58 @@ func boolStatus(installed bool) string {
 	return "not_installed"
 }
 
+func nodeMajorVersion(ver string) int {
+	v := strings.TrimSpace(strings.TrimPrefix(ver, "v"))
+	if v == "" {
+		return -1
+	}
+	parts := strings.Split(v, ".")
+	if len(parts) == 0 {
+		return -1
+	}
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return -1
+	}
+	return major
+}
+
+func formatOpenClawManualPrerequisiteError(platform, nodeVer, gitVer string) error {
+	if platform != "windows" && platform != "darwin" {
+		return nil
+	}
+	label := platform
+	if label == "darwin" {
+		label = "macOS"
+	}
+
+	missing := make([]string, 0, 2)
+	if nodeVer == "" {
+		missing = append(missing, "Node.js (>=20)")
+	} else if nodeMajorVersion(nodeVer) < 20 {
+		missing = append(missing, fmt.Sprintf("Node.js >=20 (当前 %s)", nodeVer))
+	}
+	if gitVer == "" {
+		missing = append(missing, "Git")
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	if len(missing) == 1 {
+		return fmt.Errorf("检测到 %s 平台缺少 %s，请先手动安装后再执行一键安装 OpenClaw", label, missing[0])
+	}
+	return fmt.Errorf("检测到 %s 平台缺少 %s，请先手动安装后再执行一键安装 OpenClaw", label, strings.Join(missing, " 和 "))
+}
+
+func ensureOpenClawManualPrerequisites() error {
+	if runtime.GOOS != "windows" && runtime.GOOS != "darwin" {
+		return nil
+	}
+	nodeVer := detectCmd("node", "--version")
+	gitVer := detectCmd("git", "--version")
+	return formatOpenClawManualPrerequisiteError(runtime.GOOS, nodeVer, gitVer)
+}
+
 func detectOpenClawVersion(cfg *config.Config) string {
 	// 1. Try reading from cfg.OpenClawApp FIRST (most reliable for SYSTEM service)
 	if cfg.OpenClawApp != "" {
@@ -326,11 +379,6 @@ func detectOpenClawVersion(cfg *config.Config) string {
 				break
 			}
 		}
-	}
-
-	// 8. Config file exists but no version extractable
-	if ocConfig != nil {
-		return "installed"
 	}
 
 	return ""
@@ -839,59 +887,162 @@ echo "✅ $(python3 --version) 安装完成"
 `
 			}
 		case "openclaw":
+			if err := ensureOpenClawManualPrerequisites(); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+				return
+			}
 			taskName = "安装 OpenClaw"
 			if runtime.GOOS == "windows" {
 				script = `
-$ErrorActionPreference = "Continue"
+$ErrorActionPreference = "Stop"
 Write-Output "📦 安装 OpenClaw..."
+$baseDir = "C:\ClawPanel"
 
-# ---- 检查并自动安装 Node.js ----
+# ---- 前置环境检查：Windows 必须手动预装 Node.js 与 Git ----
 $nodeCheck = Get-Command node -ErrorAction SilentlyContinue
 if (-not $nodeCheck) {
-  Write-Output "⚠️ 未检测到 Node.js，正在自动安装..."
-  $wingetCheck = Get-Command winget -ErrorAction SilentlyContinue
-  if ($wingetCheck) {
-    Write-Output "📥 通过 winget 安装 Node.js LTS..."
-    winget install OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements --silent 2>&1
-    # 刷新 PATH
-    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
-    $nodeCheck = Get-Command node -ErrorAction SilentlyContinue
-    if (-not $nodeCheck) {
-      Write-Output "❌ Node.js 自动安装失败，请手动从 https://nodejs.org 下载安装后重试"
-      exit 1
-    }
-    Write-Output "✅ Node.js $(node --version) 安装完成"
+  Write-Output "❌ 未检测到 Node.js。Windows 一键安装 OpenClaw 前请先手动安装 Node.js (>=20): https://nodejs.org"
+  exit 1
+}
+
+$nodeVerRaw = & node --version 2>$null
+$nodeMajor = -1
+if ($nodeVerRaw -match '^v?(\d+)') {
+  $nodeMajor = [int]$matches[1]
+}
+if ($nodeMajor -lt 20) {
+  Write-Output "❌ 当前 Node.js 版本过低 ($nodeVerRaw)。请先手动升级到 Node.js >=20 后再安装 OpenClaw"
+  exit 1
+}
+
+$gitCheck = Get-Command git -ErrorAction SilentlyContinue
+if (-not $gitCheck) {
+  Write-Output "❌ 未检测到 Git。Windows 一键安装 OpenClaw 前请先手动安装 Git: https://git-scm.com/download/win"
+  exit 1
+}
+
+# ---- 修复服务环境下 Git 运行时路径缺失（git-submodule / sh）----
+$gitExe = $gitCheck.Source
+$gitDir = Split-Path -Parent $gitExe
+$gitRoot = Split-Path -Parent $gitDir
+$gitRootLeaf = (Split-Path -Leaf $gitRoot).ToLower()
+if ($gitRootLeaf -eq "mingw64" -or $gitRootLeaf -eq "usr") {
+  $gitRoot = Split-Path -Parent $gitRoot
+}
+$gitCmdDir = Join-Path $gitRoot "cmd"
+$gitMingwBin = Join-Path $gitRoot "mingw64\\bin"
+$gitUsrBin = Join-Path $gitRoot "usr\\bin"
+$gitExecPath = Join-Path $gitRoot "mingw64\\libexec\\git-core"
+
+$pathParts = @()
+foreach ($p in @($gitCmdDir, $gitMingwBin, $gitUsrBin, $gitExecPath)) {
+  if (Test-Path $p) { $pathParts += $p }
+}
+if ($pathParts.Count -gt 0) {
+  $env:Path = (($pathParts -join ';') + ';' + $env:Path)
+}
+if (Test-Path $gitExecPath) {
+  $env:GIT_EXEC_PATH = $gitExecPath
+}
+
+$gitSubmodulePath = Join-Path $gitExecPath "git-submodule"
+if (-not (Test-Path $gitSubmodulePath)) {
+  Write-Output "❌ Git 安装不完整（缺少 git-submodule），请重新安装 Git 后重试"
+  exit 1
+}
+
+$gitRemoteHttps = Join-Path $gitExecPath "git-remote-https.exe"
+if (-not (Test-Path $gitRemoteHttps)) {
+  Write-Output "❌ Git 安装不完整（缺少 git-remote-https），请重新安装 Git 后重试"
+  exit 1
+}
+
+# 某些 Git for Windows 发行版没有 sh.exe（只有 dash.exe/bash.exe），为 git-submodule 创建 shim
+$shCmd = Get-Command sh -ErrorAction SilentlyContinue
+if (-not $shCmd) {
+  $gitShimDir = Join-Path $baseDir "git-shim"
+  if (-not (Test-Path $gitShimDir)) {
+    New-Item -ItemType Directory -Path $gitShimDir -Force | Out-Null
+  }
+  $shellExe = $null
+  $dashCmd = Get-Command dash -ErrorAction SilentlyContinue
+  if ($dashCmd) {
+    $shellExe = $dashCmd.Source
   } else {
-    Write-Output "❌ 未找到 winget，请手动从 https://nodejs.org 下载安装 Node.js 后重试"
-    exit 1
+    $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
+    if ($bashCmd) { $shellExe = $bashCmd.Source }
+  }
+  if ($shellExe) {
+    $shimPath = Join-Path $gitShimDir "sh.cmd"
+    @"
+@echo off
+"$shellExe" %*
+"@ | Set-Content -Path $shimPath -Encoding ASCII -Force
+    $env:Path = "$gitShimDir;" + $env:Path
   }
 }
 
-# Configure npm to use Chinese mirror for faster downloads
-Write-Output "📝 配置 npm 镜像源..."
-npm config set registry https://registry.npmmirror.com 2>$null
-
-# Ensure npm global prefix is set to user-accessible path
-$npmPrefix = npm config get prefix 2>$null
-Write-Output "📁 npm 全局安装目录: $npmPrefix"
-
-# Create npm global directory if it doesn't exist (critical for first-time npm users)
-if ($npmPrefix -and -not (Test-Path $npmPrefix)) {
-  Write-Output "📁 创建 npm 全局目录: $npmPrefix"
-  New-Item -ItemType Directory -Path $npmPrefix -Force | Out-Null
+if ((-not (Get-Command bash -ErrorAction SilentlyContinue)) -and (-not (Get-Command sh -ErrorAction SilentlyContinue))) {
+  Write-Output "❌ Git 运行环境不完整（缺少 bash/sh），请重新安装 Git 并勾选命令行工具组件"
+  exit 1
 }
-$npmModules = Join-Path $npmPrefix "node_modules"
-if (-not (Test-Path $npmModules)) {
-  Write-Output "📁 创建 node_modules 目录: $npmModules"
-  New-Item -ItemType Directory -Path $npmModules -Force | Out-Null
+
+Write-Output "✅ 环境检查通过: Node.js $nodeVerRaw / $(& git --version)"
+
+# Configure npm to use Chinese mirror for faster downloads
+# ---- 修复 SYSTEM 账户路径与 Git SSH 权限问题 ----
+$npmPrefix = Join-Path $baseDir "npm-global"
+$npmCache = Join-Path $baseDir "npm-cache"
+$homeDir = Join-Path $baseDir "home"
+$openclawDir = Join-Path $baseDir "openclaw"
+$workDir = Join-Path $baseDir "work"
+
+foreach ($d in @($baseDir, $npmPrefix, $npmCache, $homeDir, $openclawDir, $workDir, (Join-Path $npmPrefix "node_modules"))) {
+  if (-not (Test-Path $d)) {
+    New-Item -ItemType Directory -Path $d -Force | Out-Null
+  }
+}
+
+# 避免落到 C:\Windows\system32\config\systemprofile
+$env:HOME = $homeDir
+$env:USERPROFILE = $homeDir
+$env:APPDATA = Join-Path $homeDir "AppData\\Roaming"
+$env:LOCALAPPDATA = Join-Path $homeDir "AppData\\Local"
+if (-not (Test-Path $env:APPDATA)) { New-Item -ItemType Directory -Path $env:APPDATA -Force | Out-Null }
+if (-not (Test-Path $env:LOCALAPPDATA)) { New-Item -ItemType Directory -Path $env:LOCALAPPDATA -Force | Out-Null }
+
+Write-Output "📝 配置 npm 镜像源与可写目录..."
+& npm.cmd config set registry https://registry.npmmirror.com --global 2>$null
+& npm.cmd config set prefix $npmPrefix --global 2>$null
+& npm.cmd config set cache $npmCache --global 2>$null
+Write-Output "📁 npm 全局安装目录: $npmPrefix"
+Write-Output "📁 npm 缓存目录: $npmCache"
+
+# GitHub 依赖强制走 HTTPS，避免 SYSTEM 账户缺少 SSH key 报错
+git config --global --replace-all url."https://github.com/".insteadOf "ssh://git@github.com/" 2>$null
+git config --global --add url."https://github.com/".insteadOf "git@github.com:" 2>$null
+
+# 预检：确认 SSH 形式 GitHub URL 能被重写并访问
+git --no-replace-objects ls-remote ssh://git@github.com/whiskeysockets/libsignal-node.git 1>$null 2>$null
+if ($LASTEXITCODE -ne 0) {
+  Write-Output "❌ GitHub 访问预检失败（git ls-remote）。请检查 Git 安装完整性与网络连接后重试"
+  exit 1
+}
+
+# 清理 npm 可能残留的临时 git-clone 目录，避免“destination already exists”
+$gitTmpRoot = Join-Path $npmCache "_cacache\\tmp"
+if (Test-Path $gitTmpRoot) {
+  Get-ChildItem -Path $gitTmpRoot -Filter "git-clone*" -Force -ErrorAction SilentlyContinue | ForEach-Object {
+    Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+  }
 }
 
 Write-Output "📥 正在通过 npm 安装 OpenClaw..."
-npm install -g openclaw@latest --registry=https://registry.npmmirror.com 2>&1
+& npm.cmd install -g openclaw@latest --registry=https://registry.npmmirror.com --no-fund --no-audit 2>&1
 if ($LASTEXITCODE -ne 0) {
   Write-Output "⚠️ 首次安装失败 (exit code: $LASTEXITCODE)，正在重试..."
-  # Retry with force flag
-  npm install -g openclaw@latest --registry=https://registry.npmmirror.com --force 2>&1
+  & npm.cmd cache verify 2>$null
+  & npm.cmd install -g openclaw@latest --registry=https://registry.npmmirror.com --force --no-fund --no-audit 2>&1
   if ($LASTEXITCODE -ne 0) {
     Write-Output "❌ OpenClaw 安装失败，请检查网络连接或手动运行: npm install -g openclaw@latest"
     exit 1
@@ -906,42 +1057,23 @@ if ($npmPrefix -and (Test-Path $npmPrefix)) {
 }
 
 # Verify installation
-$ocCmd = Get-Command openclaw -ErrorAction SilentlyContinue
-if ($ocCmd) {
-  $ocVer = & openclaw --version 2>$null
+$openclawCmd = Join-Path $npmPrefix "openclaw.cmd"
+if (-not (Test-Path $openclawCmd)) {
+  $openclawCmd = "openclaw"
+}
+$ocVer = & $openclawCmd --version 2>$null
+if ($LASTEXITCODE -eq 0 -and $ocVer) {
   Write-Output "✅ OpenClaw $ocVer 安装完成"
 } else {
-  # Check common locations
-  $possiblePaths = @(
-    (Join-Path $npmPrefix "openclaw.cmd"),
-    (Join-Path $env:APPDATA "npm\openclaw.cmd"),
-    "C:\Program Files\nodejs\openclaw.cmd"
-  )
-  $found = $false
-  foreach ($p in $possiblePaths) {
-    if (Test-Path $p) {
-      Write-Output "✅ OpenClaw 安装完成 (位置: $p)"
-      $found = $true
-      break
-    }
-  }
-  if (-not $found) {
-    Write-Output "⚠️ npm 安装完成但未找到 openclaw 命令，可能需要重启面板"
-  }
+  Write-Output "⚠️ npm 安装完成但未能直接读取 openclaw 版本，继续初始化配置"
 }
 
 Write-Output "📝 初始化配置..."
-# Create basic openclaw.json if it doesn't exist
-$openclawDir = Join-Path $env:USERPROFILE ".openclaw"
 $openclawConfig = Join-Path $openclawDir "openclaw.json"
-if (-not (Test-Path $openclawDir)) {
-  New-Item -ItemType Directory -Path $openclawDir -Force | Out-Null
-}
 if (-not (Test-Path $openclawConfig)) {
   Write-Output "📝 创建基础配置文件..."
-  $ocVer = & openclaw --version 2>$null
+  $ocVer = & $openclawCmd --version 2>$null
   if (-not $ocVer) { $ocVer = "2026.3.2" }
-  $workDir = Join-Path $env:USERPROFILE "work"
   @"
 {
   "meta": {
@@ -964,6 +1096,12 @@ if (-not (Test-Path $openclawConfig)) {
 "@ | Set-Content $openclawConfig -Force
   Write-Output "✅ 配置文件已创建: $openclawConfig"
 }
+
+$env:OPENCLAW_DIR = $openclawDir
+$env:OPENCLAW_STATE_DIR = $openclawDir
+$env:OPENCLAW_CONFIG_PATH = $openclawConfig
+& $openclawCmd init 2>$null
+
 Write-Output "✅ 全部完成"
 `
 			} else {
@@ -1029,57 +1167,67 @@ node_version_ok() {
   [ "$major" -ge 20 ] 2>/dev/null
 }
 
-# 1. Ensure Node.js >= 20 is available
-if ! node_version_ok; then
+# 1. Ensure prerequisites are preinstalled on macOS
+if [ "$(uname)" = "Darwin" ]; then
+  if ! node_version_ok; then
+    if command -v node &>/dev/null; then
+      echo "❌ 当前 Node.js $(node --version) 版本过低。macOS 一键安装 OpenClaw 前请先手动升级到 Node.js >= 20"
+    else
+      echo "❌ 未检测到 Node.js。macOS 一键安装 OpenClaw 前请先手动安装 Node.js >= 20: https://nodejs.org"
+    fi
+    exit 1
+  fi
+  if ! command -v git &>/dev/null; then
+    echo "❌ 未检测到 Git。macOS 一键安装 OpenClaw 前请先手动安装 Git（Xcode Command Line Tools 或 brew install git）"
+    exit 1
+  fi
+  echo "✅ 环境检查通过: Node.js $(node --version) / $(git --version)"
+elif ! node_version_ok; then
   if command -v node &>/dev/null; then
     echo "⚠️ 当前 Node.js $(node --version) 版本过低 (需要 >= 20)，正在升级..."
   else
     echo "⚠️ 未检测到 Node.js，正在自动安装..."
   fi
 
-  if [ "$(uname)" = "Darwin" ]; then
-    install_node_tarball
-  else
-    # Try NodeSource first, then fallback to binary tarball
-    DISTRO_FAMILY=""
-    if [ -f /etc/os-release ]; then
-      . /etc/os-release
-      case "$ID $ID_LIKE" in
-        *debian*|*ubuntu*) DISTRO_FAMILY="debian" ;;
-        *rhel*|*centos*|*fedora*|*amzn*|*rocky*|*alma*) DISTRO_FAMILY="rhel" ;;
-      esac
-    fi
-    [ -z "$DISTRO_FAMILY" ] && command -v apt-get &>/dev/null && DISTRO_FAMILY="debian"
-    [ -z "$DISTRO_FAMILY" ] && (command -v dnf &>/dev/null || command -v yum &>/dev/null) && DISTRO_FAMILY="rhel"
-
-    NODESOURCE_OK=false
-    case "$DISTRO_FAMILY" in
-      debian)
-        echo "📥 尝试 NodeSource (deb)..."
-        if curl -fsSL https://deb.nodesource.com/setup_22.x | bash - 2>/dev/null; then
-          apt-get install -y nodejs && NODESOURCE_OK=true
-        fi
-        ;;
-      rhel)
-        echo "📥 尝试 NodeSource (rpm)..."
-        if curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - 2>/dev/null; then
-          if command -v dnf &>/dev/null; then
-            dnf install -y nodejs && NODESOURCE_OK=true
-          else
-            yum install -y nodejs && NODESOURCE_OK=true
-          fi
-        fi
-        ;;
+  # Linux: Try NodeSource first, then fallback to binary tarball
+  DISTRO_FAMILY=""
+  if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    case "$ID $ID_LIKE" in
+      *debian*|*ubuntu*) DISTRO_FAMILY="debian" ;;
+      *rhel*|*centos*|*fedora*|*amzn*|*rocky*|*alma*) DISTRO_FAMILY="rhel" ;;
     esac
+  fi
+  [ -z "$DISTRO_FAMILY" ] && command -v apt-get &>/dev/null && DISTRO_FAMILY="debian"
+  [ -z "$DISTRO_FAMILY" ] && (command -v dnf &>/dev/null || command -v yum &>/dev/null) && DISTRO_FAMILY="rhel"
 
-    # If NodeSource didn't work or gave old version, use binary tarball
-    if ! node_version_ok; then
-      echo "⚠️ 包管理器未能提供 Node.js >= 20，使用官方二进制安装..."
-      install_node_tarball
-    fi
+  NODESOURCE_OK=false
+  case "$DISTRO_FAMILY" in
+    debian)
+      echo "📥 尝试 NodeSource (deb)..."
+      if curl -fsSL https://deb.nodesource.com/setup_22.x | bash - 2>/dev/null; then
+        apt-get install -y nodejs && NODESOURCE_OK=true
+      fi
+      ;;
+    rhel)
+      echo "📥 尝试 NodeSource (rpm)..."
+      if curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - 2>/dev/null; then
+        if command -v dnf &>/dev/null; then
+          dnf install -y nodejs && NODESOURCE_OK=true
+        else
+          yum install -y nodejs && NODESOURCE_OK=true
+        fi
+      fi
+      ;;
+  esac
+
+  # If NodeSource didn't work or gave old version, use binary tarball
+  if ! node_version_ok; then
+    echo "⚠️ 包管理器未能提供 Node.js >= 20，使用官方二进制安装..."
+    install_node_tarball
   fi
 
-  # Final check
+  # Final check (Linux)
   if ! node_version_ok; then
     echo "❌ Node.js >= 20 安装失败，请手动安装后重试"
     echo "   参考: https://nodejs.org/en/download/"

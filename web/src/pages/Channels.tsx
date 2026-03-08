@@ -450,7 +450,12 @@ export default function Channels() {
   const handleQRLogin = async () => {
     setLoginModal('qrcode'); setQrImg(''); setQrLoading(true); setLoginMsg('');
     try {
-      const r = await api.napcatGetQRCode();
+      // 每次点击扫码登录都先主动刷新一次二维码，避免复用旧码
+      let r = await api.napcatRefreshQRCode();
+      // 刷新失败时回退到普通获取接口，兼容 NapCat 刚启动等场景
+      if (!(r.ok && r.data?.qrcode)) {
+        r = await api.napcatGetQRCode();
+      }
       if (r.ok && r.data?.qrcode) {
         setQrImg(r.data.qrcode);
         startQrPolling();
@@ -572,7 +577,7 @@ export default function Channels() {
     qrPollRef.current = setInterval(async () => {
       try {
         const r = await api.napcatLoginStatus();
-        if (r.ok && r.data?.isLogin) {
+        if (isQQLoggedIn(r)) {
           stopQrPolling();
           setLoginMsg('✅ 登录成功！');
           reload();
@@ -595,6 +600,20 @@ export default function Channels() {
     if (!loginModal) stopQrPolling();
     return () => stopQrPolling();
   }, [loginModal]);
+
+  const isQQLoggedIn = (resp: any) => {
+    if (!resp?.ok) return false;
+    const data = resp?.data || {};
+    const isLogin = data?.isLogin;
+
+    if (isLogin === true || isLogin === 1 || isLogin === '1') return true;
+    if (typeof isLogin === 'string' && isLogin.toLowerCase() === 'true') return true;
+
+    const msg = String(resp?.message || data?.message || '').toLowerCase();
+    if (msg.includes('logined') || msg.includes('logged')) return true;
+
+    return false;
+  };
 
   const handleApprove = async (flag: string) => {
     await api.approveRequest(flag);

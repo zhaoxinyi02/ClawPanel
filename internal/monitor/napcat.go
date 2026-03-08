@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -801,73 +802,120 @@ func checkQQLoginStatus(cfg *config.Config) (loggedIn bool, nickname string, qqI
 // readTokenFromNapCatLogs finds NapCat's logs dir (walking up/down from bootmain dir)
 // and extracts the live token logged as "[WebUi] WebUi Token: <token>".
 func readTokenFromNapCatLogs(bootmainDir string) string {
-	// Walk down from bootmain dir looking for a logs/ directory with .log files
-	logsDir := ""
-	filepath.WalkDir(bootmainDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil || logsDir != "" {
+	for _, logsDir := range findNapCatLogDirs(bootmainDir) {
+		if tok := tokenFromNapCatLogDir(logsDir); tok != "" {
+			return tok
+		}
+	}
+	return ""
+}
+
+func findNapCatLogDirs(baseDir string) []string {
+	var dirs []string
+	seen := map[string]struct{}{}
+
+	addDir := func(path string) {
+		if path == "" {
+			return
+		}
+		if _, ok := seen[path]; ok {
+			return
+		}
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".log") {
+				dirs = append(dirs, path)
+				seen[path] = struct{}{}
+				return
+			}
+		}
+	}
+
+	filepath.WalkDir(baseDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
 			return nil
 		}
 		if d.IsDir() && strings.EqualFold(d.Name(), "logs") {
-			entries, _ := os.ReadDir(path)
-			for _, e := range entries {
-				if strings.HasSuffix(strings.ToLower(e.Name()), ".log") {
-					logsDir = path
-					return filepath.SkipAll
-				}
-			}
+			addDir(path)
 		}
 		return nil
 	})
-	// Also walk up parent dirs
-	if logsDir == "" {
-		dir := bootmainDir
-		for i := 0; i < 8; i++ {
-			candidate := filepath.Join(dir, "logs")
-			if entries, err := os.ReadDir(candidate); err == nil {
-				for _, e := range entries {
-					if strings.HasSuffix(strings.ToLower(e.Name()), ".log") {
-						logsDir = candidate
-						break
-					}
-				}
-			}
-			if logsDir != "" {
-				break
-			}
-			parent := filepath.Dir(dir)
-			if parent == dir {
-				break
-			}
-			dir = parent
+
+	dir := baseDir
+	for i := 0; i < 8; i++ {
+		addDir(filepath.Join(dir, "logs"))
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	sort.Slice(dirs, func(i, j int) bool {
+		return latestLogModTime(dirs[i]).After(latestLogModTime(dirs[j]))
+	})
+
+	return dirs
+}
+
+func latestLogModTime(logsDir string) time.Time {
+	entries, err := os.ReadDir(logsDir)
+	if err != nil {
+		return time.Time{}
+	}
+	var latest time.Time
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".log") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(latest) {
+			latest = info.ModTime()
 		}
 	}
-	if logsDir == "" {
-		return ""
+	return latest
+}
+
+func tokenFromNapCatLogDir(logsDir string) string {
+	type logEntry struct {
+		name    string
+		modTime time.Time
 	}
 	entries, err := os.ReadDir(logsDir)
 	if err != nil {
 		return ""
 	}
-	var newest os.DirEntry
+	var files []logEntry
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".log") {
-			if newest == nil || e.Name() > newest.Name() {
-				newest = e
-			}
+		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".log") {
+			continue
 		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, logEntry{name: e.Name(), modTime: info.ModTime()})
 	}
-	if newest == nil {
-		return ""
-	}
-	data, err := os.ReadFile(filepath.Join(logsDir, newest.Name()))
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		if idx := strings.Index(line, "[WebUi] WebUi Token: "); idx >= 0 {
-			tok := strings.TrimSpace(line[idx+len("[WebUi] WebUi Token: "):])
-			if tok != "" {
-				return tok
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].modTime.After(files[j].modTime)
+	})
+	for _, f := range files {
+		data, err := os.ReadFile(filepath.Join(logsDir, f.name))
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if idx := strings.Index(line, "[WebUi] WebUi Token: "); idx >= 0 {
+				tok := strings.TrimSpace(line[idx+len("[WebUi] WebUi Token: "):])
+				if tok != "" {
+					return tok
+				}
 			}
 		}
 	}
@@ -970,12 +1018,30 @@ func doCheckQQLoginStatus(cfg *config.Config) (loggedIn bool, nickname string, q
 		cachedMonitorCredTime = time.Time{}
 
 		freshToken := ""
-		out, err := dockerOutput("exec", "openclaw-qq", "cat", "/app/napcat/config/webui.json")
-		if err == nil {
-			var webui map[string]interface{}
-			if json.Unmarshal(out, &webui) == nil {
-				if t, ok := webui["token"].(string); ok && t != "" {
-					freshToken = t
+		if runtime.GOOS == "windows" {
+			napcatDir := findNapCatShellDir(cfg)
+			if napcatDir != "" {
+				freshToken = readTokenFromNapCatLogs(napcatDir)
+				if freshToken == "" {
+					webuiPath := filepath.Join(napcatDir, "config", "webui.json")
+					if data, err := os.ReadFile(webuiPath); err == nil {
+						var webui map[string]interface{}
+						if json.Unmarshal(data, &webui) == nil {
+							if t, ok := webui["token"].(string); ok && t != "" {
+								freshToken = t
+							}
+						}
+					}
+				}
+			}
+		} else {
+			out, err := dockerOutput("exec", "openclaw-qq", "cat", "/app/napcat/config/webui.json")
+			if err == nil {
+				var webui map[string]interface{}
+				if json.Unmarshal(out, &webui) == nil {
+					if t, ok := webui["token"].(string); ok && t != "" {
+						freshToken = t
+					}
 				}
 			}
 		}
@@ -1002,6 +1068,7 @@ func doCheckQQLoginStatus(cfg *config.Config) (loggedIn bool, nickname string, q
 		if freshCred == "" {
 			return false, "", ""
 		}
+		cred = freshCred
 		cachedMonitorCred = freshCred
 		cachedMonitorCredTime = time.Now()
 

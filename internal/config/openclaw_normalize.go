@@ -40,6 +40,10 @@ func normalizeOpenClawConfig(cfg map[string]interface{}, openClawDir string) boo
 			changed = true
 		}
 
+		if normalizeDiskOnlyAgentList(agents, openClawDir) {
+			changed = true
+		}
+
 		if defaults, ok := agents["defaults"].(map[string]interface{}); ok && defaults != nil {
 			if sandbox, ok := defaults["sandbox"].(map[string]interface{}); ok && sandbox != nil {
 				if normalizeSandboxConfig(sandbox) {
@@ -330,15 +334,42 @@ func synthesizeAgentListFromDisk(openClawDir, legacyDefault string) []interface{
 		return ids[i] < ids[j]
 	})
 
+	desiredDefault := strings.TrimSpace(legacyDefault)
+	if desiredDefault == "" {
+		for _, id := range ids {
+			if id == "main" {
+				desiredDefault = id
+				break
+			}
+		}
+		if desiredDefault == "" && len(ids) > 0 {
+			desiredDefault = ids[0]
+		}
+	}
+
 	list := make([]interface{}, 0, len(ids))
 	for _, id := range ids {
 		item := map[string]interface{}{"id": id}
-		if id == legacyDefault {
+		if id == desiredDefault {
 			item["default"] = true
 		}
 		list = append(list, item)
 	}
 	return list
+}
+
+func normalizeDiskOnlyAgentList(agents map[string]interface{}, openClawDir string) bool {
+	if agents == nil || strings.TrimSpace(openClawDir) == "" {
+		return false
+	}
+	if rawList, _ := agents["list"].([]interface{}); len(rawList) > 0 {
+		return false
+	}
+	if synthesized := synthesizeAgentListFromDisk(openClawDir, ""); len(synthesized) > 0 {
+		agents["list"] = synthesized
+		return true
+	}
+	return false
 }
 
 func normalizeSandboxConfig(sandbox map[string]interface{}) bool {

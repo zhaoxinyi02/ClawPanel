@@ -363,6 +363,16 @@ func (m *Manager) GetStatus() Status {
 		s.ExitCode = 0
 		s.Daemonized = false
 		s.ManagedExternally = true
+		return s
+	}
+	if pid, ok := m.detectExternalGatewayProcess(); ok {
+		s.Running = true
+		s.PID = pid
+		s.StartedAt = time.Time{}
+		s.Uptime = 0
+		s.ExitCode = 0
+		s.Daemonized = false
+		s.ManagedExternally = true
 	}
 	return s
 }
@@ -749,6 +759,95 @@ func (m *Manager) isPortListening(port string) bool {
 	return false
 }
 
+func (m *Manager) detectExternalGatewayProcess() (int, bool) {
+	port := m.getGatewayPort()
+	if port == "" {
+		return 0, false
+	}
+	pids, err := listeningPIDsForPort(port)
+	if err != nil {
+		return 0, false
+	}
+	for _, pid := range pids {
+		if pid <= 0 {
+			continue
+		}
+		cmdline, err := processCommandLine(pid)
+		if err != nil {
+			continue
+		}
+		lower := strings.ToLower(cmdline)
+		if strings.Contains(lower, "openclaw") && strings.Contains(lower, "gateway") {
+			return pid, true
+		}
+	}
+	return 0, false
+}
+
+func listeningPIDsForPort(port string) ([]int, error) {
+	if runtime.GOOS == "windows" {
+		out, err := exec.Command("netstat", "-ano", "-p", "tcp").Output()
+		if err != nil {
+			return nil, err
+		}
+		needle := ":" + port
+		seen := map[int]struct{}{}
+		var pids []int
+		for _, line := range strings.Split(string(out), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || !strings.Contains(line, needle) || !strings.Contains(line, "LISTENING") {
+				continue
+			}
+			parts := strings.Fields(line)
+			if len(parts) < 5 {
+				continue
+			}
+			pid, err := strconv.Atoi(parts[len(parts)-1])
+			if err != nil {
+				continue
+			}
+			if _, ok := seen[pid]; ok {
+				continue
+			}
+			seen[pid] = struct{}{}
+			pids = append(pids, pid)
+		}
+		return pids, nil
+	}
+	out, err := exec.Command("lsof", "-nP", "-iTCP:"+port, "-sTCP:LISTEN", "-t").Output()
+	if err != nil {
+		return nil, err
+	}
+	seen := map[int]struct{}{}
+	var pids []int
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		pid, err := strconv.Atoi(line)
+		if err != nil {
+			continue
+		}
+		if _, ok := seen[pid]; ok {
+			continue
+		}
+		seen[pid] = struct{}{}
+		pids = append(pids, pid)
+	}
+	return pids, nil
+}
+
+func processCommandLine(pid int) (string, error) {
+	if runtime.GOOS == "windows" {
+		cmd := exec.Command("powershell.exe", "-NoProfile", "-Command", fmt.Sprintf("$p=Get-CimInstance Win32_Process -Filter \"ProcessId=%d\" -ErrorAction SilentlyContinue; if($p){ $p.CommandLine }", pid))
+		out, err := cmd.Output()
+		return strings.TrimSpace(string(out)), err
+	}
+	out, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
+	return strings.TrimSpace(string(out)), err
+}
+
 // monitorDaemon monitors the OpenClaw daemon process (fork pattern).
 // When the OpenClaw control probe fails repeatedly, mark process as stopped and restart.
 func (m *Manager) monitorDaemon() {
@@ -815,7 +914,7 @@ func (m *Manager) ensureOpenClawConfig() {
 	}
 
 	changed := created
-	if config.NormalizeOpenClawConfig(cfg) {
+	if config.NormalizeOpenClawConfigForWrite(cfg, ocDir) {
 		changed = true
 	}
 

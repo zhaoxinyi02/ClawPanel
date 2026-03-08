@@ -25,6 +25,7 @@ export function useWebSocket() {
   const [napcatStatus, setNapcatStatus] = useState<any>(IS_DEMO ? DEMO_NAPCAT_STATUS : { connected: false });
   const [wechatStatus, setWechatStatus] = useState<any>(IS_DEMO ? DEMO_WECHAT_STATUS : { connected: false });
   const [openclawStatus, setOpenclawStatus] = useState<any>({});
+  const [statusReady, setStatusReady] = useState<boolean>(IS_DEMO);
   const [processStatus, setProcessStatus] = useState<any>({});
   const [wsMessages, setWsMessages] = useState<any[]>([]);
 
@@ -36,6 +37,7 @@ export function useWebSocket() {
         if (r.ok && r.wechat) setWechatStatus(r.wechat);
         if (r.ok && r.openclaw) setOpenclawStatus(r.openclaw);
         if (r.ok && r.process) setProcessStatus(r.process);
+        if (r.ok) setStatusReady(true);
       }).catch(() => {});
     };
     fetchStatus();
@@ -180,5 +182,5 @@ export function useWebSocket() {
     }).catch(() => {});
   }, []);
 
-  return { events, logEntries, napcatStatus, wechatStatus, openclawStatus, processStatus, wsMessages, clearEvents, refreshLog };
+  return { events, logEntries, napcatStatus, wechatStatus, openclawStatus, statusReady, processStatus, wsMessages, clearEvents, refreshLog };
 }

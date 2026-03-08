@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../lib/api';
+import { ensureOpenClawInstallPrerequisites } from '../lib/openclawPrereq';
 import {
   Wifi, Users, Cpu, Clock, RefreshCw,
   ChevronDown, ChevronRight, ArrowDown, Activity,
@@ -97,9 +98,15 @@ export default function Dashboard({ ws }: DashboardProps) {
   const handleInstallOpenClaw = async () => {
     setInstallingOC(true);
     try {
+      const okToInstall = await ensureOpenClawInstallPrerequisites();
+      if (!okToInstall) return;
       const r = await api.installSoftware('openclaw');
-      if (!r.ok) console.error(r.error);
-    } catch {}
+      if (!r.ok) {
+        window.alert(r.error || '安装 OpenClaw 失败');
+      }
+    } catch (err: any) {
+      window.alert(err?.message || '安装 OpenClaw 请求失败');
+    }
     finally { setInstallingOC(false); }
   };
 

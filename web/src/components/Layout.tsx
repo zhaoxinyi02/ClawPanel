@@ -139,12 +139,12 @@ export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawS
   // Build channel list from enabledChannels returned by /api/status
   const enabledChannels: { id: string; label: string }[] = openclawStatus?.enabledChannels || [];
   const connectedChannels: { label: string; detail: string; connected: boolean }[] = [];
+  const restartViaGateway = !!(processStatus?.managedExternally || processStatus?.daemonized || (openclawStatus?.configured && !processStatus?.running));
   const openClawRestartHint = processStatus?.managedExternally
-    ? (locale === 'zh-CN' ? '当前 OpenClaw 由外部进程管理，请改用“网关”按钮或在外部环境中重启。' : 'OpenClaw is managed externally. Use “Gateway” or restart it outside the panel.')
+    ? (locale === 'zh-CN' ? '当前 OpenClaw 由外部进程管理，点击将自动改为重启网关。' : 'OpenClaw is managed externally. Click to restart gateway instead.')
     : processStatus?.daemonized
-      ? (locale === 'zh-CN' ? '当前 OpenClaw 以 daemon 模式运行，请改用“网关”按钮重启。' : 'OpenClaw is running in daemon mode. Use “Gateway” to restart it.')
+      ? (locale === 'zh-CN' ? '当前 OpenClaw 以 daemon 模式运行，点击将自动改为重启网关。' : 'OpenClaw is running in daemon mode. Click to restart gateway instead.')
       : '';
-  const openClawRestartDisabled = !!openClawRestartHint;
   for (const ch of enabledChannels) {
     if (ch.id === 'qq') {
       const connected = napcatStatus?.connected;
@@ -222,24 +222,27 @@ export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawS
           <div className="flex items-center gap-1 px-1 py-1">
             <button
               onClick={async () => {
-                if (openClawRestartDisabled) {
-                  window.alert(openClawRestartHint);
-                  return;
-                }
                 if (!confirm(locale === 'zh-CN' ? '确定重启 OpenClaw？' : 'Restart OpenClaw?')) return;
                 try {
+                  if (restartViaGateway) {
+                    const r = await api.restartGateway();
+                    if (!r?.ok) {
+                      window.alert(r?.error || (locale === 'zh-CN' ? '重启网关失败' : 'Failed to restart gateway'));
+                      return;
+                    }
+                    window.alert(r?.message || (locale === 'zh-CN' ? '已改为重启网关' : 'Restarted via gateway'));
+                    return;
+                  }
+
                   const r = await api.restartProcess();
                   if (!r?.ok) window.alert(r?.error || (locale === 'zh-CN' ? '重启 OpenClaw 失败' : 'Failed to restart OpenClaw'));
                 } catch {
-                  window.alert(locale === 'zh-CN' ? '重启 OpenClaw 失败' : 'Failed to restart OpenClaw');
+                  window.alert(restartViaGateway
+                    ? (locale === 'zh-CN' ? '重启网关失败' : 'Failed to restart gateway')
+                    : (locale === 'zh-CN' ? '重启 OpenClaw 失败' : 'Failed to restart OpenClaw'));
                 }
               }}
-              aria-disabled={openClawRestartDisabled}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
-                openClawRestartDisabled
-                  ? 'text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800/60'
-                  : 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30'
-              }`}
+              className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors"
               title={openClawRestartHint || (locale === 'zh-CN' ? '重启 OpenClaw' : 'Restart OpenClaw')}
             >
               <RotateCw size={13} /><span>OpenClaw</span>
@@ -248,7 +251,11 @@ export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawS
               onClick={async () => {
                 try {
                   const r = await api.restartGateway();
-                  if (!r?.ok) window.alert(r?.error || (locale === 'zh-CN' ? '重启网关失败' : 'Failed to restart gateway'));
+                  if (!r?.ok) {
+                    window.alert(r?.error || (locale === 'zh-CN' ? '重启网关失败' : 'Failed to restart gateway'));
+                    return;
+                  }
+                  window.alert(r?.message || (locale === 'zh-CN' ? '网关重启请求已发送' : 'Gateway restart requested'));
                 } catch {
                   window.alert(locale === 'zh-CN' ? '重启网关失败' : 'Failed to restart gateway');
                 }
