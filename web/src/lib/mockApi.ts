@@ -221,6 +221,7 @@ export const mockApi = {
   restoreBackup: async () => { await delay(500); return { ok: true }; },
   getSkills: async () => { await delay(200); return { ok: true, skills: FAKE_SKILLS }; },
   syncClawHub: async () => { await delay(800); return { ok: true, skills: [] }; },
+  installClawHubSkill: async (_id: string) => { await delay(600); return { ok: true, message: '安装成功' }; },
   getCronJobs: async () => { await delay(200); return { ok: true, jobs: FAKE_CRON_JOBS }; },
   updateCronJobs: async () => { await delay(300); return { ok: true }; },
   getDocs: async () => { await delay(200); return { ok: true, docs: [{ name: 'system-prompt.md', path: 'system-prompt.md', content: '# System Prompt\n\nYou are OpenClaw, a helpful AI assistant.' }] }; },

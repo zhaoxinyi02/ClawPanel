@@ -167,6 +167,10 @@ html.dark .ui-modern-nav-link.active {
   background: transparent;
 }
 
+.ui-modern-scrollbar {
+  scrollbar-gutter: stable;
+}
+
 .page-modern {
   color: var(--ui-text);
 }

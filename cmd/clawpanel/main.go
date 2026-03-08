@@ -299,6 +299,7 @@ func runServer(stopCh chan struct{}) {
 
 			// ClawHub 同步
 			auth.POST("/system/clawhub-sync", handler.ClawHubSync(cfg))
+			auth.POST("/system/clawhub-install", handler.ClawHubInstall(cfg))
 
 			// Bot 操作
 			auth.GET("/bot/groups", handler.GetBotGroups(cfg))

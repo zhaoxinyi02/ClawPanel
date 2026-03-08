@@ -32,7 +32,16 @@ interface PluginEntry {
   path?: string;
 }
 
-const CLAWHUB_CATALOG: { id: string; name: string; description: string; descriptionZh?: string; version: string; category: string }[] = [
+interface ClawHubSkill {
+  id: string;
+  name: string;
+  description: string;
+  descriptionZh?: string;
+  version: string;
+  category: string;
+}
+
+const CLAWHUB_FALLBACK: ClawHubSkill[] = [
   { id: 'feishu', name: '飞书 / Lark', description: 'Feishu/Lark bot channel via WebSocket', descriptionZh: '飞书机器人通道插件，支持 WebSocket 连接', version: '1.1.0', category: '通道' },
   { id: 'qqbot', name: 'QQ 官方机器人', description: 'QQ Official Bot API plugin', descriptionZh: 'QQ开放平台官方Bot API插件', version: '1.2.3', category: '通道' },
   { id: 'dingtalk', name: '钉钉', description: 'DingTalk robot channel plugin', descriptionZh: '钉钉机器人通道插件', version: '0.2.0', category: '通道' },
@@ -48,12 +57,31 @@ const CLAWHUB_CATALOG: { id: string; name: string; description: string; descript
   { id: 'zalo', name: 'Zalo', description: 'Zalo Bot API plugin', descriptionZh: 'Zalo Bot API 插件', version: '0.1.0', category: '通道' },
 ];
 
+function normalizeClawHubSkills(input: any): ClawHubSkill[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const out: ClawHubSkill[] = [];
+  for (const item of input) {
+    const id = String(item?.id || '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const name = String(item?.name || id).trim() || id;
+    const description = String(item?.description || '').trim();
+    const descriptionZh = String(item?.descriptionZh || '').trim() || undefined;
+    const version = String(item?.version || 'latest').trim() || 'latest';
+    const category = String(item?.category || 'ClawHub').trim() || 'ClawHub';
+    out.push({ id, name, description, descriptionZh, version, category });
+  }
+  return out;
+}
+
 export default function Skills() {
   const { t } = useI18n();
   const { uiMode } = (useOutletContext() as { uiMode?: 'modern' }) || {};
   const modern = uiMode === 'modern';
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [plugins, setPlugins] = useState<PluginEntry[]>([]);
+  const [clawHubSkills, setClawHubSkills] = useState<ClawHubSkill[]>(CLAWHUB_FALLBACK);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
@@ -62,8 +90,6 @@ export default function Skills() {
   const [installing, setInstalling] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [configSkill, setConfigSkill] = useState<SkillEntry | null>(null);
-
-  useEffect(() => { loadSkills(); }, []);
 
   const loadSkills = async () => {
     setLoading(true);
@@ -77,6 +103,37 @@ export default function Skills() {
       console.error('Failed to load skills:', err);
     } finally { setLoading(false); }
   };
+
+  const syncClawHub = async (silent = false) => {
+    setSyncing(true);
+    try {
+      const r = await api.syncClawHub();
+      const items = normalizeClawHubSkills(r?.skills);
+      setClawHubSkills(items.length > 0 ? items : CLAWHUB_FALLBACK);
+      if (!silent) {
+        if (r?.source === 'remote') {
+          setMsg(t.skills.syncSuccess.replace('{n}', String(items.length || CLAWHUB_FALLBACK.length)));
+        } else if (r?.source === 'cache') {
+          setMsg(t.skills.syncDone);
+        } else if (r?.ok) {
+          setMsg(t.skills.syncSuccess.replace('{n}', String(items.length || CLAWHUB_FALLBACK.length)));
+        } else {
+          setMsg(t.skills.syncFailed);
+        }
+      }
+    } catch (err) {
+      if (!silent) setMsg(t.skills.syncFailed);
+      console.error('Failed to sync clawhub skills:', err);
+    } finally {
+      setSyncing(false);
+      if (!silent) setTimeout(() => setMsg(''), 3000);
+    }
+  };
+
+  useEffect(() => {
+    loadSkills();
+    syncClawHub(true);
+  }, []);
 
   const toggleSkill = async (id: string) => {
     const skill = skills.find(s => s.id === id);
@@ -111,29 +168,33 @@ export default function Skills() {
   };
 
   const installedIds = new Set(skills.map(s => s.id));
-  const hubFiltered = CLAWHUB_CATALOG.filter(s => {
+  const hubFiltered = clawHubSkills.filter(s => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return s.id.includes(q) || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q);
+    return s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q);
   });
 
   const handleSyncClawHub = async () => {
-    setSyncing(true);
-    try {
-      const r = await api.syncClawHub();
-      if (r.ok && r.skills) {
-        setMsg(t.skills.syncSuccess.replace('{n}', String(r.skills.length)));
-      } else {
-        setMsg(t.skills.syncDone);
-      }
-    } catch { setMsg(t.skills.syncFailed); }
-    finally { setSyncing(false); setTimeout(() => setMsg(''), 3000); }
+    await syncClawHub(false);
   };
 
-  const handleInstallHint = (id: string) => {
+  const handleInstallClawHub = async (id: string) => {
     setInstalling(id);
-    setMsg(t.skills.installHint.replace('{id}', id));
-    setTimeout(() => setInstalling(''), 3000);
+    try {
+      const r = await api.installClawHubSkill(id);
+      if (r?.ok) {
+        setMsg(`${id} ${t.common.installed}`);
+        await loadSkills();
+      } else {
+        setMsg(typeof r?.error === 'string' && r.error ? r.error : t.common.operationFailed);
+      }
+    } catch (err) {
+      console.error('Failed to install clawhub skill:', err);
+      setMsg(t.common.operationFailed);
+    } finally {
+      setInstalling('');
+      setTimeout(() => setMsg(''), 3000);
+    }
   };
 
   const filtered = skills.filter(s => {
@@ -159,6 +220,8 @@ export default function Skills() {
     const badge = badges[source] || { label: source, color: 'bg-gray-100 dark:bg-gray-800 text-gray-600' };
     return <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${badge.color}`}>{badge.label}</span>;
   };
+
+  const isErrorMsg = /失败|failed|error/i.test(msg);
 
   return (
     <div className={`space-y-6 ${modern ? 'page-modern' : ''}`}>
@@ -186,13 +249,13 @@ export default function Skills() {
         </button>
         <button onClick={() => setTab('clawhub')}
           className={`${modern ? 'px-3.5 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 border' : 'pb-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2'} ${tab === 'clawhub' ? (modern ? 'border-blue-100/80 bg-blue-50/85 dark:bg-blue-900/20 dark:border-blue-800/40 text-blue-700 dark:text-blue-300 shadow-sm' : 'border-violet-600 text-violet-700 dark:text-violet-400') : (modern ? 'border-transparent text-gray-500 hover:bg-white/70 dark:hover:bg-slate-800/70 hover:text-gray-700 dark:hover:text-gray-300' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300')}`}>
-          <Globe size={16} />{t.skills.clawHubTab} <span className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs px-1.5 py-0.5 rounded-full">{CLAWHUB_CATALOG.length}</span>
+          <Globe size={16} />{t.skills.clawHubTab} <span className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs px-1.5 py-0.5 rounded-full">{clawHubSkills.length}</span>
         </button>
       </div>
 
       {msg && (
-        <div className={`px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2 ${msg.includes('失败') ? 'bg-red-50 dark:bg-red-900/30 text-red-600' : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600'}`}>
-          {msg.includes('失败') ? <X size={16} /> : <Check size={16} />}
+        <div className={`px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2 ${isErrorMsg ? 'bg-red-50 dark:bg-red-900/30 text-red-600' : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600'}`}>
+          {isErrorMsg ? <X size={16} /> : <Check size={16} />}
           {msg}
         </div>
       )}
@@ -381,7 +444,7 @@ export default function Skills() {
                          <Check size={14} />{t.common.installed}
                        </button>
                      ) : (
-                       <button onClick={() => handleInstallHint(skill.id)} disabled={installing === skill.id}
+                       <button onClick={() => handleInstallClawHub(skill.id)} disabled={installing === skill.id}
                          className={`${modern ? 'page-modern-accent flex-1 py-2 text-xs' : 'flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50 transition-colors'}`}>
                          {installing === skill.id ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
                          {t.common.install}

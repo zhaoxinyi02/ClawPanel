@@ -114,17 +114,15 @@ func GetSkills(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		// --- 扫描技能 ---
-		// 1. OPENCLAW_DIR/skills
-		scanSkillDir(filepath.Join(cfg.OpenClawDir, "skills"), "skill", false, blockSet, &skills, seen)
-
-		// 2. Workspace work/skills
-		workDir := cfg.OpenClawWork
-		if workDir == "" {
-			workDir = filepath.Join(filepath.Dir(cfg.OpenClawDir), "work")
+		// OpenClaw 的技能目录在不同版本中存在差异：
+		// - 旧版常见为 ~/work/skills
+		// - 新版常见为 ~/.openclaw/workspace/skills
+		// 因此这里同时扫描多种候选路径，避免“技能中心扫不到已下载 skills”。
+		for _, candidate := range buildSkillScanCandidates(cfg) {
+			scanSkillDir(candidate.Path, candidate.Source, false, blockSet, &skills, seen)
 		}
-		scanSkillDir(filepath.Join(workDir, "skills"), "workspace", false, blockSet, &skills, seen)
 
-		// 3. App skills
+		// App skills
 		appDir := cfg.OpenClawApp
 		candidates := []string{}
 		if appDir != "" {
@@ -450,4 +448,42 @@ func scanSkillDir(dir, source string, requireSkillMd bool, blockSet map[string]b
 			Metadata: metadata, Requires: requires,
 		})
 	}
+}
+
+type skillScanCandidate struct {
+	Path   string
+	Source string
+}
+
+func buildSkillScanCandidates(cfg *config.Config) []skillScanCandidate {
+	parentDir := filepath.Dir(cfg.OpenClawDir)
+	workDir := strings.TrimSpace(cfg.OpenClawWork)
+	if workDir == "" {
+		workDir = filepath.Join(parentDir, "work")
+	}
+
+	raw := []skillScanCandidate{
+		// Legacy/global skill directory
+		{Path: filepath.Join(cfg.OpenClawDir, "skills"), Source: "skill"},
+		// OpenClaw 2026+ default workspace
+		{Path: filepath.Join(cfg.OpenClawDir, "workspace", "skills"), Source: "workspace"},
+		// Backward-compatible work dir
+		{Path: filepath.Join(workDir, "skills"), Source: "workspace"},
+		// Some deployments use OPENCLAW_WORK as root and keep workspace/skills below it
+		{Path: filepath.Join(workDir, "workspace", "skills"), Source: "workspace"},
+		// Extra fallback for custom layouts (e.g. /home/user/workspace/skills)
+		{Path: filepath.Join(parentDir, "workspace", "skills"), Source: "workspace"},
+	}
+
+	seenPath := map[string]bool{}
+	out := make([]skillScanCandidate, 0, len(raw))
+	for _, c := range raw {
+		p := strings.TrimSpace(c.Path)
+		if p == "" || seenPath[p] {
+			continue
+		}
+		seenPath[p] = true
+		out = append(out, skillScanCandidate{Path: p, Source: c.Source})
+	}
+	return out
 }

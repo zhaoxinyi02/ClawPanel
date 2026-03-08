@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -744,18 +745,234 @@ func WechatUpdateConfig(cfg *config.Config) gin.HandlerFunc {
 
 // === ClawHub Sync ===
 
+type clawHubSkillItem struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	DescriptionZh string `json:"descriptionZh,omitempty"`
+	Version       string `json:"version"`
+	Category      string `json:"category"`
+	Downloads     int64  `json:"downloads,omitempty"`
+	Stars         int64  `json:"stars,omitempty"`
+	Installs      int64  `json:"installs,omitempty"`
+}
+
+type clawHubSkillsResponse struct {
+	Items []struct {
+		Slug        string `json:"slug"`
+		DisplayName string `json:"displayName"`
+		Summary     string `json:"summary"`
+		Stats       struct {
+			Downloads       int64 `json:"downloads"`
+			Stars           int64 `json:"stars"`
+			InstallsAllTime int64 `json:"installsAllTime"`
+		} `json:"stats"`
+		LatestVersion struct {
+			Version string `json:"version"`
+		} `json:"latestVersion"`
+	} `json:"items"`
+}
+
+var clawHubSkillIDPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
+
+func clawHubCachePath(cfg *config.Config) string {
+	return filepath.Join(cfg.OpenClawDir, "clawhub-cache.json")
+}
+
+func readClawHubCache(cfg *config.Config) (map[string]interface{}, bool) {
+	cachePath := clawHubCachePath(cfg)
+	data, err := os.ReadFile(cachePath)
+	if err != nil {
+		return nil, false
+	}
+	var cached map[string]interface{}
+	if json.Unmarshal(data, &cached) != nil {
+		return nil, false
+	}
+	return cached, true
+}
+
+func writeClawHubCache(cfg *config.Config, payload map[string]interface{}) {
+	cachePath := clawHubCachePath(cfg)
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err != nil {
+		return
+	}
+	if out, err := json.MarshalIndent(payload, "", "  "); err == nil {
+		_ = os.WriteFile(cachePath, out, 0644)
+	}
+}
+
+func defaultClawHubSkills() []clawHubSkillItem {
+	return []clawHubSkillItem{
+		{ID: "feishu", Name: "飞书 / Lark", Description: "Feishu/Lark bot channel via WebSocket", DescriptionZh: "飞书机器人通道插件，支持 WebSocket 连接", Version: "1.1.0", Category: "通道"},
+		{ID: "qqbot", Name: "QQ 官方机器人", Description: "QQ Official Bot API plugin", DescriptionZh: "QQ开放平台官方Bot API插件", Version: "1.2.3", Category: "通道"},
+		{ID: "dingtalk", Name: "钉钉", Description: "DingTalk robot channel plugin", DescriptionZh: "钉钉机器人通道插件", Version: "0.2.0", Category: "通道"},
+		{ID: "wecom", Name: "企业微信", Description: "WeCom (WeChat Work) app message plugin", DescriptionZh: "企业微信应用消息通道插件", Version: "2026.1.30", Category: "通道"},
+		{ID: "msteams", Name: "Microsoft Teams", Description: "Bot Framework enterprise channel plugin", DescriptionZh: "Bot Framework 企业通道插件", Version: "0.3.0", Category: "通道"},
+		{ID: "mattermost", Name: "Mattermost", Description: "Mattermost Bot API + WebSocket plugin", DescriptionZh: "Mattermost Bot API + WebSocket 插件", Version: "0.2.0", Category: "通道"},
+		{ID: "line", Name: "LINE", Description: "LINE Messaging API channel plugin", DescriptionZh: "LINE Messaging API 通道插件", Version: "0.1.0", Category: "通道"},
+		{ID: "matrix", Name: "Matrix", Description: "Matrix protocol channel plugin", DescriptionZh: "Matrix 协议通道插件", Version: "0.1.0", Category: "通道"},
+		{ID: "nextcloud-talk", Name: "Nextcloud Talk", Description: "Nextcloud Talk self-hosted chat plugin", DescriptionZh: "Nextcloud Talk 自托管聊天插件", Version: "0.1.0", Category: "通道"},
+		{ID: "nostr", Name: "Nostr", Description: "Decentralized NIP-04 DM plugin", DescriptionZh: "去中心化 NIP-04 DM 插件", Version: "0.1.0", Category: "通道"},
+		{ID: "twitch", Name: "Twitch", Description: "Twitch Chat via IRC plugin", DescriptionZh: "Twitch Chat via IRC 插件", Version: "0.1.0", Category: "通道"},
+		{ID: "tlon", Name: "Tlon", Description: "Urbit-based messenger plugin", DescriptionZh: "Urbit-based messenger 插件", Version: "0.1.0", Category: "通道"},
+		{ID: "zalo", Name: "Zalo", Description: "Zalo Bot API plugin", DescriptionZh: "Zalo Bot API 插件", Version: "0.1.0", Category: "通道"},
+	}
+}
+
+func fetchClawHubSkills() ([]clawHubSkillItem, error) {
+	url := "https://wry-manatee-359.convex.site/api/v1/skills?sort=downloads&limit=200"
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 12 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("clawhub http %d", resp.StatusCode)
+	}
+
+	var payload clawHubSkillsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+
+	items := make([]clawHubSkillItem, 0, len(payload.Items))
+	for _, it := range payload.Items {
+		id := strings.TrimSpace(it.Slug)
+		if id == "" {
+			continue
+		}
+		name := strings.TrimSpace(it.DisplayName)
+		if name == "" {
+			name = id
+		}
+		version := strings.TrimSpace(it.LatestVersion.Version)
+		if version == "" {
+			version = "latest"
+		}
+		items = append(items, clawHubSkillItem{
+			ID:          id,
+			Name:        name,
+			Description: strings.TrimSpace(it.Summary),
+			Version:     version,
+			Category:    "ClawHub",
+			Downloads:   it.Stats.Downloads,
+			Stars:       it.Stats.Stars,
+			Installs:    it.Stats.InstallsAllTime,
+		})
+	}
+	return items, nil
+}
+
 func ClawHubSync(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		cachePath := filepath.Join(cfg.OpenClawDir, "clawhub-cache.json")
-		// Try to read cache
-		if data, err := os.ReadFile(cachePath); err == nil {
-			var cached map[string]interface{}
-			if json.Unmarshal(data, &cached) == nil {
-				c.JSON(200, gin.H{"ok": true, "skills": cached["skills"], "source": "cache", "syncedAt": cached["syncedAt"]})
+		skills, err := fetchClawHubSkills()
+		if err == nil && len(skills) > 0 {
+			payload := map[string]interface{}{
+				"skills":   skills,
+				"syncedAt": time.Now().Format(time.RFC3339),
+				"source":   "remote",
+			}
+			writeClawHubCache(cfg, payload)
+			c.JSON(200, gin.H{"ok": true, "skills": skills, "source": "remote", "syncedAt": payload["syncedAt"]})
+			return
+		}
+
+		if cached, ok := readClawHubCache(cfg); ok {
+			c.JSON(200, gin.H{
+				"ok":       true,
+				"skills":   cached["skills"],
+				"source":   "cache",
+				"syncedAt": cached["syncedAt"],
+				"error":    fmt.Sprintf("clawhub sync failed, fallback to cache: %v", err),
+			})
+			return
+		}
+
+		fallback := defaultClawHubSkills()
+		c.JSON(200, gin.H{
+			"ok":       false,
+			"skills":   fallback,
+			"source":   "builtin",
+			"syncedAt": "",
+			"error":    fmt.Sprintf("clawhub sync failed: %v", err),
+		})
+	}
+}
+
+func ClawHubInstall(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			ID string `json:"id"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "参数错误"})
+			return
+		}
+
+		id := strings.TrimSpace(req.ID)
+		if !clawHubSkillIDPattern.MatchString(id) {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "非法技能 ID"})
+			return
+		}
+
+		attempts := [][]string{
+			{"clawhub", "install", id},
+			{"openclaw", "skills", "install", id},
+			{"openclaw", "plugins", "install", id},
+		}
+
+		execEnv := append(config.BuildExecEnv(),
+			fmt.Sprintf("OPENCLAW_DIR=%s", cfg.OpenClawDir),
+			fmt.Sprintf("OPENCLAW_STATE_DIR=%s", cfg.OpenClawDir),
+		)
+
+		var tried []string
+		var lastErr string
+		for _, args := range attempts {
+			if len(args) == 0 {
+				continue
+			}
+			if _, err := exec.LookPath(args[0]); err != nil {
+				continue
+			}
+
+			tried = append(tried, strings.Join(args, " "))
+			cmd := exec.Command(args[0], args[1:]...)
+			cmd.Dir = cfg.OpenClawDir
+			cmd.Env = execEnv
+			out, err := cmd.CombinedOutput()
+			text := strings.TrimSpace(string(out))
+
+			if err == nil {
+				c.JSON(200, gin.H{
+					"ok":      true,
+					"message": "安装成功",
+					"command": strings.Join(args, " "),
+					"output":  text,
+				})
 				return
 			}
+
+			lastErr = err.Error()
+			if text != "" {
+				lastErr += ": " + text
+			}
 		}
-		c.JSON(200, gin.H{"ok": true, "skills": []interface{}{}, "source": "empty"})
+
+		if len(tried) == 0 {
+			c.JSON(500, gin.H{"ok": false, "error": "未找到可用安装命令（clawhub/openclaw）"})
+			return
+		}
+		c.JSON(500, gin.H{"ok": false, "error": lastErr, "tried": tried})
 	}
 }
 

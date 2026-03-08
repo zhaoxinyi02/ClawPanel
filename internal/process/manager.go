@@ -107,6 +107,9 @@ func (m *Manager) Start() error {
 		fmt.Sprintf("OPENCLAW_STATE_DIR=%s", m.cfg.OpenClawDir),
 		fmt.Sprintf("OPENCLAW_CONFIG_PATH=%s/openclaw.json", m.cfg.OpenClawDir),
 	)
+	if err := m.applyOpenClawRunAs(m.cmd); err != nil {
+		return fmt.Errorf("设置 OpenClaw 运行用户失败: %w", err)
+	}
 
 	// 捕获 stdout 和 stderr
 	stdout, err := m.cmd.StdoutPipe()

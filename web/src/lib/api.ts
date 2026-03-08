@@ -138,6 +138,7 @@ const _api = {
   restoreBackup: (backupName: string) => post('/system/restore', { backupName }),
   getSkills: () => get('/system/skills'),
   syncClawHub: () => post('/system/clawhub-sync'),
+  installClawHubSkill: (id: string) => post('/system/clawhub-install', { id }),
   getCronJobs: () => get('/system/cron'),
   updateCronJobs: (jobs: any[]) => put('/system/cron', { jobs }),
   getDocs: () => get('/system/docs'),

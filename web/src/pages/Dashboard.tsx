@@ -232,36 +232,40 @@ export default function Dashboard({ ws }: DashboardProps) {
               <p className="text-xs">{t.dashboard.noActivity}</p>
             </div>
           )}
-          {filteredLogs.slice(0, 100).map((entry) => (
-            <div key={entry.id} className="group">
-              <div
-                className={`flex items-start gap-3 py-2.5 px-3.5 rounded-xl cursor-pointer transition-all duration-200 text-xs border border-transparent
-                  ${expandedId === entry.id ? 'bg-white/72 dark:bg-slate-800/55 border-blue-100/70 dark:border-slate-700/70 shadow-sm shadow-blue-100/30 dark:shadow-none' : 'hover:bg-white/68 dark:hover:bg-slate-800/35 hover:border-blue-100/50 dark:hover:border-slate-700/50'}`}
-                onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
-              >
-                <span className="text-gray-400 shrink-0 font-mono text-[10px] pt-0.5 opacity-70 group-hover:opacity-100 transition-opacity">{formatLogTime(entry.time)}</span>
-                
-                 <span className={`shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide uppercase border ${sourceColor(entry.source)}`}>
-                  {sourceLabel(entry.source)}
-                 </span>
-                
-                <div className="flex-1 min-w-0">
-                  <p className={`truncate font-medium leading-relaxed ${entry.source === 'openclaw' ? 'text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-300'}`}>
-                    {entry.summary}
-                  </p>
-                </div>
+          {filteredLogs.slice(0, 100).map((entry) => {
+            const detailText = (entry.detail || entry.summary || '').trim();
+            const canExpand = detailText.length > 0;
+            return (
+              <div key={entry.id} className="group">
+                <div
+                  className={`flex items-start gap-3 py-2.5 px-3.5 rounded-xl cursor-pointer transition-all duration-200 text-xs border border-transparent
+                    ${expandedId === entry.id ? 'bg-white/72 dark:bg-slate-800/55 border-blue-100/70 dark:border-slate-700/70 shadow-sm shadow-blue-100/30 dark:shadow-none' : 'hover:bg-white/68 dark:hover:bg-slate-800/35 hover:border-blue-100/50 dark:hover:border-slate-700/50'}`}
+                  onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
+                >
+                  <span className="text-gray-400 shrink-0 font-mono text-[10px] pt-0.5 opacity-70 group-hover:opacity-100 transition-opacity">{formatLogTime(entry.time)}</span>
 
-                {entry.detail ? (
-                  <ChevronDown size={12} className={`shrink-0 text-gray-300 transition-transform duration-200 ${expandedId === entry.id ? 'rotate-180 text-gray-500' : ''}`} />
-                ) : <span className="w-3" />}
+                  <span className={`shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide uppercase border ${sourceColor(entry.source)}`}>
+                    {sourceLabel(entry.source)}
+                  </span>
+
+                  <div className="flex-1 min-w-0">
+                    <p className={`truncate font-medium leading-relaxed ${entry.source === 'openclaw' ? 'text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-300'}`}>
+                      {entry.summary}
+                    </p>
+                  </div>
+
+                  {canExpand ? (
+                    <ChevronDown size={12} className={`shrink-0 text-gray-300 transition-transform duration-200 ${expandedId === entry.id ? 'rotate-180 text-gray-500' : ''}`} />
+                  ) : <span className="w-3" />}
+                </div>
+                {expandedId === entry.id && canExpand && (
+                  <div className="ml-12 mr-3 mb-2 mt-1 px-4 py-3 rounded-xl bg-white/65 dark:bg-slate-900/55 border border-blue-100/70 dark:border-slate-700/70 text-[11px] font-mono text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all shadow-inner max-h-60 overflow-y-auto backdrop-blur-xl">
+                    {detailText}
+                  </div>
+                )}
               </div>
-              {expandedId === entry.id && entry.detail && (
-                 <div className="ml-12 mr-3 mb-2 mt-1 px-4 py-3 rounded-xl bg-white/65 dark:bg-slate-900/55 border border-blue-100/70 dark:border-slate-700/70 text-[11px] font-mono text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all shadow-inner max-h-60 overflow-y-auto backdrop-blur-xl">
-                  {entry.detail}
-                 </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
