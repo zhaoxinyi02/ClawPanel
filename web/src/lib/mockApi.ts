@@ -120,9 +120,12 @@ const FAKE_CONFIG: any = {
   channels: {
     qq: { enabled: true, ownerQQ: '123456789' },
     feishu: {
+      appId: 'cli_demo',
+      appSecret: 'demo-secret',
       defaultAccount: 'default',
       accounts: {
-        default: { appId: 'cli_demo' },
+        default: { appId: 'cli_demo', appSecret: 'demo-secret', botName: '默认机器人', enabled: true },
+        backup: { appId: 'cli_backup', appSecret: 'backup-secret', botName: '备用机器人', enabled: false },
       },
       dmPolicy: 'pairing',
     },

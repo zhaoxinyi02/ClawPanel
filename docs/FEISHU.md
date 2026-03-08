@@ -25,42 +25,37 @@
 - 切换版本时，已有的共享字段会继续保留
 - 如果某个版本暂时不识别某个字段，通常会忽略它，而不是破坏现有配置
 
-## 2. Account 兼容模式
+## 2. Account 收口模型
 
-ClawPanel 现在同时支持两套写法：
+ClawPanel 现在把飞书账号统一收口到同一套语义：
 
-### 简版单账号
+- `defaultAccount`：默认账号是谁
+- `accounts`：全部账号
+- 顶层 `appId` / `appSecret`：默认账号的镜像
 
-适合只有一个机器人账号的场景：
+### 最终保存形态
 
-```json
-{
-  "channels": {
-    "feishu": {
-      "appId": "cli_xxx",
-      "appSecret": "xxx"
-    }
-  }
-}
-```
-
-### 完整版 Account
-
-适合多个飞书机器人共用一个 `feishu` 通道，但希望按账号分 Agent 或分路由：
+无论你在面板里使用“仅默认账号”还是“多账号并行”视图，保存后的飞书配置都会统一收敛到：
 
 ```json
 {
   "channels": {
     "feishu": {
       "defaultAccount": "primary",
+      "appId": "cli_primary",
+      "appSecret": "secret_primary",
       "accounts": {
         "primary": {
           "appId": "cli_primary",
-          "appSecret": "secret_primary"
+          "appSecret": "secret_primary",
+          "botName": "主机器人",
+          "enabled": true
         },
         "backup": {
           "appId": "cli_backup",
-          "appSecret": "secret_backup"
+          "appSecret": "secret_backup",
+          "botName": "备用机器人",
+          "enabled": false
         }
       }
     }
@@ -70,10 +65,12 @@ ClawPanel 现在同时支持两套写法：
 
 ### 当前面板行为
 
-- **默认关闭**完整版 Account 模式
-- 开启后，面板会维护 `accounts` / `defaultAccount`
+- “仅默认账号 / 多账号并行”表示 **运行方式**，不是两套互斥 schema
 - 默认账号的凭证会自动镜像到顶层 `appId` / `appSecret`
-- 关闭完整版 Account 只会隐藏多账号编辑区，不会自动删除已有账号结构
+- 默认账号会被强制保持 `enabled=true`
+- 若 `defaultAccount` 指向不存在账号，面板/后端只会在有顶层凭证可补齐时补出该账号；否则会回退到现有账号或清空，避免保存出“幽灵默认账号”
+- 切回“仅默认账号”不会删除其他账号，只会把非默认账号写成 `enabled=false`
+- 多账号列表里可以直接编辑 `botName`、凭证和 `enabled`
 
 ## 3. 默认值与推荐起点
 

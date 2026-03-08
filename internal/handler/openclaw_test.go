@@ -486,6 +486,283 @@ func TestNormalizeFeishuChannelConfigSeedsDefaultAccountFromTopLevel(t *testing.
 	if entry["appSecret"] != "secret_simple" {
 		t.Fatalf("expected default account appSecret to inherit top-level value, got %#v", entry["appSecret"])
 	}
+	if enabled, _ := entry["enabled"].(bool); !enabled {
+		t.Fatalf("expected seeded default account to be enabled, got %#v", entry["enabled"])
+	}
+}
+
+func TestNormalizeFeishuChannelConfigCreatesDefaultAccountFromTopLevelWhenMissing(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]interface{}{
+		"appId":     "cli_simple",
+		"appSecret": "secret_simple",
+	}
+
+	got := normalizeFeishuChannelConfig(input)
+
+	if got["defaultAccount"] != "default" {
+		t.Fatalf("expected missing default account to migrate to default, got %#v", got["defaultAccount"])
+	}
+	accounts, _ := got["accounts"].(map[string]interface{})
+	entry, _ := accounts["default"].(map[string]interface{})
+	if entry == nil {
+		t.Fatalf("expected default account entry to be created, got %#v", got["accounts"])
+	}
+	if entry["appId"] != "cli_simple" || entry["appSecret"] != "secret_simple" {
+		t.Fatalf("expected top-level credentials to seed default account, got %#v", entry)
+	}
+	if enabled, _ := entry["enabled"].(bool); !enabled {
+		t.Fatalf("expected migrated default account to be enabled, got %#v", entry["enabled"])
+	}
+}
+
+func TestNormalizeFeishuChannelConfigPreservesAccountMetadataAndForcesDefaultEnabled(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]interface{}{
+		"defaultAccount": "main",
+		"accounts": map[string]interface{}{
+			"main": map[string]interface{}{
+				"appId":      "cli_main",
+				"appSecret":  "secret_main",
+				"botName":    "主机器人",
+				"enabled":    false,
+				"tenantName": "Team A",
+			},
+			"backup": map[string]interface{}{
+				"appId":      "cli_backup",
+				"appSecret":  "secret_backup",
+				"botName":    "备用机器人",
+				"enabled":    false,
+				"tenantName": "Team B",
+			},
+		},
+	}
+
+	got := normalizeFeishuChannelConfig(input)
+	accounts, _ := got["accounts"].(map[string]interface{})
+	mainEntry, _ := accounts["main"].(map[string]interface{})
+	backupEntry, _ := accounts["backup"].(map[string]interface{})
+	if mainEntry == nil || backupEntry == nil {
+		t.Fatalf("expected both accounts to be preserved, got %#v", got["accounts"])
+	}
+	if mainEntry["botName"] != "主机器人" || mainEntry["tenantName"] != "Team A" {
+		t.Fatalf("expected default account metadata to be preserved, got %#v", mainEntry)
+	}
+	if enabled, _ := mainEntry["enabled"].(bool); !enabled {
+		t.Fatalf("expected default account to be forced enabled, got %#v", mainEntry["enabled"])
+	}
+	if backupEntry["botName"] != "备用机器人" || backupEntry["tenantName"] != "Team B" {
+		t.Fatalf("expected backup account metadata to be preserved, got %#v", backupEntry)
+	}
+	if enabled, _ := backupEntry["enabled"].(bool); enabled {
+		t.Fatalf("expected explicit disabled backup account to stay disabled, got %#v", backupEntry["enabled"])
+	}
+	if got["appId"] != "cli_main" || got["appSecret"] != "secret_main" {
+		t.Fatalf("expected top-level credentials to mirror default account, got appId=%#v appSecret=%#v", got["appId"], got["appSecret"])
+	}
+}
+
+func TestNormalizeFeishuChannelConfigInfersMissingDefaultFromTopLevelMirror(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]interface{}{
+		"appId":     "cli_main",
+		"appSecret": "secret_main",
+		"accounts": map[string]interface{}{
+			"backup": map[string]interface{}{
+				"appId":     "cli_backup",
+				"appSecret": "secret_backup",
+			},
+			"main": map[string]interface{}{
+				"appId":     "cli_main",
+				"appSecret": "secret_main",
+			},
+		},
+	}
+
+	got := normalizeFeishuChannelConfig(input)
+
+	if got["defaultAccount"] != "main" {
+		t.Fatalf("expected defaultAccount to be inferred from top-level mirror, got %#v", got["defaultAccount"])
+	}
+	if got["appId"] != "cli_main" || got["appSecret"] != "secret_main" {
+		t.Fatalf("expected top-level credentials to stay mirrored to main, got appId=%#v appSecret=%#v", got["appId"], got["appSecret"])
+	}
+}
+
+func TestNormalizeFeishuChannelConfigDoesNotInferDefaultFromPartialMirror(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]interface{}{
+		"appId": "cli_shared",
+		"accounts": map[string]interface{}{
+			"a": map[string]interface{}{"appId": "cli_shared", "appSecret": "secret_a"},
+			"b": map[string]interface{}{"appId": "cli_shared", "appSecret": "secret_b"},
+		},
+	}
+
+	got := normalizeFeishuChannelConfig(input)
+
+	if got["defaultAccount"] != "a" {
+		t.Fatalf("expected safe fallback to first sorted account, got %#v", got["defaultAccount"])
+	}
+	if got["appSecret"] != "secret_a" {
+		t.Fatalf("expected top-level mirror to be rewritten from resolved default account, got %#v", got["appSecret"])
+	}
+}
+
+func TestNormalizeFeishuChannelConfigInfersMissingDefaultFromUniqueEnabledAccount(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]interface{}{
+		"accounts": map[string]interface{}{
+			"default": map[string]interface{}{
+				"appId":     "cli_default",
+				"appSecret": "secret_default",
+				"enabled":   0,
+			},
+			"work": map[string]interface{}{
+				"appId":     "cli_work",
+				"appSecret": "secret_work",
+				"enabled":   "1",
+			},
+		},
+	}
+
+	got := normalizeFeishuChannelConfig(input)
+
+	if got["defaultAccount"] != "work" {
+		t.Fatalf("expected unique enabled account to become default, got %#v", got["defaultAccount"])
+	}
+	if got["appId"] != "cli_work" || got["appSecret"] != "secret_work" {
+		t.Fatalf("expected top-level mirror to follow inferred enabled default, got appId=%#v appSecret=%#v", got["appId"], got["appSecret"])
+	}
+}
+
+func TestNormalizeFeishuChannelConfigIgnoresMetadataOnlyAccountsForDefaultInference(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]interface{}{
+		"accounts": map[string]interface{}{
+			"backup": map[string]interface{}{
+				"botName": "备用机器人",
+			},
+			"main": map[string]interface{}{
+				"appId":     "cli_main",
+				"appSecret": "secret_main",
+			},
+		},
+	}
+
+	got := normalizeFeishuChannelConfig(input)
+
+	if got["defaultAccount"] != "main" {
+		t.Fatalf("expected metadata-only account to be ignored for default inference, got %#v", got["defaultAccount"])
+	}
+	if got["appId"] != "cli_main" || got["appSecret"] != "secret_main" {
+		t.Fatalf("expected top-level mirror to follow runnable account, got appId=%#v appSecret=%#v", got["appId"], got["appSecret"])
+	}
+}
+
+func TestNormalizeFeishuChannelConfigFallsBackFromExplicitMetadataOnlyDefault(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]interface{}{
+		"defaultAccount": "backup",
+		"accounts": map[string]interface{}{
+			"backup": map[string]interface{}{
+				"botName": "备用机器人",
+			},
+			"main": map[string]interface{}{
+				"appId":     "cli_main",
+				"appSecret": "secret_main",
+				"enabled":   true,
+			},
+		},
+	}
+
+	got := normalizeFeishuChannelConfig(input)
+
+	if got["defaultAccount"] != "main" {
+		t.Fatalf("expected explicit metadata-only default to fall back to runnable account, got %#v", got["defaultAccount"])
+	}
+	if got["appId"] != "cli_main" || got["appSecret"] != "secret_main" {
+		t.Fatalf("expected top-level mirror to follow runnable fallback account, got appId=%#v appSecret=%#v", got["appId"], got["appSecret"])
+	}
+}
+
+func TestNormalizeFeishuChannelConfigDoesNotMaterializeMissingDefaultWithoutTopLevelSeed(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]interface{}{
+		"defaultAccount": "ghost",
+		"accounts": map[string]interface{}{
+			"backup": map[string]interface{}{
+				"botName": "备用机器人",
+			},
+		},
+	}
+
+	got := normalizeFeishuChannelConfig(input)
+
+	if got["defaultAccount"] != "backup" {
+		t.Fatalf("expected missing explicit default to fall back to existing account, got %#v", got["defaultAccount"])
+	}
+	accounts := got["accounts"].(map[string]interface{})
+	if _, exists := accounts["ghost"]; exists {
+		t.Fatalf("expected missing explicit default to remain absent, got %#v", accounts["ghost"])
+	}
+}
+
+func TestNormalizeFeishuChannelConfigClearsMissingDefaultWithoutAccountsOrSeed(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]interface{}{
+		"defaultAccount": "ghost",
+	}
+
+	got := normalizeFeishuChannelConfig(input)
+
+	if _, ok := got["defaultAccount"]; ok {
+		t.Fatalf("expected missing explicit default to be cleared when no accounts or top-level seed exist, got %#v", got["defaultAccount"])
+	}
+	accounts, _ := got["accounts"].(map[string]interface{})
+	if len(accounts) != 0 {
+		t.Fatalf("expected no accounts to be materialized, got %#v", accounts)
+	}
+}
+
+func TestNormalizeFeishuChannelConfigParsesNumericEnabledFlags(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]interface{}{
+		"defaultAccount": "main",
+		"accounts": map[string]interface{}{
+			"main": map[string]interface{}{
+				"appId":     "cli_main",
+				"appSecret": "secret_main",
+				"enabled":   1,
+			},
+			"backup": map[string]interface{}{
+				"appId":     "cli_backup",
+				"appSecret": "secret_backup",
+				"enabled":   0,
+			},
+		},
+	}
+
+	got := normalizeFeishuChannelConfig(input)
+	accounts, _ := got["accounts"].(map[string]interface{})
+	mainEntry, _ := accounts["main"].(map[string]interface{})
+	backupEntry, _ := accounts["backup"].(map[string]interface{})
+	if enabled, _ := mainEntry["enabled"].(bool); !enabled {
+		t.Fatalf("expected numeric enabled=1 to normalize to true, got %#v", mainEntry["enabled"])
+	}
+	if enabled, _ := backupEntry["enabled"].(bool); enabled {
+		t.Fatalf("expected numeric enabled=0 to normalize to false, got %#v", backupEntry["enabled"])
+	}
 }
 
 func TestNormalizeFeishuChannelConfigParsesMentionAndAllowList(t *testing.T) {
@@ -616,4 +893,3 @@ func TestSaveChannelQQReturnsMessageWithoutProcessManager(t *testing.T) {
 		t.Fatalf("expected ok response, got %#v", resp)
 	}
 }
-
