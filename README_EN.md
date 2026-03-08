@@ -9,7 +9,7 @@
 Go Single Binary · React 18 · TailwindCSS · SQLite · WebSocket Real-time · Cross-platform
 
 [![License](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-red?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.2.2-violet?style=flat-square)](https://github.com/zhaoxinyi02/ClawPanel/releases)
+[![Version](https://img.shields.io/badge/version-5.2.3-violet?style=flat-square)](https://github.com/zhaoxinyi02/ClawPanel/releases)
 [![Go](https://img.shields.io/badge/go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
 [![React](https://img.shields.io/badge/react-18-61DAFB?style=flat-square&logo=react&logoColor=white)](https://react.dev)
 [![CI](https://github.com/zhaoxinyi02/ClawPanel/actions/workflows/ci.yml/badge.svg)](https://github.com/zhaoxinyi02/ClawPanel/actions/workflows/ci.yml)
@@ -47,6 +47,7 @@ Unified configuration for **20+ channels** with one-click enable/disable:
 ### Configuration Center
 - **Model Config**: Multi-provider management (OpenAI / Anthropic / Google / DeepSeek / Volcengine etc.)
 - **Agent Config**: System prompt, temperature, max tokens
+- **Browser Control Presets**: Visual switching between `browser.enabled=false` and `browser.enabled=true + browser.defaultProfile="openclaw"` to reduce accidental takeover of the system browser
 - **JSON Mode**: Direct editing of full configuration JSON
 - Auto-injects `compat.supportsDeveloperRole=false` for non-OpenAI providers
 

@@ -31,6 +31,8 @@ type Hub struct {
 	register   chan *Client
 	unregister chan *Client
 	mu         sync.RWMutex
+	stop       chan struct{}
+	stopOnce   sync.Once
 }
 
 // NewHub 创建 WebSocket Hub
@@ -40,6 +42,7 @@ func NewHub() *Hub {
 		broadcast:  make(chan []byte, 256),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
+		stop:       make(chan struct{}),
 	}
 }
 
@@ -47,11 +50,15 @@ func NewHub() *Hub {
 func (h *Hub) Run() {
 	for {
 		select {
+		case <-h.stop:
+			return
+
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client] = true
+			count := len(h.clients)
 			h.mu.Unlock()
-			log.Printf("[WebSocket] 客户端已连接，当前连接数: %d", len(h.clients))
+			log.Printf("[WebSocket] 客户端已连接，当前连接数: %d", count)
 
 		case client := <-h.unregister:
 			h.mu.Lock()
@@ -59,11 +66,12 @@ func (h *Hub) Run() {
 				delete(h.clients, client)
 				close(client.send)
 			}
+			count := len(h.clients)
 			h.mu.Unlock()
-			log.Printf("[WebSocket] 客户端已断开，当前连接数: %d", len(h.clients))
+			log.Printf("[WebSocket] 客户端已断开，当前连接数: %d", count)
 
 		case message := <-h.broadcast:
-			h.mu.RLock()
+			h.mu.Lock()
 			for client := range h.clients {
 				select {
 				case client.send <- message:
@@ -73,7 +81,7 @@ func (h *Hub) Run() {
 					delete(h.clients, client)
 				}
 			}
-			h.mu.RUnlock()
+			h.mu.Unlock()
 		}
 	}
 }
@@ -85,6 +93,23 @@ func (h *Hub) Broadcast(msg []byte) {
 	default:
 		// 广播通道满，丢弃消息
 	}
+}
+
+// Stop shuts down the hub loop and closes all client send channels.
+func (h *Hub) Stop() {
+	h.stopOnce.Do(func() {
+		close(h.stop)
+
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		for client := range h.clients {
+			delete(h.clients, client)
+			if client.conn != nil {
+				client.conn.Close()
+			}
+			close(client.send)
+		}
+	})
 }
 
 // HandleWebSocket 处理 WebSocket 连接的 Gin handler
@@ -112,7 +137,13 @@ func (h *Hub) HandleWebSocket(tokenValidator ...func(token string) bool) gin.Han
 			send: make(chan []byte, 256),
 		}
 
-		h.register <- client
+		select {
+		case h.register <- client:
+		case <-h.stop:
+			close(client.send)
+			conn.Close()
+			return
+		}
 
 		// 启动读写协程
 		go client.writePump()
@@ -123,8 +154,11 @@ func (h *Hub) HandleWebSocket(tokenValidator ...func(token string) bool) gin.Han
 // readPump 读取客户端消息（主要用于检测断开）
 func (c *Client) readPump() {
 	defer func() {
-		c.hub.unregister <- c
 		c.conn.Close()
+		select {
+		case c.hub.unregister <- c:
+		case <-c.hub.stop:
+		}
 	}()
 
 	for {

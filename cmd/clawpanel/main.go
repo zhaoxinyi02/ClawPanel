@@ -201,6 +201,7 @@ func runServer(stopCh chan struct{}) {
 			// OpenClaw 配置
 			auth.GET("/openclaw/config", handler.GetOpenClawConfig(cfg))
 			auth.PUT("/openclaw/config", handler.SaveOpenClawConfig(cfg))
+			auth.GET("/openclaw/feishu-dm-diagnosis", handler.GetFeishuDMDiagnosis(cfg))
 			auth.GET("/openclaw/agents", handler.GetOpenClawAgents(cfg))
 			auth.POST("/openclaw/agents", handler.CreateOpenClawAgent(cfg))
 			auth.PUT("/openclaw/agents/:id", handler.UpdateOpenClawAgent(cfg))

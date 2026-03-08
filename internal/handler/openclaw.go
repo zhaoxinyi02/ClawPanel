@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -48,15 +50,55 @@ func normalizeProviderAPIs(providers map[string]interface{}) {
 	}
 }
 
+func preserveMissingMapFields(dst, src map[string]interface{}) {
+	if dst == nil || src == nil {
+		return
+	}
+	for key, srcVal := range src {
+		dstVal, exists := dst[key]
+		if !exists {
+			dst[key] = srcVal
+			continue
+		}
+		srcMap, srcIsMap := srcVal.(map[string]interface{})
+		dstMap, dstIsMap := dstVal.(map[string]interface{})
+		if srcIsMap && dstIsMap {
+			preserveMissingMapFields(dstMap, srcMap)
+		}
+	}
+}
+
 func preserveHiddenOpenClawFields(dst, src map[string]interface{}) {
 	if dst == nil || src == nil {
 		return
 	}
-	if tools, ok := src["tools"]; ok {
-		dst["tools"] = tools
+	if srcTools, ok := src["tools"].(map[string]interface{}); ok {
+		dstTools, _ := dst["tools"].(map[string]interface{})
+		if dstTools == nil {
+			dstTools = map[string]interface{}{}
+		}
+		preserveMissingMapFields(dstTools, srcTools)
+		if len(dstTools) > 0 {
+			dst["tools"] = dstTools
+		}
+	} else if tools, ok := src["tools"]; ok {
+		if _, exists := dst["tools"]; !exists {
+			dst["tools"] = tools
+		}
 	}
-	if session, ok := src["session"]; ok {
-		dst["session"] = session
+	if srcSession, ok := src["session"].(map[string]interface{}); ok {
+		dstSession, _ := dst["session"].(map[string]interface{})
+		if dstSession == nil {
+			dstSession = map[string]interface{}{}
+		}
+		preserveMissingMapFields(dstSession, srcSession)
+		if len(dstSession) > 0 {
+			dst["session"] = dstSession
+		}
+	} else if session, ok := src["session"]; ok {
+		if _, exists := dst["session"]; !exists {
+			dst["session"] = session
+		}
 	}
 	if srcCron, ok := src["cron"].(map[string]interface{}); ok {
 		dstCron, _ := dst["cron"].(map[string]interface{})
@@ -64,7 +106,9 @@ func preserveHiddenOpenClawFields(dst, src map[string]interface{}) {
 			if dstCron == nil {
 				dstCron = map[string]interface{}{}
 			}
-			dstCron["jobs"] = jobs
+			if _, exists := dstCron["jobs"]; !exists {
+				dstCron["jobs"] = jobs
+			}
 			dst["cron"] = dstCron
 		}
 	}
@@ -104,6 +148,10 @@ func SaveOpenClawConfig(cfg *config.Config) gin.HandlerFunc {
 		normalizeOpenClawModelAPIs(ocCfg)
 		syncAllowedModels(ocCfg)
 		preserveHiddenOpenClawFields(ocCfg, existingCfg)
+		if err := validateOpenClawNumericConfig(ocCfg); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
 
 		if err := cfg.WriteOpenClawJSON(ocCfg); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
@@ -238,6 +286,9 @@ func SaveChannel(cfg *config.Config, procMgr *process.Manager) gin.HandlerFunc {
 		if id == "qq" {
 			body = normalizeQQChannelConfig(body)
 		}
+		if id == "feishu" {
+			body = normalizeFeishuChannelConfig(body)
+		}
 		channels[id] = body
 		ocConfig["channels"] = channels
 
@@ -315,6 +366,328 @@ func normalizeQQChannelConfig(body map[string]interface{}) map[string]interface{
 	}
 
 	return body
+}
+
+func normalizeFeishuChannelConfig(body map[string]interface{}) map[string]interface{} {
+	if body == nil {
+		return map[string]interface{}{}
+	}
+	delete(body, "dmScope")
+
+	if raw, exists := body["requireMention"]; exists {
+		switch v := raw.(type) {
+		case string:
+			switch trimmed := strings.TrimSpace(v); trimmed {
+			case "":
+				delete(body, "requireMention")
+			case "true":
+				body["requireMention"] = true
+			case "false":
+				body["requireMention"] = false
+			default:
+				body["requireMention"] = trimmed
+			}
+		}
+	}
+
+	if raw, exists := body["groupAllowFrom"]; exists {
+		switch v := raw.(type) {
+		case string:
+			parts := strings.FieldsFunc(v, func(r rune) bool {
+				return r == ',' || r == '，'
+			})
+			items := make([]interface{}, 0, len(parts))
+			for _, part := range parts {
+				trimmed := strings.TrimSpace(part)
+				if trimmed != "" {
+					items = append(items, trimmed)
+				}
+			}
+			if len(items) > 0 {
+				body["groupAllowFrom"] = items
+			} else {
+				delete(body, "groupAllowFrom")
+			}
+		case []interface{}:
+			items := make([]interface{}, 0, len(v))
+			for _, item := range v {
+				trimmed := strings.TrimSpace(toString(item))
+				if trimmed != "" {
+					items = append(items, trimmed)
+				}
+			}
+			if len(items) > 0 {
+				body["groupAllowFrom"] = items
+			} else {
+				delete(body, "groupAllowFrom")
+			}
+		}
+	}
+
+	groupPolicy := strings.TrimSpace(toString(body["groupPolicy"]))
+	if groupPolicy != "" {
+		body["groupPolicy"] = groupPolicy
+	} else {
+		delete(body, "groupPolicy")
+	}
+	if groupPolicy != "allowlist" {
+		delete(body, "groupAllowFrom")
+	}
+
+	dmPolicy := strings.TrimSpace(toString(body["dmPolicy"]))
+	if dmPolicy != "" {
+		body["dmPolicy"] = dmPolicy
+	} else {
+		delete(body, "dmPolicy")
+	}
+
+	topAppID := strings.TrimSpace(toString(body["appId"]))
+	if topAppID != "" {
+		body["appId"] = topAppID
+	} else {
+		delete(body, "appId")
+	}
+	topAppSecret := strings.TrimSpace(toString(body["appSecret"]))
+	if topAppSecret != "" {
+		body["appSecret"] = topAppSecret
+	} else {
+		delete(body, "appSecret")
+	}
+
+	defaultAccount := strings.TrimSpace(toString(body["defaultAccount"]))
+	rawAccounts, _ := body["accounts"].(map[string]interface{})
+	normalizedAccounts := map[string]interface{}{}
+	accountIDs := make([]string, 0, len(rawAccounts))
+	for rawID, rawEntry := range rawAccounts {
+		accountID := strings.TrimSpace(rawID)
+		if accountID == "" {
+			continue
+		}
+		entry, _ := rawEntry.(map[string]interface{})
+		if entry == nil {
+			entry = map[string]interface{}{}
+		}
+		nextEntry := normalizeFeishuAccountEntry(entry)
+		if len(nextEntry) > 0 || accountID == defaultAccount {
+			normalizedAccounts[accountID] = nextEntry
+			accountIDs = append(accountIDs, accountID)
+		}
+	}
+	sort.Strings(accountIDs)
+	if defaultAccount != "" && !containsString(accountIDs, defaultAccount) && topAppID == "" && topAppSecret == "" {
+		defaultAccount = ""
+	}
+	runnableAccountIDs := filterFeishuRunnableAccountIDs(normalizedAccounts, accountIDs)
+	if defaultAccount == "" {
+		if matched := findFeishuMirroredDefaultAccount(normalizedAccounts, accountIDs, topAppID, topAppSecret); matched != "" {
+			defaultAccount = matched
+		} else if matched := findFeishuEnabledDefaultAccount(normalizedAccounts, runnableAccountIDs); matched != "" {
+			defaultAccount = matched
+		} else if containsString(runnableAccountIDs, "default") {
+			defaultAccount = "default"
+		} else if len(accountIDs) == 0 && (topAppID != "" || topAppSecret != "") {
+			defaultAccount = "default"
+		} else if len(runnableAccountIDs) > 0 {
+			defaultAccount = runnableAccountIDs[0]
+		} else if len(accountIDs) > 0 {
+			defaultAccount = accountIDs[0]
+		}
+	}
+	if defaultAccount != "" && len(runnableAccountIDs) > 0 {
+		entry, _ := normalizedAccounts[defaultAccount].(map[string]interface{})
+		if !hasFeishuRunnableCredentials(entry) {
+			if matched := findFeishuMirroredDefaultAccount(normalizedAccounts, runnableAccountIDs, topAppID, topAppSecret); matched != "" {
+				defaultAccount = matched
+			} else if matched := findFeishuEnabledDefaultAccount(normalizedAccounts, runnableAccountIDs); matched != "" {
+				defaultAccount = matched
+			} else if containsString(runnableAccountIDs, "default") {
+				defaultAccount = "default"
+			} else {
+				defaultAccount = runnableAccountIDs[0]
+			}
+		}
+	}
+	if defaultAccount != "" {
+		entry, _ := normalizedAccounts[defaultAccount].(map[string]interface{})
+		if entry == nil {
+			entry = map[string]interface{}{}
+		}
+		if _, ok := entry["appId"]; !ok && topAppID != "" {
+			entry["appId"] = topAppID
+		}
+		if _, ok := entry["appSecret"]; !ok && topAppSecret != "" {
+			entry["appSecret"] = topAppSecret
+		}
+		entry["enabled"] = true
+		normalizedAccounts[defaultAccount] = entry
+		if appID := strings.TrimSpace(toString(entry["appId"])); appID != "" {
+			body["appId"] = appID
+		} else {
+			delete(body, "appId")
+		}
+		if appSecret := strings.TrimSpace(toString(entry["appSecret"])); appSecret != "" {
+			body["appSecret"] = appSecret
+		} else {
+			delete(body, "appSecret")
+		}
+		body["defaultAccount"] = defaultAccount
+	} else {
+		delete(body, "defaultAccount")
+	}
+	if len(normalizedAccounts) > 0 {
+		body["accounts"] = normalizedAccounts
+	} else {
+		delete(body, "accounts")
+	}
+
+	return body
+}
+
+func findFeishuMirroredDefaultAccount(accounts map[string]interface{}, accountIDs []string, topAppID, topAppSecret string) string {
+	if topAppID == "" || topAppSecret == "" {
+		return ""
+	}
+	matchedAccount := ""
+	for _, accountID := range accountIDs {
+		entry, _ := accounts[accountID].(map[string]interface{})
+		if entry == nil {
+			continue
+		}
+		if strings.TrimSpace(toString(entry["appId"])) != topAppID {
+			continue
+		}
+		if strings.TrimSpace(toString(entry["appSecret"])) != topAppSecret {
+			continue
+		}
+		if matchedAccount != "" {
+			return ""
+		}
+		matchedAccount = accountID
+	}
+	return matchedAccount
+}
+
+func findFeishuEnabledDefaultAccount(accounts map[string]interface{}, accountIDs []string) string {
+	matchedAccount := ""
+	for _, accountID := range accountIDs {
+		entry, _ := accounts[accountID].(map[string]interface{})
+		if entry == nil || !isFeishuAccountEnabledEntry(entry) {
+			continue
+		}
+		if matchedAccount != "" {
+			return ""
+		}
+		matchedAccount = accountID
+	}
+	return matchedAccount
+}
+
+func isFeishuAccountEnabledEntry(entry map[string]interface{}) bool {
+	if enabled, ok := normalizeOptionalBool(entry["enabled"]); ok {
+		return enabled
+	}
+	return hasFeishuRunnableCredentials(entry)
+}
+
+func hasFeishuRunnableCredentials(entry map[string]interface{}) bool {
+	return strings.TrimSpace(toString(entry["appId"])) != "" && strings.TrimSpace(toString(entry["appSecret"])) != ""
+}
+
+func filterFeishuRunnableAccountIDs(accounts map[string]interface{}, accountIDs []string) []string {
+	ids := make([]string, 0, len(accountIDs))
+	for _, accountID := range accountIDs {
+		entry, _ := accounts[accountID].(map[string]interface{})
+		if entry == nil || !hasFeishuRunnableCredentials(entry) {
+			continue
+		}
+		ids = append(ids, accountID)
+	}
+	return ids
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeFeishuAccountEntry(entry map[string]interface{}) map[string]interface{} {
+	nextEntry := map[string]interface{}{}
+	for rawKey, rawValue := range entry {
+		key := strings.TrimSpace(rawKey)
+		if key == "" {
+			continue
+		}
+		switch key {
+		case "appId", "appSecret", "botName":
+			if trimmed := strings.TrimSpace(toString(rawValue)); trimmed != "" {
+				nextEntry[key] = trimmed
+			}
+		case "enabled":
+			if enabled, ok := normalizeOptionalBool(rawValue); ok {
+				nextEntry[key] = enabled
+			}
+		default:
+			nextEntry[key] = rawValue
+		}
+	}
+	if _, ok := nextEntry["enabled"]; !ok && hasFeishuRunnableCredentials(nextEntry) {
+		nextEntry["enabled"] = true
+	}
+	return nextEntry
+}
+
+func normalizeOptionalBool(raw interface{}) (bool, bool) {
+	switch v := raw.(type) {
+	case bool:
+		return v, true
+	case float64:
+		if v == 1 {
+			return true, true
+		}
+		if v == 0 {
+			return false, true
+		}
+	case int:
+		if v == 1 {
+			return true, true
+		}
+		if v == 0 {
+			return false, true
+		}
+	case int64:
+		if v == 1 {
+			return true, true
+		}
+		if v == 0 {
+			return false, true
+		}
+	case json.Number:
+		if parsed, err := v.Int64(); err == nil {
+			if parsed == 1 {
+				return true, true
+			}
+			if parsed == 0 {
+				return false, true
+			}
+		}
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return false, false
+		}
+		parsed, err := strconv.ParseBool(trimmed)
+		if err != nil {
+			return false, false
+		}
+		return parsed, true
+	default:
+		return false, false
+	}
+	return false, false
 }
 
 func ensureMap(parent map[string]interface{}, key string) map[string]interface{} {
@@ -401,19 +774,6 @@ func ToggleChannel(cfg *config.Config, procMgr *process.Manager, napcatMon *moni
 			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "QQ 个人号插件未安装，请先安装 QQ 个人号插件"})
 			return
 		}
-		channelID := req.ChannelID
-		channelConfigKey := req.ChannelID
-		pluginEntryID := req.ChannelID
-		channelLabelKey := req.ChannelID
-		if req.ChannelID == "feishu-official" {
-			channelConfigKey = "feishu"
-			pluginEntryID = "feishu-openclaw-plugin"
-			channelLabelKey = "feishu-official"
-		} else if req.ChannelID == "feishu-community" {
-			channelConfigKey = "feishu"
-			pluginEntryID = "feishu"
-			channelLabelKey = "feishu-community"
-		}
 
 		ocConfig, _ := cfg.ReadOpenClawJSON()
 		if ocConfig == nil {
@@ -425,12 +785,12 @@ func ToggleChannel(cfg *config.Config, procMgr *process.Manager, napcatMon *moni
 		if channels == nil {
 			channels = map[string]interface{}{}
 		}
-		ch, _ := channels[channelConfigKey].(map[string]interface{})
+		ch, _ := channels[req.ChannelID].(map[string]interface{})
 		if ch == nil {
 			ch = map[string]interface{}{}
 		}
 		ch["enabled"] = req.Enabled
-		channels[channelConfigKey] = ch
+		channels[req.ChannelID] = ch
 		ocConfig["channels"] = channels
 
 		// 更新 plugins.entries
@@ -444,7 +804,7 @@ func ToggleChannel(cfg *config.Config, procMgr *process.Manager, napcatMon *moni
 		}
 
 		// 飞书特殊处理：确定当前活跃的 plugin entry ID，启用/禁用正确的条目
-		if channelID == "feishu" {
+		if req.ChannelID == "feishu" {
 			activeEntryID := resolveActiveFeishuEntryID(entries)
 			pe, _ := entries[activeEntryID].(map[string]interface{})
 			if pe == nil {
@@ -461,28 +821,13 @@ func ToggleChannel(cfg *config.Config, procMgr *process.Manager, napcatMon *moni
 				otherEntry["enabled"] = false
 				entries[otherID] = otherEntry
 			}
-		} else if channelID == "feishu-official" || channelID == "feishu-community" {
-			pe, _ := entries[pluginEntryID].(map[string]interface{})
-			if pe == nil {
-				pe = map[string]interface{}{}
-			}
-			pe["enabled"] = req.Enabled
-			entries[pluginEntryID] = pe
-			otherID := "feishu"
-			if pluginEntryID == "feishu" {
-				otherID = "feishu-openclaw-plugin"
-			}
-			if otherEntry, ok := entries[otherID].(map[string]interface{}); ok {
-				otherEntry["enabled"] = false
-				entries[otherID] = otherEntry
-			}
 		} else {
-			pe, _ := entries[pluginEntryID].(map[string]interface{})
+			pe, _ := entries[req.ChannelID].(map[string]interface{})
 			if pe == nil {
 				pe = map[string]interface{}{}
 			}
 			pe["enabled"] = req.Enabled
-			entries[pluginEntryID] = pe
+			entries[req.ChannelID] = pe
 		}
 		plugins["entries"] = entries
 		ocConfig["plugins"] = plugins
@@ -503,16 +848,15 @@ func ToggleChannel(cfg *config.Config, procMgr *process.Manager, napcatMon *moni
 		}
 
 		// 发送网关重启信号
-		writeRestartSignal(cfg, channelID+" toggled")
+		writeRestartSignal(cfg, req.ChannelID+" toggled")
 
 		channelNames := map[string]string{
 			"qq": "QQ (NapCat)", "wechat": "微信", "feishu": "飞书",
-			"feishu-official": "飞书（官方版）", "feishu-community": "飞书（社区版）",
 			"qqbot": "QQ Bot", "dingtalk": "钉钉", "wecom": "企业微信",
 		}
-		label := channelNames[channelLabelKey]
+		label := channelNames[req.ChannelID]
 		if label == "" {
-			label = channelLabelKey
+			label = req.ChannelID
 		}
 		action := "已启用"
 		eventType := "channel.enabled"

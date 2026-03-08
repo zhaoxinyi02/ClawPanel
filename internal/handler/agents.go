@@ -144,9 +144,17 @@ func CreateOpenClawAgent(cfg *config.Config) gin.HandlerFunc {
 				if k == "id" {
 					continue
 				}
+				if v == nil {
+					delete(merged, k)
+					continue
+				}
 				merged[k] = deepCloneAny(v)
 			}
 			merged["id"] = id
+			if err := validateAgentContextConfig(merged); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+				return
+			}
 			workspace := strings.TrimSpace(toString(merged["workspace"]))
 			agentDir := strings.TrimSpace(toString(merged["agentDir"]))
 			if err := validateAgentUniqueness(cfg, list, id, workspace, agentDir, id); err != nil {
@@ -155,6 +163,10 @@ func CreateOpenClawAgent(cfg *config.Config) gin.HandlerFunc {
 			}
 			list[existingIdx] = merged
 		} else {
+			if err := validateAgentContextConfig(newItem); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+				return
+			}
 			workspace := strings.TrimSpace(toString(newItem["workspace"]))
 			agentDir := strings.TrimSpace(toString(newItem["agentDir"]))
 			if err := validateAgentUniqueness(cfg, list, id, workspace, agentDir, ""); err != nil {
@@ -226,9 +238,17 @@ func UpdateOpenClawAgent(cfg *config.Config) gin.HandlerFunc {
 			if k == "id" {
 				continue
 			}
+			if v == nil {
+				delete(merged, k)
+				continue
+			}
 			merged[k] = deepCloneAny(v)
 		}
 		merged["id"] = id
+		if err := validateAgentContextConfig(merged); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
 
 		workspace := strings.TrimSpace(toString(merged["workspace"]))
 		agentDir := strings.TrimSpace(toString(merged["agentDir"]))
@@ -588,6 +608,7 @@ func evaluateRoutePreview(meta map[string]interface{}, bindings []map[string]int
 		return "main", "legacy-single-agent", []string{"LEGACY_SINGLE_AGENT=true", "fallback main"}
 	}
 
+	meta = applyImplicitPreviewAccount(meta, channelDefaultAccounts)
 	trace := make([]string, 0, len(bindings)*2+2)
 	candidates := make([]routePreviewCandidate, 0, len(bindings))
 	for i, rule := range bindings {
@@ -677,6 +698,28 @@ func collectChannelDefaultAccounts(ocConfig map[string]interface{}) map[string]s
 	return result
 }
 
+func applyImplicitPreviewAccount(meta map[string]interface{}, channelDefaultAccounts map[string]string) map[string]interface{} {
+	if meta == nil {
+		return map[string]interface{}{}
+	}
+	if raw, ok := meta["accountId"]; ok {
+		if s, ok := raw.(string); !ok || strings.TrimSpace(s) != "" {
+			return meta
+		}
+	}
+	channel := strings.TrimSpace(toString(meta["channel"]))
+	if channel == "" {
+		return meta
+	}
+	defaultAccount := strings.TrimSpace(channelDefaultAccounts[channel])
+	if defaultAccount == "" {
+		return meta
+	}
+	cloned := deepCloneMap(meta)
+	cloned["accountId"] = defaultAccount
+	return cloned
+}
+
 func resolveChannelDefaultAccountID(channelCfg map[string]interface{}) string {
 	if channelCfg == nil {
 		return ""
@@ -718,8 +761,7 @@ func matchImplicitDefaultAccount(meta, match map[string]interface{}, channelDefa
 	}
 	actual, ok := readMetaForMatch(meta, "accountId")
 	if !ok {
-		// 预览 meta 未提供 accountId 时，无法确定具体账号，保持兼容。
-		return true, ""
+		return false, fmt.Sprintf("missing implicit default account (channel=%s, default=%s)", channel, defaultAccount)
 	}
 	if matchMetaValue(actual, defaultAccount) {
 		return true, ""

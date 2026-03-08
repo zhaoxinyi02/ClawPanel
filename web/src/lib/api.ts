@@ -59,6 +59,7 @@ const _api = {
   getStatus: () => get('/status'),
   getOpenClawConfig: () => get('/openclaw/config'),
   updateOpenClawConfig: (config: any) => put('/openclaw/config', { config }),
+  getFeishuDMDiagnosis: () => get('/openclaw/feishu-dm-diagnosis'),
   getAgentsConfig: () => get('/openclaw/agents'),
   createAgent: (agent: any) => post('/openclaw/agents', { agent }),
   updateAgent: (id: string, agent: any) => put(`/openclaw/agents/${id}`, { agent }),

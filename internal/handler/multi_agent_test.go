@@ -1290,6 +1290,121 @@ func TestCreateOpenClawAgentPreservesLegacyDefaultWithoutAgentDir(t *testing.T) 
 	}
 }
 
+func TestUpdateOpenClawAgentAllowsClearingSandboxOverrideWithNull(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	writeJSON(t, filepath.Join(dir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "main",
+			"list": []interface{}{
+				map[string]interface{}{"id": "main", "default": true},
+				map[string]interface{}{
+					"id":   "work",
+					"name": "Work",
+					"sandbox": map[string]interface{}{
+						"mode":            "non-main",
+						"workspaceAccess": "none",
+						"browser": map[string]interface{}{
+							"allowHostControl": true,
+						},
+					},
+				},
+			},
+		},
+	})
+
+	r := gin.New()
+	r.PUT("/openclaw/agents/:id", UpdateOpenClawAgent(cfg))
+	body := []byte(`{"sandbox":null}`)
+	req := httptest.NewRequest(http.MethodPut, "/openclaw/agents/work", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	saved, err := cfg.ReadOpenClawJSON()
+	if err != nil {
+		t.Fatalf("read openclaw.json: %v", err)
+	}
+	agents, _ := saved["agents"].(map[string]interface{})
+	list, _ := agents["list"].([]interface{})
+	var workItem map[string]interface{}
+	for _, raw := range list {
+		item, _ := raw.(map[string]interface{})
+		if strings.TrimSpace(getString(item, "id")) == "work" {
+			workItem = item
+			break
+		}
+	}
+	if workItem == nil {
+		t.Fatalf("expected work agent to remain present")
+	}
+	if _, ok := workItem["sandbox"]; ok {
+		t.Fatalf("expected sandbox override to be removed, got %#v", workItem["sandbox"])
+	}
+}
+
+func TestUpdateOpenClawAgentRejectsInvalidContextConfig(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "invalid context tokens",
+			body: `{"contextTokens":0}`,
+			want: "contextTokens",
+		},
+		{
+			name: "invalid history share",
+			body: `{"compaction":{"maxHistoryShare":1.2}}`,
+			want: "compaction.maxHistoryShare",
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			cfg := &config.Config{OpenClawDir: dir}
+			writeJSON(t, filepath.Join(dir, "openclaw.json"), map[string]interface{}{
+				"agents": map[string]interface{}{
+					"default": "main",
+					"list": []interface{}{
+						map[string]interface{}{"id": "main", "default": true},
+						map[string]interface{}{"id": "work", "name": "Work"},
+					},
+				},
+			})
+
+			r := gin.New()
+			r.PUT("/openclaw/agents/:id", UpdateOpenClawAgent(cfg))
+			req := httptest.NewRequest(http.MethodPut, "/openclaw/agents/work", bytes.NewReader([]byte(tc.body)))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+			}
+			if !strings.Contains(w.Body.String(), tc.want) {
+				t.Fatalf("expected error to mention %q, got %s", tc.want, w.Body.String())
+			}
+		})
+	}
+}
+
 func TestGetOpenClawAgentsMarksSynthesizedDiskAgentsImplicit(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
@@ -1798,6 +1913,64 @@ func TestPreviewRouteChannelOnlyBindingUsesDefaultAccountScope(t *testing.T) {
 	joined := strings.Join(resp.Result.Trace, "\n")
 	if !strings.Contains(joined, "mismatch implicit default account") {
 		t.Fatalf("trace should mention implicit default account mismatch, got: %s", joined)
+	}
+}
+
+func TestPreviewRouteMissingAccountUsesChannelDefaultAccount(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	writeJSON(t, filepath.Join(dir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "work",
+			"list": []interface{}{
+				map[string]interface{}{"id": "main"},
+				map[string]interface{}{"id": "work"},
+			},
+		},
+		"channels": map[string]interface{}{
+			"discord": map[string]interface{}{
+				"accounts": map[string]interface{}{
+					"default": map[string]interface{}{},
+					"coding":  map[string]interface{}{},
+				},
+			},
+		},
+		"bindings": []interface{}{
+			map[string]interface{}{
+				"agentId": "main",
+				"enabled": true,
+				"match": map[string]interface{}{
+					"channel":   "discord",
+					"accountId": "default",
+				},
+			},
+		},
+	})
+
+	r := gin.New()
+	r.POST("/route/preview", PreviewOpenClawRoute(cfg))
+	req := httptest.NewRequest(http.MethodPost, "/route/preview", bytes.NewReader([]byte(`{"meta":{"channel":"discord"}}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			Agent string `json:"agent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Result.Agent != "main" {
+		t.Fatalf("expected explicit default-account binding to match, got %s", resp.Result.Agent)
 	}
 }
 

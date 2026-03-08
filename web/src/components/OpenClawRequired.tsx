@@ -107,7 +107,7 @@ export default function OpenClawRequired({ configured, children }: Props) {
           </div>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button onClick={handleInstall} disabled={installing}
-              className="page-modern-accent px-6 py-3 text-sm">
+              className="page-modern-accent inline-flex items-center justify-center gap-2 px-6 py-3 text-sm disabled:opacity-50">
               {installing ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
               {installing ? '安装中...' : '一键安装 OpenClaw'}
             </button>

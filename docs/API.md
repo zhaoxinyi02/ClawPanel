@@ -192,6 +192,20 @@ Authorization: Bearer <token>
 ```
 
 > v5.1.0+：配置写入前会自动备份到 `OPENCLAW_DIR/backups/pre-edit-*.json`，并保留最近 10 份。
+>
+> v5.1.0+：保存时会校验 `session.dmScope`，仅允许：
+> `main / per-peer / per-channel-peer / per-account-channel-peer`。
+
+### GET `/api/openclaw/feishu-dm-diagnosis`
+读取飞书 DM 隔离诊断信息。
+
+返回内容会汇总：
+
+- 当前配置文件里的 `session.dmScope`
+- 面板推荐值（单账号通常 `per-channel-peer`，多账号通常 `per-account-channel-peer`）
+- 运行时 `sessions.json` 中检测到的飞书会话键
+- 是否仍存在共享主会话键（例如 `agent:main:main`）
+- 是否误写了 `channels.feishu.dmScope`
 
 ### GET `/api/openclaw/agents`
 获取多智能体配置与统计信息（`defaults` / `default` / `list` / `bindings`）。
@@ -213,6 +227,10 @@ Authorization: Bearer <token>
   }
 }
 ```
+
+> v5.1.0+：保存时会校验：
+> - `agent.contextTokens` 必须为正整数
+> - `agent.compaction.maxHistoryShare` 必须位于 `0..1`
 
 ### PUT `/api/openclaw/agents/:id`
 更新指定 Agent（`id` 不可修改）。
@@ -266,6 +284,8 @@ Authorization: Bearer <token>
 
 > v5.1.0+：预览命中遵循“更具体规则优先”而非仅配置顺序。优先级：
 > `sender > peer > parentPeer > guildId+roles > guildId > teamId > accountId > accountId:* > channel > default`。
+>
+> v5.1.0+：当 `meta.channel` 已知且 `meta.accountId` 省略时，预览会按该渠道的默认账号语义处理；对于飞书这类多账号渠道，这与真实路由行为保持一致。
 
 ### GET `/api/openclaw/models`
 获取模型配置。
