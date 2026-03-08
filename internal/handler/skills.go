@@ -114,26 +114,13 @@ func GetSkills(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		// --- 扫描技能 ---
-		// 1. OPENCLAW_DIR/skills
-		scanSkillDir(filepath.Join(cfg.OpenClawDir, "skills"), "skill", false, blockSet, &skills, seen)
-
-		// 2. Workspace work/skills
-		workDir := cfg.OpenClawWork
-		if workDir == "" {
-			workDir = filepath.Join(filepath.Dir(cfg.OpenClawDir), "work")
+		for _, candidate := range resolveWorkspaceSkillDirs(cfg, ocConfig) {
+			scanSkillDir(candidate, "workspace", false, blockSet, &skills, seen)
 		}
-		scanSkillDir(filepath.Join(workDir, "skills"), "workspace", false, blockSet, &skills, seen)
-
-		// 3. App skills
-		appDir := cfg.OpenClawApp
-		candidates := []string{}
-		if appDir != "" {
-			candidates = append(candidates, filepath.Join(appDir, "skills"))
+		for _, candidate := range resolveOpenClawSkillDirs(cfg) {
+			scanSkillDir(candidate, "skill", false, blockSet, &skills, seen)
 		}
-		candidates = append(candidates,
-			filepath.Join(filepath.Dir(cfg.OpenClawDir), "app", "skills"),
-		)
-		for _, candidate := range candidates {
+		for _, candidate := range resolveAppSkillDirs(cfg) {
 			if info, err := os.Stat(candidate); err == nil && info.IsDir() {
 				scanSkillDir(candidate, "app-skill", true, blockSet, &skills, seen)
 				break
@@ -149,6 +136,86 @@ func GetSkills(cfg *config.Config) gin.HandlerFunc {
 
 		c.JSON(http.StatusOK, gin.H{"ok": true, "skills": skills, "plugins": pluginsList})
 	}
+}
+
+func resolveOpenClawSkillDirs(cfg *config.Config) []string {
+	return uniqueSkillDirs(filepath.Join(cfg.OpenClawDir, "skills"))
+}
+
+func resolveWorkspaceSkillDirs(cfg *config.Config, ocConfig map[string]interface{}) []string {
+	parentDir := filepath.Dir(cfg.OpenClawDir)
+	roots := []string{}
+
+	if cfg.OpenClawWork != "" {
+		roots = append(roots, cfg.OpenClawWork)
+	} else {
+		roots = append(roots, filepath.Join(parentDir, "work"))
+	}
+
+	if workspace, ok := ocConfig["workspace"].(map[string]interface{}); ok {
+		if path := normalizeSkillRootPath(parentDir, toString(workspace["path"])); path != "" {
+			roots = append(roots, path)
+		}
+	}
+
+	if agents, ok := ocConfig["agents"].(map[string]interface{}); ok {
+		if list, ok := agents["list"].([]interface{}); ok {
+			for _, raw := range list {
+				item, _ := raw.(map[string]interface{})
+				if item == nil {
+					continue
+				}
+				if path := normalizeSkillRootPath(parentDir, toString(item["workspace"])); path != "" {
+					roots = append(roots, path)
+				}
+			}
+		}
+	}
+
+	skillDirs := make([]string, 0, len(roots))
+	for _, root := range roots {
+		if root == "" {
+			continue
+		}
+		skillDirs = append(skillDirs, filepath.Join(root, "skills"))
+	}
+	return uniqueSkillDirs(skillDirs...)
+}
+
+func resolveAppSkillDirs(cfg *config.Config) []string {
+	parentDir := filepath.Dir(cfg.OpenClawDir)
+	candidates := []string{}
+	if cfg.OpenClawApp != "" {
+		candidates = append(candidates, filepath.Join(cfg.OpenClawApp, "skills"))
+	}
+	candidates = append(candidates, filepath.Join(parentDir, "app", "skills"))
+	return uniqueSkillDirs(candidates...)
+}
+
+func normalizeSkillRootPath(parentDir, raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	path := filepath.Clean(raw)
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(parentDir, path)
+	}
+	return filepath.Clean(path)
+}
+
+func uniqueSkillDirs(paths ...string) []string {
+	seen := map[string]bool{}
+	result := make([]string, 0, len(paths))
+	for _, p := range paths {
+		p = filepath.Clean(strings.TrimSpace(p))
+		if p == "." || p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		result = append(result, p)
+	}
+	return result
 }
 
 // ToggleSkill 切换技能启用/禁用
