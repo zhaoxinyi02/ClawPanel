@@ -216,7 +216,7 @@ func restartGatewayViaCLI(cfg *config.Config, procMgr *process.Manager) error {
 		}
 	}
 	if len(errMsgs) > 0 {
-		return fmt.Errorf(strings.Join(errMsgs, " | "))
+		return fmt.Errorf("%s", strings.Join(errMsgs, " | "))
 	}
 	return fmt.Errorf("未找到可用的 openclaw 启动命令")
 }
