@@ -209,8 +209,8 @@ func TestSaveOpenClawConfigPreservesMissingHiddenFieldsWithoutOverwritingExplici
 		t.Fatalf("expected session.dmScope to keep explicit change, got %q", got)
 	}
 	maintenance, _ := session["maintenance"].(map[string]interface{})
-	if got := toString(maintenance["maxEntries"]); got != "50" {
-		t.Fatalf("expected missing session.maintenance.maxEntries to be preserved, got %#v", maintenance)
+	if maxEntries, ok := maintenance["maxEntries"].(float64); !ok || maxEntries != 50 {
+		t.Fatalf("expected missing session.maintenance.maxEntries to be preserved as 50, got %#v", maintenance)
 	}
 }
 
