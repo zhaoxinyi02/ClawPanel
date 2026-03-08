@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf16"
 
 	"github.com/zhaoxinyi02/ClawPanel/internal/websocket"
 )
@@ -244,9 +245,23 @@ func dedupeEnv(env []string) []string {
 // RunScript 运行脚本并实时推送输出（Windows 用 PowerShell，其他平台用 bash）
 func (m *Manager) RunScript(task *Task, script string) error {
 	if runtime.GOOS == "windows" {
-		return m.RunCommand(task, "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script)
+		return m.RunCommand(task, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShellCommand(strings.Join([]string{
+			`[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)`,
+			`[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)`,
+			`$OutputEncoding = [System.Text.UTF8Encoding]::new($false)`,
+			script,
+		}, "\n")))
 	}
 	return m.RunCommand(task, "bash", "-c", script)
+}
+
+func encodePowerShellCommand(script string) string {
+	utf16Data := utf16.Encode([]rune(script))
+	bytes := make([]byte, 0, len(utf16Data)*2)
+	for _, r := range utf16Data {
+		bytes = append(bytes, byte(r), byte(r>>8))
+	}
+	return base64.StdEncoding.EncodeToString(bytes)
 }
 
 // RunScriptWithSudo 使用 sudo 运行脚本

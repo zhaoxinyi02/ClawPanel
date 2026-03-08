@@ -189,6 +189,10 @@ func RestartGateway(cfg *config.Config, procMgr *process.Manager) gin.HandlerFun
 
 		// If OpenClaw process is not running, start it
 		if !status.Running {
+			if err := restartGatewayViaCLI(cfg, procMgr); err == nil {
+				c.JSON(http.StatusOK, gin.H{"ok": true, "message": "已通过 CLI 拉起网关"})
+				return
+			}
 			if err := procMgr.Start(); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": "启动 OpenClaw 失败: " + err.Error()})
 				return
@@ -198,8 +202,13 @@ func RestartGateway(cfg *config.Config, procMgr *process.Manager) gin.HandlerFun
 		}
 
 		if err := procMgr.Restart(); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": "重启 OpenClaw 网关失败: " + err.Error()})
-			return
+			if cliErr := restartGatewayViaCLI(cfg, procMgr); cliErr == nil {
+				c.JSON(http.StatusOK, gin.H{"ok": true, "message": "进程内重启失败，已回退到 CLI 发起网关重启"})
+				return
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": "重启 OpenClaw 网关失败: " + err.Error() + " | CLI 回退失败: " + cliErr.Error()})
+				return
+			}
 		}
 		c.JSON(http.StatusOK, gin.H{"ok": true, "message": "OpenClaw 网关已重启"})
 	}
@@ -271,14 +280,22 @@ func restartGatewayWithBinary(cfg *config.Config, procMgr *process.Manager, bin 
 		fmt.Sprintf("OPENCLAW_CONFIG_PATH=%s", filepath.Join(cfg.OpenClawDir, "openclaw.json")),
 	)
 
+	if restartErr, restartOut := runGatewayCommand(cfg, env, bin, "gateway", "restart"); restartErr == nil {
+		if procMgr == nil || waitGatewayState(procMgr, true, gatewayStartWaitTimeout()) {
+			return nil
+		}
+		_ = restartOut
+	} else if procMgr != nil && waitGatewayState(procMgr, true, 3*time.Second) {
+		return nil
+	}
+
 	stopErr, stopOut := runGatewayCommand(cfg, env, bin, "gateway", "stop")
 	if stopErr != nil {
 		_ = stopOut
 	}
 
-	downObserved := false
 	if procMgr != nil {
-		downObserved = waitGatewayState(procMgr, false, 8*time.Second)
+		_ = waitGatewayState(procMgr, false, 8*time.Second)
 	}
 
 	startVariants := [][]string{{"gateway"}, {"gateway", "start"}}
@@ -298,12 +315,8 @@ func restartGatewayWithBinary(cfg *config.Config, procMgr *process.Manager, bin 
 		if procMgr == nil {
 			return nil
 		}
-		if waitGatewayState(procMgr, true, 12*time.Second) {
-			if downObserved || stopErr == nil {
-				return nil
-			}
-			startErrs = append(startErrs, fmt.Sprintf("%s: 网关持续在线，未确认重启", strings.Join(args, " ")))
-			continue
+		if waitGatewayState(procMgr, true, gatewayStartWaitTimeout()) {
+			return nil
 		}
 		startErrs = append(startErrs, fmt.Sprintf("%s: 网关未在超时时间内就绪", strings.Join(args, " ")))
 	}
@@ -334,13 +347,30 @@ func runGatewayCommand(cfg *config.Config, env []string, bin string, args ...str
 func waitGatewayState(procMgr *process.Manager, expected bool, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		running := procMgr.GatewayListening()
-		if running == expected {
+		if gatewayStateMatches(procMgr, expected) {
 			return true
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	return procMgr.GatewayListening() == expected
+	return gatewayStateMatches(procMgr, expected)
+}
+
+func gatewayStateMatches(procMgr *process.Manager, expected bool) bool {
+	if procMgr == nil {
+		return false
+	}
+	status := procMgr.GetStatus()
+	if expected {
+		return status.Running || procMgr.GatewayListening()
+	}
+	return !status.Running && !procMgr.GatewayListening()
+}
+
+func gatewayStartWaitTimeout() time.Duration {
+	if runtime.GOOS == "windows" {
+		return 30 * time.Second
+	}
+	return 15 * time.Second
 }
 
 // RestartPanel 重启 ClawPanel 自身 (通过 systemctl)

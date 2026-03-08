@@ -54,6 +54,13 @@ type Manager struct {
 
 const gatewayProbeCacheTTL = 3 * time.Second
 
+func gatewayStartupTimeout() time.Duration {
+	if runtime.GOOS == "windows" {
+		return 30 * time.Second
+	}
+	return 15 * time.Second
+}
+
 var (
 	tailnetIPv4Net = mustCIDR("100.64.0.0/10")
 	tailnetIPv6Net = mustCIDR("fd7a:115c:a1e0::/48")
@@ -461,8 +468,8 @@ func (m *Manager) waitForExit() {
 		// process "openclaw-gateway" that holds the port, then the parent
 		// exits (often with code 1). If the gateway port is listening after
 		// the parent exits, the daemon started successfully.
-		if wasRunning && !daemonized && !startedAt.IsZero() && time.Since(startedAt) < 15*time.Second {
-			if m.waitForGatewayReady(8 * time.Second) {
+		if wasRunning && !daemonized && !startedAt.IsZero() && time.Since(startedAt) < 20*time.Second {
+			if m.waitForGatewayReady(gatewayStartupTimeout()) {
 				log.Printf("[ProcessMgr] OpenClaw 父进程已退出但网关守护进程仍可探测（daemon fork 模式），视为正常")
 				m.mu.Lock()
 				m.status.Running = true
@@ -713,23 +720,53 @@ func (m *Manager) isOpenClawGateway(host, port string) bool {
 		Timeout:   1500 * time.Millisecond,
 		Transport: &http.Transport{},
 	}
-	u := (&url.URL{
-		Scheme: "http",
-		Host:   net.JoinHostPort(host, port),
-		Path:   "/",
-	}).String()
-	resp, err := client.Get(u)
-	if err != nil {
-		return false
+	for _, path := range []string{"/healthz", "/health", "/"} {
+		u := (&url.URL{
+			Scheme: "http",
+			Host:   net.JoinHostPort(host, port),
+			Path:   path,
+		}).String()
+		resp, err := client.Get(u)
+		if err != nil {
+			continue
+		}
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		_ = resp.Body.Close()
+		if readErr != nil {
+			continue
+		}
+		if looksLikeOpenClawGatewayResponse(path, resp.StatusCode, resp.Header, body) {
+			return true
+		}
 	}
-	defer resp.Body.Close()
+	return false
+}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	if err != nil {
-		return false
-	}
+func looksLikeOpenClawGatewayResponse(path string, statusCode int, headers http.Header, body []byte) bool {
 	text := strings.ToLower(string(body))
-	return strings.Contains(text, "openclaw control") || strings.Contains(text, "<openclaw-app")
+	contentType := strings.ToLower(headers.Get("Content-Type"))
+	server := strings.ToLower(headers.Get("Server"))
+	location := strings.ToLower(headers.Get("Location"))
+
+	if strings.Contains(server, "openclaw") {
+		return true
+	}
+	if strings.Contains(location, "openclaw") || strings.Contains(location, "control") {
+		return true
+	}
+	if strings.Contains(text, "openclaw control") || strings.Contains(text, "<openclaw-app") {
+		return true
+	}
+
+	if path == "/health" || path == "/healthz" {
+		if statusCode >= 200 && statusCode < 500 {
+			if strings.Contains(contentType, "json") && (strings.Contains(text, "\"ok\":true") || strings.Contains(text, "\"status\":\"ok\"") || strings.Contains(text, "\"status\":\"live\"") || strings.Contains(text, "healthy") || strings.Contains(text, "openclaw")) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func (m *Manager) waitForGatewayReady(timeout time.Duration) bool {
@@ -1198,6 +1235,8 @@ func (m *Manager) findOpenClawBin() string {
 	case "windows":
 		candidates = append(candidates,
 			`C:\Program Files\openclaw\openclaw.exe`,
+			`C:\ClawPanel\npm-global\openclaw.cmd`,
+			`C:\ClawPanel\npm-global\node_modules\.bin\openclaw.cmd`,
 			filepath.Join(home, "AppData", "Roaming", "npm", "openclaw.cmd"),
 		)
 	}
