@@ -151,6 +151,10 @@ html.dark .ui-modern-nav-link.active {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 12px 24px rgba(37, 99, 235, 0.14);
 }
 
+.ui-modern-scrollbar {
+  scrollbar-gutter: stable;
+}
+
 .ui-modern-scrollbar::-webkit-scrollbar {
   width: 10px;
   height: 10px;
