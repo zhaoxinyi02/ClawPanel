@@ -121,6 +121,53 @@ get_ip() {
     fi
 }
 
+resolve_service_user() {
+    local user="${CLAWPANEL_SERVICE_USER:-}"
+    if [ -n "$user" ]; then
+        echo "$user"
+        return
+    fi
+    if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+        echo "$SUDO_USER"
+        return
+    fi
+    echo "root"
+}
+
+resolve_service_group() {
+    local user="$1"
+    if [ -z "$user" ]; then
+        echo "root"
+        return
+    fi
+    if command -v id &>/dev/null; then
+        id -gn "$user" 2>/dev/null || echo "$user"
+        return
+    fi
+    echo "$user"
+}
+
+resolve_service_home() {
+    local user="$1"
+    if [ -z "$user" ]; then
+        echo "/root"
+        return
+    fi
+    if command -v getent &>/dev/null; then
+        local home
+        home=$(getent passwd "$user" | cut -d: -f6)
+        if [ -n "$home" ]; then
+            echo "$home"
+            return
+        fi
+    fi
+    if [ "$user" = "root" ]; then
+        echo "/root"
+        return
+    fi
+    echo "/home/${user}"
+}
+
 # ==================== 主安装流程 ====================
 main() {
     print_banner
@@ -134,9 +181,14 @@ main() {
     local SYS_ARCH=$(detect_arch)
     local BINARY_FILE="${BINARY_NAME}-v${VERSION}-${SYS_OS}-${SYS_ARCH}"
     local TOTAL_STEPS=5
+    local SERVICE_USER=$(resolve_service_user)
+    local SERVICE_GROUP=$(resolve_service_group "$SERVICE_USER")
+    local SERVICE_HOME=$(resolve_service_home "$SERVICE_USER")
 
     info "系统信息: ${SYS_OS}/${SYS_ARCH}"
     info "安装目录: ${INSTALL_DIR}"
+    info "服务用户: ${SERVICE_USER}:${SERVICE_GROUP}"
+    info "服务目录: ${SERVICE_HOME}"
     echo ""
 
     # ---- Step 1: 创建目录 ----
@@ -162,6 +214,7 @@ main() {
     fi
 
     chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
+    chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${INSTALL_DIR}" 2>/dev/null || true
     local FILE_SIZE=$(du -h "${INSTALL_DIR}/${BINARY_NAME}" | awk '{print $1}')
     log "下载完成 (${FILE_SIZE})"
 
@@ -179,13 +232,15 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
+User=${SERVICE_USER}
+Group=${SERVICE_GROUP}
 WorkingDirectory=${INSTALL_DIR}
 ExecStart=${INSTALL_DIR}/${BINARY_NAME}
 Restart=always
 RestartSec=5
 LimitNOFILE=65535
 Environment=CLAWPANEL_DATA=${INSTALL_DIR}/data
+Environment=HOME=${SERVICE_HOME}
 
 [Install]
 WantedBy=multi-user.target
