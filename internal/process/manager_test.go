@@ -3,6 +3,7 @@ package process
 import (
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -72,6 +73,22 @@ func TestGatewayListeningIgnoresNonOpenClawListener(t *testing.T) {
 	mgr.gatewayProbe = func(_ string, _ string) bool { return false }
 	if mgr.GatewayListening() {
 		t.Fatalf("expected GatewayListening to ignore non-OpenClaw listener on port %d", port)
+	}
+}
+
+func TestLooksLikeOpenClawGatewayResponseRecognizesControlUI(t *testing.T) {
+	headers := http.Header{}
+	body := []byte("<!doctype html><title>OpenClaw Control</title><openclaw-app></openclaw-app>")
+	if !looksLikeOpenClawGatewayResponse("/", 200, headers, body) {
+		t.Fatalf("expected control UI HTML to be recognized as OpenClaw gateway")
+	}
+}
+
+func TestLooksLikeOpenClawGatewayResponseRecognizesHealthJSON(t *testing.T) {
+	headers := http.Header{"Content-Type": []string{"application/json"}}
+	body := []byte(`{"status":"live"}`)
+	if !looksLikeOpenClawGatewayResponse("/healthz", 200, headers, body) {
+		t.Fatalf("expected health JSON to be recognized as OpenClaw gateway")
 	}
 }
 

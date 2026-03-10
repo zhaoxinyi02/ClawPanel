@@ -70,6 +70,8 @@ func DetectOpenClawBinaryPath() string {
 	if runtime.GOOS == "windows" {
 		candidates = append(candidates,
 			filepath.Join(home, "AppData", "Roaming", "npm", "openclaw.cmd"),
+			`C:\ClawPanel\npm-global\openclaw.cmd`,
+			`C:\ClawPanel\npm-global\node_modules\.bin\openclaw.cmd`,
 			`C:\Program Files\nodejs\openclaw.cmd`,
 		)
 	} else {
