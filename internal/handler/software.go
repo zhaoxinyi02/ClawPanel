@@ -1375,6 +1375,22 @@ function Refresh-Path {
   $env:PATH = ($paths | Where-Object { $_ } | Select-Object -Unique) -join ";"
 }
 
+function Invoke-NativeStep([scriptblock]$Command) {
+  $previousPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    & $Command 2>&1 | ForEach-Object {
+      $text = $_.ToString()
+      if (-not [string]::IsNullOrWhiteSpace($text)) {
+        Write-Output $text.TrimEnd()
+      }
+    }
+    return $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousPreference
+  }
+}
+
 function Get-NodeCommand {
   $cmd = Get-Command node -ErrorAction SilentlyContinue
   if ($cmd) { return $cmd }
@@ -1507,15 +1523,19 @@ if (-not (Test-Path $npmModules)) {
 }
 
 Write-Output "📥 正在通过 npm 安装 OpenClaw..."
-npm install -g openclaw@latest --registry=https://registry.npmmirror.com 2>&1
-if ($LASTEXITCODE -ne 0) {
-  Write-Output "⚠️ 首次安装失败 (exit code: $LASTEXITCODE)，正在重试..."
-  # Retry with force flag
-  npm install -g openclaw@latest --registry=https://registry.npmmirror.com --force 2>&1
-  if ($LASTEXITCODE -ne 0) {
-    Write-Output "❌ OpenClaw 安装失败，请检查网络连接或手动运行: npm install -g openclaw@latest"
-    exit 1
-  }
+$npmExit = Invoke-NativeStep { npm install -g openclaw@latest --registry=https://registry.npmmirror.com --no-fund --no-audit }
+$openclawCmd = Join-Path $npmPrefix "openclaw.cmd"
+if ($npmExit -ne 0 -and -not (Test-Path $openclawCmd)) {
+  Write-Output "⚠️ 首次安装失败 (exit code: $npmExit)，正在重试..."
+  Invoke-NativeStep { npm cache verify } | Out-Null
+  $npmExit = Invoke-NativeStep { npm install -g openclaw@latest --registry=https://registry.npmmirror.com --force --no-fund --no-audit }
+}
+if ($npmExit -ne 0 -and -not (Test-Path $openclawCmd)) {
+  Write-Output "❌ OpenClaw 安装失败，请检查网络连接或手动运行: npm install -g openclaw@latest"
+  exit 1
+}
+if ($npmExit -ne 0 -and (Test-Path $openclawCmd)) {
+  Write-Output "⚠️ npm 返回退出码 $npmExit，但 openclaw 已安装成功，继续初始化配置"
 }
 
 # Refresh PATH so we can find openclaw.cmd
@@ -1579,6 +1599,16 @@ if (-not (Test-Path $openclawConfig)) {
 "@ | Set-Content $openclawConfig -Force
   Write-Output "✅ 配置文件已创建: $openclawConfig"
 }
+if (Test-Path $openclawCmd) {
+  $env:OPENCLAW_DIR = $openclawDir
+  $env:OPENCLAW_STATE_DIR = $openclawDir
+  $env:OPENCLAW_CONFIG_PATH = $openclawConfig
+  $initExit = Invoke-NativeStep { & $openclawCmd init }
+  if ($initExit -ne 0) {
+    Write-Output "⚠️ OpenClaw 初始化返回退出码 $initExit，通常稍后网关仍会继续拉起"
+  }
+}
+Write-Output "ℹ️ 初次安装后，网关状态同步可能需要 10-30 秒"
 Write-Output "✅ 全部完成"
 `
 			} else {
