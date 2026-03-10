@@ -2733,9 +2733,9 @@ export default function Agents() {
                           setSelectedAgentId(agent.id);
                           setDetailTab('overview');
                         }}
-                        className="w-full text-left"
+                        className="w-full min-w-0 text-left"
                       >
-                        <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start justify-between gap-2 min-w-0">
                           <div>
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="font-medium text-sm text-gray-900 dark:text-white">{cardTitle}</span>
@@ -2757,7 +2757,7 @@ export default function Agents() {
                           </div>
                         </div>
                         <div className="mt-3 space-y-1 text-[11px] text-gray-500">
-                          <div>工作区（Workspace）：<span className="font-mono text-gray-700 dark:text-gray-200">{agent.workspace || '—'}</span></div>
+                          <div className="min-w-0">工作区（Workspace）：<span className="font-mono text-gray-700 dark:text-gray-200 break-all">{agent.workspace || '—'}</span></div>
                           <div>最后活跃（Last Active）：<span className="text-gray-700 dark:text-gray-200">{formatLastActive(agent.lastActive)}</span></div>
                         </div>
                       </button>
@@ -3061,11 +3061,11 @@ export default function Agents() {
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                             <div className="rounded-lg border border-gray-100 dark:border-gray-700 px-3 py-3">
                               <div className="text-gray-400">工作区（Workspace）</div>
-                              <div className="mt-1 font-mono text-gray-700 dark:text-gray-200">{selectedAgent.workspace || '未设置'}</div>
+                              <div className="mt-1 font-mono text-gray-700 dark:text-gray-200 break-all">{selectedAgent.workspace || '未设置'}</div>
                             </div>
                             <div className="rounded-lg border border-gray-100 dark:border-gray-700 px-3 py-3">
                               <div className="text-gray-400">Agent 目录（AgentDir）</div>
-                              <div className="mt-1 font-mono text-gray-700 dark:text-gray-200">{selectedAgent.agentDir || '未设置'}</div>
+                              <div className="mt-1 font-mono text-gray-700 dark:text-gray-200 break-all">{selectedAgent.agentDir || '未设置'}</div>
                             </div>
                           </div>
                           {(selectedToolAllow.length > 0 || selectedToolDeny.length > 0) && (
@@ -4091,7 +4091,7 @@ export default function Agents() {
                   </div>
                   <div className="rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 px-3 py-2">
                       <div className="text-gray-400">工作区（Workspace）</div>
-                    <div className="font-mono text-gray-700 dark:text-gray-200 mt-1 truncate">{form.workspace.trim() || '未设置'}</div>
+                    <div className="font-mono text-gray-700 dark:text-gray-200 mt-1 break-all">{form.workspace.trim() || '未设置'}</div>
                   </div>
                   <div className="rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 px-3 py-2">
                       <div className="text-gray-400">默认接管（Default）</div>
