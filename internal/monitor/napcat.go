@@ -932,6 +932,41 @@ func checkQQLoginStatus(cfg *config.Config) (loggedIn bool, nickname string, qqI
 	return
 }
 
+func getNapCatWebUIToken(cfg *config.Config) string {
+	if runtime.GOOS == "windows" {
+		napcatDir := findNapCatShellDir(cfg)
+		if napcatDir == "" {
+			return ""
+		}
+		if tok := readTokenFromNapCatLogs(napcatDir); tok != "" {
+			return tok
+		}
+		webuiPath := filepath.Join(napcatDir, "config", "webui.json")
+		if data, err := os.ReadFile(webuiPath); err == nil {
+			var webui map[string]interface{}
+			if json.Unmarshal(data, &webui) == nil {
+				if t, ok := webui["token"].(string); ok && t != "" {
+					return t
+				}
+			}
+		}
+		return ""
+	}
+
+	out, err := dockerOutput("exec", "openclaw-qq", "cat", "/app/napcat/config/webui.json")
+	if err != nil {
+		return ""
+	}
+	var webui map[string]interface{}
+	if json.Unmarshal(out, &webui) != nil {
+		return ""
+	}
+	if t, ok := webui["token"].(string); ok && t != "" {
+		return t
+	}
+	return ""
+}
+
 // readTokenFromNapCatLogs finds NapCat's logs dir (walking up/down from bootmain dir)
 // and extracts the live token logged as "[WebUi] WebUi Token: <token>".
 func readTokenFromNapCatLogs(bootmainDir string) string {
@@ -1019,39 +1054,8 @@ func doCheckQQLoginStatus(cfg *config.Config) (loggedIn bool, nickname string, q
 	} else {
 		// Invalidate cache unconditionally so we always re-auth with the fresh token
 		cachedMonitorCred = ""
-		// Get WebUI token: from NapCat log (4.x uses random token per startup), or Docker
-		token := ""
-		if runtime.GOOS == "windows" {
-			napcatDir := findNapCatShellDir(cfg)
-			if napcatDir != "" {
-				// NapCat 4.x: read token from latest log file
-				if tok := readTokenFromNapCatLogs(napcatDir); tok != "" {
-					token = tok
-				}
-				// Fallback: webui.json in bootmain config
-				if token == "" {
-					webuiPath := filepath.Join(napcatDir, "config", "webui.json")
-					if data, err := os.ReadFile(webuiPath); err == nil {
-						var webui map[string]interface{}
-						if json.Unmarshal(data, &webui) == nil {
-							if t, ok := webui["token"].(string); ok && t != "" {
-								token = t
-							}
-						}
-					}
-				}
-			}
-		} else {
-			out, err := dockerOutput("exec", "openclaw-qq", "cat", "/app/napcat/config/webui.json")
-			if err == nil {
-				var webui map[string]interface{}
-				if json.Unmarshal(out, &webui) == nil {
-					if t, ok := webui["token"].(string); ok && t != "" {
-						token = t
-					}
-				}
-			}
-		}
+		// Get WebUI token: from NapCat log / webui.json / Docker config.
+		token := getNapCatWebUIToken(cfg)
 		if token == "" {
 			return false, "", ""
 		}
@@ -1103,16 +1107,7 @@ func doCheckQQLoginStatus(cfg *config.Config) (loggedIn bool, nickname string, q
 		cachedMonitorCred = ""
 		cachedMonitorCredTime = time.Time{}
 
-		freshToken := ""
-		out, err := dockerOutput("exec", "openclaw-qq", "cat", "/app/napcat/config/webui.json")
-		if err == nil {
-			var webui map[string]interface{}
-			if json.Unmarshal(out, &webui) == nil {
-				if t, ok := webui["token"].(string); ok && t != "" {
-					freshToken = t
-				}
-			}
-		}
+		freshToken := getNapCatWebUIToken(cfg)
 		if freshToken == "" {
 			return false, "", ""
 		}
@@ -1136,6 +1131,7 @@ func doCheckQQLoginStatus(cfg *config.Config) (loggedIn bool, nickname string, q
 		if freshCred == "" {
 			return false, "", ""
 		}
+		cred = freshCred
 		cachedMonitorCred = freshCred
 		cachedMonitorCredTime = time.Now()
 
