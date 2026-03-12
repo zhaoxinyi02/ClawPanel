@@ -3,9 +3,9 @@
 # ClawPanel 一键安装脚本 (Linux/macOS)
 # 自动获取最新 Release 版本，无需手动更新脚本
 # 用法:
-#   curl -fsSL http://39.102.53.188:16198/clawpanel/scripts/install.sh -o install.sh && sudo bash install.sh
+#   curl -fsSL https://gitee.com/zxy000006/ClawPanel/raw/main/scripts/install.sh -o install.sh && sudo bash install.sh
 # 或:
-#   wget -O install.sh http://39.102.53.188:16198/clawpanel/scripts/install.sh && sudo bash install.sh
+#   wget -O install.sh https://gitee.com/zxy000006/ClawPanel/raw/main/scripts/install.sh && sudo bash install.sh
 # ============================================================
 
 set -e
@@ -14,10 +14,13 @@ INSTALL_DIR="/opt/clawpanel"
 SERVICE_NAME="clawpanel"
 BINARY_NAME="clawpanel"
 REPO="zhaoxinyi02/ClawPanel"
+GITEE_REPO="zxy000006/ClawPanel"
 TAG_PREFIX="pro-v"
 GITHUB_RELEASES_API="https://api.github.com/repos/${REPO}/releases?per_page=20"
+GITEE_RELEASES_API="https://gitee.com/api/v5/repos/${GITEE_REPO}/releases?per_page=20"
 PORT="19527"
-ACCEL_BASE="http://39.102.53.188:16198/clawpanel"
+GITEE_RAW_BASE="https://gitee.com/${GITEE_REPO}/raw/main"
+GITEE_RELEASE_BASE="https://gitee.com/${GITEE_REPO}/releases/download"
 DEFAULT_VERSION="5.2.10"
 UPDATE_META="${UPDATE_META:-update-pro.json}"
 
@@ -26,11 +29,11 @@ get_latest_version() {
     local ver=""
     local tag=""
     if command -v curl &>/dev/null; then
-        tag=$(curl -fsSL "${ACCEL_BASE}/${UPDATE_META}" 2>/dev/null | awk -F'"' '/"latest_version"/ {print $4; exit}')
+        tag=$(curl -fsSL "${GITEE_RAW_BASE}/release/${UPDATE_META}" 2>/dev/null | awk -F'"' '/"latest_version"/ {print $4; exit}')
         if [ -n "$tag" ]; then echo "${tag:-$DEFAULT_VERSION}"; return; fi
         tag=$(curl -fsSL "${GITHUB_RELEASES_API}" 2>/dev/null | awk -v prefix="$TAG_PREFIX" -F'"' '$2=="tag_name" && index($4,prefix)==1 {print $4; exit}')
     elif command -v wget &>/dev/null; then
-        tag=$(wget -qO- "${ACCEL_BASE}/${UPDATE_META}" 2>/dev/null | awk -F'"' '/"latest_version"/ {print $4; exit}')
+        tag=$(wget -qO- "${GITEE_RAW_BASE}/release/${UPDATE_META}" 2>/dev/null | awk -F'"' '/"latest_version"/ {print $4; exit}')
         if [ -n "$tag" ]; then echo "${tag:-$DEFAULT_VERSION}"; return; fi
         tag=$(wget -qO- "${GITHUB_RELEASES_API}" 2>/dev/null | awk -v prefix="$TAG_PREFIX" -F'"' '$2=="tag_name" && index($4,prefix)==1 {print $4; exit}')
     fi
@@ -50,14 +53,14 @@ VERSION=$(get_latest_version)
 normalize_source() {
   case "${1:-}" in
     github) echo "github" ;;
-    accel) echo "accel" ;;
+    gitee) echo "gitee" ;;
     *) echo "" ;;
   esac
 }
 
 other_source() {
   case "$1" in
-    github) echo "accel" ;;
+    github) echo "gitee" ;;
     *) echo "github" ;;
   esac
 }
@@ -69,16 +72,16 @@ choose_download_source() {
   fi
   echo -e "${CYAN}[ClawPanel]${NC} 请选择下载线路："
   echo -e "  ${BOLD}1) GitHub${NC}      中国香港及境外服务器推荐"
-  echo -e "  ${BOLD}2) 加速服务器${NC}  中国大陆服务器推荐，更稳当一些"
+  echo -e "  ${BOLD}2) Gitee${NC}       中国大陆服务器推荐，更稳当一些"
   if [ -t 0 ]; then
     read -r -p "请输入 [1/2]（默认 2）: " source_choice
     case "$source_choice" in
       1) DOWNLOAD_SOURCE="github" ;;
-      2|"") DOWNLOAD_SOURCE="accel" ;;
-      *) DOWNLOAD_SOURCE="accel" ;;
+      2|"") DOWNLOAD_SOURCE="gitee" ;;
+      *) DOWNLOAD_SOURCE="gitee" ;;
     esac
   else
-    DOWNLOAD_SOURCE="accel"
+    DOWNLOAD_SOURCE="gitee"
   fi
 }
 
@@ -100,9 +103,9 @@ download_with_selected_source() {
   secondary=$(other_source "$primary")
   if [ "$primary" = "github" ]; then
     primary_url="https://github.com/${REPO}/releases/download/${TAG_PREFIX}${VERSION}/${binary_file}"
-    secondary_url="${ACCEL_BASE}/releases/${binary_file}"
+    secondary_url="${GITEE_RELEASE_BASE}/${TAG_PREFIX}${VERSION}/${binary_file}"
   else
-    primary_url="${ACCEL_BASE}/releases/${binary_file}"
+    primary_url="${GITEE_RELEASE_BASE}/${TAG_PREFIX}${VERSION}/${binary_file}"
     secondary_url="https://github.com/${REPO}/releases/download/${TAG_PREFIX}${VERSION}/${binary_file}"
   fi
   if download_file "$primary_url" "$dest"; then
@@ -278,9 +281,9 @@ main() {
     # ---- Step 2: 下载二进制 ----
     step 2 $TOTAL_STEPS "下载 ClawPanel v${VERSION}..."
     if [ "$DOWNLOAD_SOURCE" = "github" ]; then
-        info "已选择 GitHub（中国香港及境外服务器推荐），失败时自动回退到加速服务器。"
+        info "已选择 GitHub（中国香港及境外服务器推荐），失败时自动回退到 Gitee。"
     else
-        info "已选择加速服务器（中国大陆服务器推荐），失败时自动回退到 GitHub。"
+        info "已选择 Gitee（中国大陆服务器推荐），失败时自动回退到 GitHub。"
     fi
     download_with_selected_source "$DOWNLOAD_SOURCE" "$BINARY_FILE" "${INSTALL_DIR}/${BINARY_NAME}" || err "下载失败！请检查网络连接。"
 

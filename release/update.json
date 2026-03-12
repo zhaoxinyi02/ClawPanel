@@ -1,20 +1,13 @@
 {
-  "latest_version": "5.2.7",
-  "release_time": "2026-03-09T08:57:00+08:00",
-  "release_note": "## v5.2.7 - QQ 通道稳定性修复与插件安装体验改进\n\n### QQ (NapCat)\n- 收紧 QQ 自动接管条件，避免用户未启用时被默认写入 openclaw.json\n- 为 Docker 版 NapCat 增加账号级 onebot11_<uin>.json 网络配置自修复，降低登录后掉线与 WS / HTTP 不可用的问题\n- 新增删除 QQ 通道按钮，可一键删除 NapCat、卸载 qq 插件、清空 QQ 相关配置并重启网关\n\n### 通道安装与插件仓库\n- 插件型通道支持在通道页直接一键安装，不再必须跳转插件中心\n- 修复插件镜像仓库缺失 registry.json 的问题，并新增 Gitee 回退源，减少用户刷新后只看到部分插件的情况\n\n### 运行状态\n- 只要检测到 OpenClaw 正在运行且网关在线，就统一视为运行正常，不再额外显示外部管理告警",
+  "latest_version": "5.2.10",
+  "release_time": "2026-03-12T20:55:00+08:00",
+  "release_note": "## ClawPanel Pro v5.2.10\n\n- GitHub Release 发布后自动同步到 Gitee Release\n- 继续补齐 Lite / Pro 多平台安装与卸载说明\n- 为后续国内用户直接走 Gitee 下载/更新做准备",
   "download_urls": {
-    "linux_amd64": "http://39.102.53.188:16198/clawpanel/releases/clawpanel-v5.2.7-linux-amd64",
-    "linux_arm64": "http://39.102.53.188:16198/clawpanel/releases/clawpanel-v5.2.7-linux-arm64",
-    "darwin_amd64": "http://39.102.53.188:16198/clawpanel/releases/clawpanel-v5.2.7-darwin-amd64",
-    "darwin_arm64": "http://39.102.53.188:16198/clawpanel/releases/clawpanel-v5.2.7-darwin-arm64",
-    "windows_amd64": "http://39.102.53.188:16198/clawpanel/releases/clawpanel-v5.2.7-windows-amd64.exe"
-  },
-  "sha256": {
-    "linux_amd64": "ca906f51f49f592836bab46f8aa86de5d09ec774e4a6828e7e6d3937d5a5436b",
-    "linux_arm64": "dd53c962e7cf7f34da907eb676dfe2bcd42f7b5f3e9dfc7bf33a63840f7f35ba",
-    "darwin_amd64": "fad53d9185cda3207444de2192243b2766b0af81b5db8c5b6966b5a53efc3c76",
-    "darwin_arm64": "ddfc8910c6fcf05a349db789e7b7694861ccf833cb9d293dafb93d55146461fe",
-    "windows_amd64": "265494b054401f055a732c19a68aaff97d6276dc93cdc2cbf52f1fd8710d77cf"
+    "linux_amd64": "https://gitee.com/zxy000006/ClawPanel/releases/download/pro-v5.2.10/clawpanel-v5.2.10-linux-amd64",
+    "linux_arm64": "https://gitee.com/zxy000006/ClawPanel/releases/download/pro-v5.2.10/clawpanel-v5.2.10-linux-arm64",
+    "darwin_amd64": "https://gitee.com/zxy000006/ClawPanel/releases/download/pro-v5.2.10/clawpanel-v5.2.10-darwin-amd64",
+    "darwin_arm64": "https://gitee.com/zxy000006/ClawPanel/releases/download/pro-v5.2.10/clawpanel-v5.2.10-darwin-arm64",
+    "windows_amd64": "https://gitee.com/zxy000006/ClawPanel/releases/download/pro-v5.2.10/clawpanel-v5.2.10-windows-amd64.exe"
   },
   "major_change": false,
   "change_warning": ""

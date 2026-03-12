@@ -6,10 +6,13 @@ SERVICE_NAME="clawpanel-lite"
 BIN_NAME="clawpanel-lite"
 PORT="19527"
 REPO="zhaoxinyi02/ClawPanel"
+GITEE_REPO="zxy000006/ClawPanel"
 TAG_PREFIX="lite-v"
-ACCEL_BASE="http://39.102.53.188:16198/clawpanel"
-ACCEL_META_URL="${ACCEL_BASE}/update-lite.json"
+GITEE_RAW_BASE="https://gitee.com/${GITEE_REPO}/raw/main"
+GITEE_META_URL="${GITEE_RAW_BASE}/release/update-lite.json"
+GITEE_RELEASE_BASE="https://gitee.com/${GITEE_REPO}/releases/download"
 GITHUB_RELEASES_API="https://api.github.com/repos/${REPO}/releases?per_page=20"
+GITEE_RELEASES_API="https://gitee.com/api/v5/repos/${GITEE_REPO}/releases?per_page=20"
 DEFAULT_VERSION="0.1.9"
 
 RED='\033[31m'
@@ -65,9 +68,9 @@ get_latest_version_from_github() {
   fi
 }
 
-get_latest_version_from_accel() {
+get_latest_version_from_gitee() {
   local body ver
-  body=$(fetch_text "$ACCEL_META_URL" 2>/dev/null || true)
+  body=$(fetch_text "$GITEE_META_URL" 2>/dev/null || true)
   ver=$(printf '%s' "$body" | awk -F'"' '/"latest_version"/ {print $4; exit}')
   if [[ -n "$ver" ]]; then
     printf '%s\n' "$ver"
@@ -87,14 +90,14 @@ download_file() {
 normalize_source() {
   case "${1:-}" in
     github) echo "github" ;;
-    accel) echo "accel" ;;
+    gitee) echo "gitee" ;;
     *) echo "" ;;
   esac
 }
 
 other_source() {
   case "$1" in
-    github) echo "accel" ;;
+    github) echo "gitee" ;;
     *) echo "github" ;;
   esac
 }
@@ -106,16 +109,16 @@ choose_download_source() {
   fi
   echo -e "${CYAN}[Lite]${NC} 请选择下载线路："
   echo -e "  ${BOLD}1) GitHub${NC}      中国香港及境外服务器推荐"
-  echo -e "  ${BOLD}2) 加速服务器${NC}  中国大陆服务器推荐，更稳当一些"
+  echo -e "  ${BOLD}2) Gitee${NC}       中国大陆服务器推荐，更稳当一些"
   if [[ -t 0 ]]; then
     read -r -p "请输入 [1/2]（默认 2）: " source_choice
     case "$source_choice" in
       1) DOWNLOAD_SOURCE="github" ;;
-      2|"") DOWNLOAD_SOURCE="accel" ;;
-      *) DOWNLOAD_SOURCE="accel" ;;
+      2|"") DOWNLOAD_SOURCE="gitee" ;;
+      *) DOWNLOAD_SOURCE="gitee" ;;
     esac
   else
-    DOWNLOAD_SOURCE="accel"
+    DOWNLOAD_SOURCE="gitee"
   fi
 }
 
@@ -124,9 +127,9 @@ resolve_latest_version() {
   local version=""
   if [[ "$primary" == "github" ]]; then
     version=$(get_latest_version_from_github)
-    [[ -n "$version" ]] || version=$(get_latest_version_from_accel)
+    [[ -n "$version" ]] || version=$(get_latest_version_from_gitee)
   else
-    version=$(get_latest_version_from_accel)
+    version=$(get_latest_version_from_gitee)
     [[ -n "$version" ]] || version=$(get_latest_version_from_github)
   fi
   printf '%s\n' "$version"
@@ -141,9 +144,9 @@ download_with_selected_source() {
   local primary_url secondary_url
   if [[ "$primary" == "github" ]]; then
     primary_url="https://github.com/${REPO}/releases/download/${TAG_PREFIX}${VERSION}/${package_name}"
-    secondary_url="${ACCEL_BASE}/releases/${package_name}"
+    secondary_url="${GITEE_RELEASE_BASE}/${TAG_PREFIX}${VERSION}/${package_name}"
   else
-    primary_url="${ACCEL_BASE}/releases/${package_name}"
+    primary_url="${GITEE_RELEASE_BASE}/${TAG_PREFIX}${VERSION}/${package_name}"
     secondary_url="https://github.com/${REPO}/releases/download/${TAG_PREFIX}${VERSION}/${package_name}"
   fi
   if download_file "$primary_url" "$dest"; then
@@ -185,11 +188,11 @@ log "目录已就绪: $INSTALL_DIR"
 
 step 2 $TOTAL_STEPS "下载 ClawPanel Lite v${VERSION}"
 if [[ "$DOWNLOAD_SOURCE" == "github" ]]; then
-  info "已选择 GitHub（中国香港及境外服务器推荐），失败时自动回退到加速服务器。"
+  info "已选择 GitHub（中国香港及境外服务器推荐），失败时自动回退到 Gitee。"
 else
-  info "已选择加速服务器（中国大陆服务器推荐），失败时自动回退到 GitHub。"
+  info "已选择 Gitee（中国大陆服务器推荐），失败时自动回退到 GitHub。"
 fi
-download_with_selected_source "$DOWNLOAD_SOURCE" "$PACKAGE_NAME" "$TMP_DIR/$PACKAGE_NAME" || err "GitHub 和加速服务器均下载失败，请检查网络后重试。"
+download_with_selected_source "$DOWNLOAD_SOURCE" "$PACKAGE_NAME" "$TMP_DIR/$PACKAGE_NAME" || err "GitHub 和 Gitee 均下载失败，请检查网络后重试。"
 log "下载完成 (${DOWNLOAD_SOURCE_ACTUAL})"
 
 step 3 $TOTAL_STEPS "部署 Lite 运行环境"

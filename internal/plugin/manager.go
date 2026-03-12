@@ -21,7 +21,7 @@ const (
 	// RegistryURL is the official plugin registry
 	RegistryURL = "https://raw.githubusercontent.com/zhaoxinyi02/ClawPanel-Plugins/main/registry.json"
 	// RegistryMirrorURL is the China mirror
-	RegistryMirrorURL = "http://39.102.53.188:16198/clawpanel/plugins/registry.json"
+	RegistryMirrorURL = "https://gitee.com/zxy000006/ClawPanel/raw/main/plugins/registry.json"
 	// RegistryFallbackURLCN is the Gitee fallback when GitHub is unreachable in CN networks
 	RegistryFallbackURLCN = "https://gitee.com/zhaoxinyi02/ClawPanel-Plugins/raw/main/registry.json"
 )

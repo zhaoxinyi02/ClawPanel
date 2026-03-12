@@ -3,11 +3,11 @@
   "release_time": "2026-03-12T20:55:00+08:00",
   "release_note": "## ClawPanel Pro v5.2.10\n\n- GitHub Release 发布后自动同步到 Gitee Release\n- 继续补齐 Lite / Pro 多平台安装与卸载说明\n- 为后续国内用户直接走 Gitee 下载/更新做准备",
   "download_urls": {
-    "linux_amd64": "http://39.102.53.188:16198/clawpanel/releases/clawpanel-v5.2.10-linux-amd64",
-    "linux_arm64": "http://39.102.53.188:16198/clawpanel/releases/clawpanel-v5.2.10-linux-arm64",
-    "darwin_amd64": "http://39.102.53.188:16198/clawpanel/releases/clawpanel-v5.2.10-darwin-amd64",
-    "darwin_arm64": "http://39.102.53.188:16198/clawpanel/releases/clawpanel-v5.2.10-darwin-arm64",
-    "windows_amd64": "http://39.102.53.188:16198/clawpanel/releases/clawpanel-v5.2.10-windows-amd64.exe"
+    "linux_amd64": "https://gitee.com/zxy000006/ClawPanel/releases/download/pro-v5.2.10/clawpanel-v5.2.10-linux-amd64",
+    "linux_arm64": "https://gitee.com/zxy000006/ClawPanel/releases/download/pro-v5.2.10/clawpanel-v5.2.10-linux-arm64",
+    "darwin_amd64": "https://gitee.com/zxy000006/ClawPanel/releases/download/pro-v5.2.10/clawpanel-v5.2.10-darwin-amd64",
+    "darwin_arm64": "https://gitee.com/zxy000006/ClawPanel/releases/download/pro-v5.2.10/clawpanel-v5.2.10-darwin-arm64",
+    "windows_amd64": "https://gitee.com/zxy000006/ClawPanel/releases/download/pro-v5.2.10/clawpanel-v5.2.10-windows-amd64.exe"
   },
   "major_change": false,
   "change_warning": ""

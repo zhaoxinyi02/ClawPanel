@@ -45,7 +45,7 @@ type UpdateState struct {
 	Error      string       `json:"error,omitempty"`
 	StartedAt  string       `json:"started_at,omitempty"`
 	FinishedAt string       `json:"finished_at,omitempty"`
-	Source     string       `json:"source,omitempty"` // github, accel, upload
+	Source     string       `json:"source,omitempty"` // github, gitee, upload
 	FromVer    string       `json:"from_ver,omitempty"`
 	ToVer      string       `json:"to_ver,omitempty"`
 }
@@ -1483,16 +1483,16 @@ func (s *Server) fetchLatestVersion(preferredSource string) (*VersionInfo, strin
 
 func (s *Server) fetchVersionFromSource(source string) (*VersionInfo, error) {
 	switch normalizeDownloadSource(source) {
-	case "accel":
-		return s.fetchFromAccel()
+	case "gitee":
+		return s.fetchFromGitee()
 	default:
 		return s.fetchFromGitHub()
 	}
 }
 
-func (s *Server) fetchFromAccel() (*VersionInfo, error) {
+func (s *Server) fetchFromGitee() (*VersionInfo, error) {
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get(s.editionCfg.UpdateJSON)
+	resp, err := client.Get(s.editionCfg.GiteeUpdateJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -1762,8 +1762,8 @@ func normalizeDownloadSource(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "github":
 		return "github"
-	case "accel":
-		return "accel"
+	case "gitee":
+		return "gitee"
 	default:
 		return ""
 	}
@@ -1771,12 +1771,12 @@ func normalizeDownloadSource(raw string) string {
 
 func downloadSourceOrder(preferred string) []string {
 	switch normalizeDownloadSource(preferred) {
-	case "accel":
-		return []string{"accel", "github"}
+	case "gitee":
+		return []string{"gitee", "github"}
 	case "github":
-		return []string{"github", "accel"}
+		return []string{"github", "gitee"}
 	default:
-		return []string{"github", "accel"}
+		return []string{"github", "gitee"}
 	}
 }
 

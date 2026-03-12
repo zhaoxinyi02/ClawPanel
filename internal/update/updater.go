@@ -96,7 +96,7 @@ func getPlatformKey() string {
 func (u *Updater) CheckUpdate() (*UpdateInfo, bool, error) {
 	info, err := u.fetchFromGitHub()
 	if err != nil {
-		info, err = u.fetchFromAccel()
+		info, err = u.fetchFromGitee()
 		if err != nil {
 			return nil, false, fmt.Errorf("请求更新信息失败: %v", err)
 		}
@@ -329,9 +329,9 @@ rm -rf "%s"
 	}()
 }
 
-func (u *Updater) fetchFromAccel() (*UpdateInfo, error) {
+func (u *Updater) fetchFromGitee() (*UpdateInfo, error) {
 	client := &http.Client{Timeout: httpTimeout}
-	resp, err := client.Get(u.cfg.UpdateCheckURL)
+	resp, err := client.Get(u.cfg.GiteeUpdateURL)
 	if err != nil {
 		return nil, err
 	}

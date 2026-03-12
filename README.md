@@ -367,7 +367,7 @@ make installer    # 构建 Windows exe 安装包
 - `Lite / Pro` 使用独立更新元数据：
   - `release/update-pro.json`
   - `release/update-lite.json`
-- 安装与更新逐步从“GitHub / 加速服务器”过渡到“GitHub / Gitee”双线路
+- 安装与更新现已切换为“GitHub / Gitee”双线路
 
 - `CI`（`.github/workflows/ci.yml`）
   - 触发：`push` / `pull_request` / 手动触发
@@ -458,7 +458,7 @@ sc query ClawPanel
 #### v0.1.7 — Lite 运行时隔离正式收口
 - **🔒 Lite 与本机外部 OpenClaw 进一步隔离**：`OpenClawInstalled`、网关重启候选、进程管理器查找与插件 CLI 执行统一收口到内嵌运行时
 - **📦 Lite 更新语义更明确**：Lite 不再走单独 OpenClaw 更新，统一按整包更新处理，避免误碰系统全局 `openclaw`
-- **🧪 三端安装/卸载入口已校验**：Linux / macOS / Windows 的公开安装与卸载脚本已同步到 GitHub 与加速服务器，并完成一致性校验
+- **🧪 三端安装/卸载入口已校验**：Linux / macOS / Windows 的公开安装与卸载脚本已同步到 GitHub 与 Gitee，并完成一致性校验
 
 #### v0.1.6 — Lite 运行时探测收口
 - **🧭 Windows / macOS Lite 优先绑定内置运行时**：版本检测、重启命令与运行路径优先走 `clawlite-openclaw`，避免误探测到本机外部 `openclaw`
@@ -472,7 +472,7 @@ sc query ClawPanel
 
 #### v0.1.4 — 整包更新与线路选择
 - **📦 Lite 改为整包更新**：面板内更新会同步面板、内置 OpenClaw 与预置插件，只替换程序和 runtime，保留现有 data 目录
-- **🌐 安装/更新可选下载线路**：新增 GitHub / 加速服务器线路选择，并给出“中国香港及境外 / 中国大陆”推荐提示
+- **🌐 安装/更新可选下载线路**：新增 GitHub / Gitee 线路选择，并给出“中国香港及境外 / 中国大陆”推荐提示
 - **🏷️ 版本管理更明确**：系统配置 → 版本管理会明确标出当前是 `Lite` 还是 `Pro`
 
 #### v0.1.3 — 更新页代理修复与版本体验补强

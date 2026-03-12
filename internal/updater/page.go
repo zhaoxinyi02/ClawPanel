@@ -127,7 +127,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         </button>
       </div>
       <div id="source-section" class="source-box hidden">
-        <div class="warn-box">🌐 下载线路建议：<span>中国香港及境外服务器推荐 GitHub，中国大陆服务器推荐加速服务器，失败时会自动切换到另一条线路。</span></div>
+        <div class="warn-box">🌐 下载线路建议：<span>中国香港及境外服务器推荐 GitHub，中国大陆服务器推荐 Gitee，失败时会自动切换到另一条线路。</span></div>
         <label class="source-option">
           <input type="radio" name="download-source" value="github">
           <div>
@@ -136,10 +136,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           </div>
         </label>
         <label class="source-option">
-          <input type="radio" name="download-source" value="accel">
+          <input type="radio" name="download-source" value="gitee">
           <div>
-            <div class="source-title">加速服务器</div>
-            <div class="source-desc">中国大陆服务器推荐；更稳地访问北京加速分发节点。</div>
+            <div class="source-title">Gitee</div>
+            <div class="source-desc">中国大陆服务器推荐；直接从 Gitee Release 与源码镜像获取更新包。</div>
           </div>
         </label>
       </div>
@@ -225,11 +225,11 @@ const SOURCE_STORAGE_KEY = 'clawpanel-update-source:' + EDITION + ':' + MODE;
 
 function getSelectedSource() {
   const checked = document.querySelector('input[name="download-source"]:checked');
-  return checked ? checked.value : (localStorage.getItem(SOURCE_STORAGE_KEY) || 'accel');
+  return checked ? checked.value : (localStorage.getItem(SOURCE_STORAGE_KEY) || 'gitee');
 }
 
 function setSelectedSource(value) {
-  const normalized = value === 'github' ? 'github' : 'accel';
+  const normalized = value === 'github' ? 'github' : 'gitee';
   const radio = document.querySelector('input[name="download-source"][value="' + normalized + '"]');
   if (radio) radio.checked = true;
   localStorage.setItem(SOURCE_STORAGE_KEY, normalized);
@@ -257,7 +257,7 @@ async function init() {
   }
   if (MODE === 'clawpanel') {
     document.getElementById('source-section').classList.remove('hidden');
-    setSelectedSource(localStorage.getItem(SOURCE_STORAGE_KEY) || 'accel');
+    setSelectedSource(localStorage.getItem(SOURCE_STORAGE_KEY) || 'gitee');
     document.querySelectorAll('input[name="download-source"]').forEach(function(el){
       el.addEventListener('change', function(){
         setSelectedSource(el.value);
@@ -327,7 +327,7 @@ function confirmUpdate() {
     if (MODE === 'openclaw') t += '\\n\\n将执行 openclaw update 命令。';
   }
   if (MODE === 'clawpanel') {
-    t += '\\n\\n下载线路：' + (getSelectedSource() === 'github' ? 'GitHub' : '加速服务器');
+    t += '\\n\\n下载线路：' + (getSelectedSource() === 'github' ? 'GitHub' : 'Gitee');
     if (EDITION === 'lite') t += '\\n本次将整包更新 Lite（面板 + 内置 OpenClaw + 预置插件），不会覆盖现有 data 目录。';
   }
   document.getElementById('confirm-text').textContent = t;
