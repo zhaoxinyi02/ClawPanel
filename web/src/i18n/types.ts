@@ -334,6 +334,16 @@ export interface Translations {
     srcExtraDir: string;
     srcScript: string;
     srcConfig: string;
+    skillHub: string;
+    skillHubTitle: string;
+    skillHubSubtitle: string;
+    skillHubFeatured: string;
+    skillHubByCategory: string;
+    skillHubSkills: string;
+    skillHubLoading: string;
+    skillHubEmpty: string;
+    skillHubLoadError: string;
+    searchSkillHub: string;
   };
 
   // System Config

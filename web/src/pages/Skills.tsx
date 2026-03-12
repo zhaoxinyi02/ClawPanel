@@ -1,10 +1,10 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import type { ChangeEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../lib/api';
 import {
   Sparkles, Search, ToggleLeft, ToggleRight, Download,
-  RefreshCw, Package, Globe, Check, Loader2, ExternalLink, X, Key, FolderOpen, Plug, Trash2, ArrowUpCircle, CheckSquare, Square, Upload,
+  RefreshCw, Package, Globe, Check, Loader2, ExternalLink, X, Key, FolderOpen, Plug, Trash2, ArrowUpCircle, CheckSquare, Square, Upload, Star, TrendingUp,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import MobileActionTray from '../components/MobileActionTray';
@@ -55,6 +55,29 @@ interface SkillConfigSnapshot {
 interface PendingSkillConfigImport {
   fileName: string;
   values: Record<string, unknown>;
+}
+
+interface SkillHubSkill {
+  slug: string;
+  name: string;
+  description: string;
+  description_zh: string;
+  version: string;
+  tags: string[];
+  downloads: number;
+  stars: number;
+  score: number;
+  owner: string;
+  updated_at: number;
+}
+
+interface SkillHubCatalog {
+  ok: boolean;
+  total: number;
+  generatedAt: string;
+  featured: string[];
+  categories: Record<string, string[]>;
+  skills: SkillHubSkill[];
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -118,6 +141,17 @@ export default function Skills() {
   const [depResults, setDepResults] = useState<Record<string, { allMet: boolean; missing: string[] }>>({});
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const configImportRef = useRef<HTMLInputElement>(null);
+
+  // SkillHub state
+  const [hubSource, setHubSource] = useState<'clawhub' | 'skillhub'>('clawhub');
+  const [skillHubCatalog, setSkillHubCatalog] = useState<SkillHubCatalog | null>(null);
+  const [skillHubLoading, setSkillHubLoading] = useState(false);
+  const [skillHubError, setSkillHubError] = useState('');
+  const [skillHubSearch, setSkillHubSearch] = useState('');
+  const [skillHubCategory, setSkillHubCategory] = useState<string>('all');
+  const [skillHubView, setSkillHubView] = useState<'featured' | 'category' | 'all'>('featured');
+  const [skillHubPage, setSkillHubPage] = useState(1);
+  const skillHubPageSize = 30;
 
   const debouncedHubSearch = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -189,6 +223,79 @@ export default function Skills() {
     } catch (err) {
       console.error('Failed to load ClawHub:', err);
     } finally { setHubLoading(false); }
+  };
+
+  const loadSkillHub = async () => {
+    setSkillHubLoading(true);
+    setSkillHubError('');
+    try {
+      const r = await api.getSkillHubCatalog();
+      if (r.ok) setSkillHubCatalog(r as SkillHubCatalog);
+      else setSkillHubError(r.error || t.skills.skillHubLoadError);
+    } catch (err) {
+      console.error('Failed to load SkillHub:', err);
+      setSkillHubError(t.skills.skillHubLoadError);
+    } finally { setSkillHubLoading(false); }
+  };
+
+  useEffect(() => {
+    if (tab === 'clawhub' && hubSource === 'skillhub' && !skillHubCatalog && !skillHubLoading) {
+      loadSkillHub();
+    }
+  }, [tab, hubSource]);
+
+  // SkillHub client-side filtering
+  const filteredSkillHubSkills = useMemo(() => {
+    if (!skillHubCatalog) return [];
+    let items = skillHubCatalog.skills;
+
+    if (skillHubView === 'featured') {
+      const featuredSet = new Set(skillHubCatalog.featured);
+      items = items.filter(s => featuredSet.has(s.slug));
+    } else if (skillHubView === 'category' && skillHubCategory !== 'all') {
+      const tags = skillHubCatalog.categories[skillHubCategory] || [];
+      const tagSet = new Set(tags);
+      items = items.filter(s => s.tags?.some(t => tagSet.has(t)));
+    }
+
+    if (skillHubSearch.trim()) {
+      const q = skillHubSearch.toLowerCase();
+      items = items.filter(s =>
+        s.slug.toLowerCase().includes(q) ||
+        s.name.toLowerCase().includes(q) ||
+        s.description.toLowerCase().includes(q) ||
+        (s.description_zh || '').toLowerCase().includes(q)
+      );
+    }
+
+    return [...items].sort((a, b) => b.score - a.score);
+  }, [skillHubCatalog, skillHubView, skillHubCategory, skillHubSearch]);
+
+  const skillHubTotalPages = Math.ceil(filteredSkillHubSkills.length / skillHubPageSize);
+  const skillHubPagedSkills = filteredSkillHubSkills.slice(
+    (skillHubPage - 1) * skillHubPageSize,
+    skillHubPage * skillHubPageSize
+  );
+
+  // Reset page when filters change
+  useEffect(() => { setSkillHubPage(1); }, [skillHubView, skillHubCategory, skillHubSearch]);
+
+  const handleInstallSkillHubSkill = async (slug: string) => {
+    setInstalling(slug);
+    try {
+      const r = await api.installClawHubSkill(slug, selectedAgent);
+      if (r.ok) {
+        setMsg(t.skills.installSuccess.replace('{id}', slug));
+        await loadSkills();
+      } else {
+        setMsg(r.error || t.skills.installFailed.replace('{id}', slug));
+      }
+    } catch (err) {
+      setMsg(t.skills.installFailed.replace('{id}', slug));
+    } finally {
+      setInstalling('');
+      setTimeout(() => setMsg(''), 3000);
+    }
   };
 
   const toggleSkill = async (skill: SkillEntry) => {
@@ -696,6 +803,20 @@ export default function Skills() {
 
       {tab === 'clawhub' && (
         <div className="space-y-4">
+          {/* Source Switcher */}
+          <div className="flex items-center gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl w-fit">
+            <button onClick={() => setHubSource('clawhub')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${hubSource === 'clawhub' ? 'bg-white dark:bg-gray-700 text-violet-600 dark:text-violet-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+              <Globe size={14} /> ClawHub
+            </button>
+            <button onClick={() => setHubSource('skillhub')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${hubSource === 'skillhub' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+              <Star size={14} /> {t.skills.skillHub || 'SkillHub'}
+            </button>
+          </div>
+
+          {/* ClawHub Source */}
+          {hubSource === 'clawhub' && (<>
           <div className={`${modern ? 'relative overflow-hidden flex items-center justify-between gap-4 p-4 rounded-[24px] border border-white/65 dark:border-slate-700/50 bg-[linear-gradient(145deg,rgba(255,255,255,0.84),rgba(239,246,255,0.62))] dark:bg-[linear-gradient(145deg,rgba(15,23,42,0.88),rgba(30,64,175,0.10))] shadow-[0_18px_40px_rgba(15,23,42,0.06)] backdrop-blur-xl' : 'flex items-center justify-between gap-4 bg-gradient-to-r from-violet-50 to-indigo-50 dark:from-violet-900/20 dark:to-indigo-900/20 p-4 rounded-xl border border-violet-100 dark:border-violet-800/30'}`}>
             {modern && <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent dark:via-slate-200/20" />}
             <div className="flex items-center gap-3">
@@ -863,6 +984,158 @@ export default function Skills() {
               >→</button>
             </div>
           )}
+          </>)}
+
+          {/* SkillHub Source */}
+          {hubSource === 'skillhub' && (<>
+          <div className={`${modern ? 'relative overflow-hidden flex items-center justify-between gap-4 p-4 rounded-[24px] border border-white/65 dark:border-slate-700/50 bg-[linear-gradient(145deg,rgba(255,255,255,0.84),rgba(237,242,255,0.62))] dark:bg-[linear-gradient(145deg,rgba(15,23,42,0.88),rgba(30,64,175,0.10))] shadow-[0_18px_40px_rgba(15,23,42,0.06)] backdrop-blur-xl' : 'flex items-center justify-between gap-4 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800/30'}`}>
+            {modern && <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent dark:via-slate-200/20" />}
+            <div className="flex items-center gap-3">
+              <div className={`${modern ? 'p-2 rounded-xl border border-blue-100/80 dark:border-blue-800/40 bg-[linear-gradient(135deg,rgba(37,99,235,0.12),rgba(14,165,233,0.08))] dark:bg-[linear-gradient(135deg,rgba(37,99,235,0.2),rgba(14,165,233,0.12))] shadow-sm' : 'p-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm'}`}>
+                <Star size={20} className="text-blue-600 dark:text-blue-300" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white">{t.skills.skillHubTitle || 'SkillHub \u2014 Tencent Cloud'}</h3>
+                <p className="text-xs text-gray-500">{t.skills.skillHubSubtitle || '\u4e2d\u56fd\u955c\u50cf\uff0c\u514c\u5bb9 ClawHub \u63d2\u4ef6\u751f\u6001'}</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={loadSkillHub} disabled={skillHubLoading}
+                className={`${modern ? 'page-modern-action' : 'flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 shadow-sm transition-colors'}`}>
+                {skillHubLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                {skillHubLoading ? t.skills.syncing : t.skills.syncStore}
+              </button>
+              <a href="https://skillhub.tencent.com/" target="_blank" rel="noopener noreferrer"
+                className={`${modern ? 'page-modern-accent' : 'flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm shadow-blue-200 dark:shadow-none transition-colors'}`}>
+                <ExternalLink size={14} />{t.skills.visitSite}
+              </a>
+            </div>
+          </div>
+
+          {skillHubError && (
+            <div className="px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-lg text-sm text-red-700 dark:text-red-400">{skillHubError}</div>
+          )}
+
+          {/* Search */}
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input value={skillHubSearch} onChange={e => setSkillHubSearch(e.target.value)} placeholder={t.skills.searchSkillHub || '\u641c\u7d22 SkillHub \u63d2\u4ef6...'}
+              className="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" />
+          </div>
+
+          {/* View + Category filters */}
+          <div className="flex flex-wrap items-center gap-2">
+            {(['featured', 'category', 'all'] as const).map(v => (
+              <button key={v} onClick={() => setSkillHubView(v)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${skillHubView === v ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
+                {v === 'featured' ? (t.skills.skillHubFeatured || '\u2b50 \u7cbe\u9009') : v === 'category' ? (t.skills.skillHubByCategory || '\u5206\u7c7b\u6d4f\u89c8') : (t.skills.allFilter)}
+              </button>
+            ))}
+            {skillHubView === 'category' && skillHubCatalog && (
+              <>
+                <span className="text-gray-300 dark:text-gray-600">|</span>
+                <button onClick={() => setSkillHubCategory('all')}
+                  className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${skillHubCategory === 'all' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+                  {t.skills.allFilter}
+                </button>
+                {Object.keys(skillHubCatalog.categories).map(cat => (
+                  <button key={cat} onClick={() => setSkillHubCategory(cat)}
+                    className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${skillHubCategory === cat ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+                    {cat}
+                  </button>
+                ))}
+              </>
+            )}
+            {skillHubCatalog && (
+              <span className="text-xs text-gray-400 ml-auto">{filteredSkillHubSkills.length} / {skillHubCatalog.total} {t.skills.skillHubSkills || 'skills'}</span>
+            )}
+          </div>
+
+          {/* Skill cards */}
+          {skillHubLoading ? (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-3">
+              <Loader2 size={32} className="animate-spin text-blue-500/50" />
+              <p className="text-sm">{t.skills.skillHubLoading || '\u52a0\u8f7d SkillHub \u76ee\u5f55...'}</p>
+            </div>
+          ) : !skillHubCatalog ? (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-400 border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-xl">
+              <Star size={32} className="opacity-20 mb-2" />
+              <p className="text-sm">{t.skills.skillHubEmpty || '\u70b9\u51fb\u540c\u6b65\u52a0\u8f7d SkillHub \u76ee\u5f55'}</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {skillHubPagedSkills.length === 0 ? (
+                <div className="col-span-full flex flex-col items-center justify-center py-16 text-gray-400 border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-xl">
+                  <Package size={32} className="opacity-20 mb-2" />
+                  <p className="text-sm">{t.skills.noSkillsFound}</p>
+                </div>
+              ) : skillHubPagedSkills.map(skill => {
+                const isInstalled = skills.some(s => s.id === skill.slug || s.skillKey === skill.slug);
+                const isInstalling = installing === skill.slug;
+                return (
+                  <div key={skill.slug} className={`${modern ? 'relative overflow-hidden rounded-[24px] p-4 border border-white/65 dark:border-slate-700/50 bg-[linear-gradient(145deg,rgba(255,255,255,0.84),rgba(237,242,255,0.62))] dark:bg-[linear-gradient(145deg,rgba(15,23,42,0.88),rgba(30,64,175,0.10))] shadow-[0_18px_40px_rgba(15,23,42,0.06)] backdrop-blur-xl flex flex-col h-full' : 'bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700/50 flex flex-col h-full'} hover:shadow-md transition-all group`}>
+                    {modern && <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent dark:via-slate-200/20" />}
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className={`${modern ? 'w-10 h-10 rounded-xl bg-[linear-gradient(135deg,rgba(37,99,235,0.12),rgba(14,165,233,0.08))] dark:bg-[linear-gradient(135deg,rgba(37,99,235,0.2),rgba(14,165,233,0.12))] flex items-center justify-center shrink-0 border border-blue-100/80 dark:border-blue-800/30 shadow-sm' : 'w-10 h-10 rounded-lg bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/30 dark:to-cyan-900/30 flex items-center justify-center shrink-0 border border-blue-100 dark:border-blue-800/30'}`}>
+                          <Package size={18} className="text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-sm font-bold text-gray-900 dark:text-white truncate" title={skill.name}>{skill.name}</h4>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {skill.version && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 font-mono">v{skill.version}</span>}
+                            {skill.score > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 flex items-center gap-0.5"><TrendingUp size={9} />{skill.score}</span>}
+                            {isInstalled && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400">{t.common.installed}</span>}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex-1 mb-4">
+                      <p className="text-xs text-gray-500 line-clamp-2 mb-1" title={skill.description_zh || skill.description}>{skill.description_zh || skill.description}</p>
+                      {skill.tags?.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {skill.tags.slice(0, 3).map(tag => (
+                            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-500 dark:text-blue-400">{tag}</span>
+                          ))}
+                          {skill.tags.length > 3 && <span className="text-[10px] text-gray-400">+{skill.tags.length - 3}</span>}
+                        </div>
+                      )}
+                      {skill.owner && <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">by {skill.owner}</p>}
+                    </div>
+                    <div className="flex items-center gap-2 pt-3 border-t border-gray-50 dark:border-gray-800">
+                      <a href={`https://skillhub.tencent.com/skills/${encodeURIComponent(skill.slug)}`} target="_blank" rel="noopener noreferrer"
+                        className={`${modern ? 'page-modern-action p-2' : 'p-2 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors'}`} title="SkillHub">
+                        <ExternalLink size={16} />
+                      </a>
+                      {isInstalled ? (
+                        <span className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                          <Check size={14} />{t.common.installed}
+                        </span>
+                      ) : (
+                        <button onClick={() => handleInstallSkillHubSkill(skill.slug)} disabled={isInstalling}
+                          className={`${modern ? 'page-modern-accent flex-1 py-2 text-xs' : 'flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-lg bg-blue-600 dark:bg-blue-500 text-white hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 transition-colors'}`}>
+                          {isInstalling ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                          {t.common.install}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* SkillHub Pagination */}
+          {skillHubTotalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 mt-4">
+              <button onClick={() => setSkillHubPage(p => Math.max(1, p - 1))} disabled={skillHubPage <= 1}
+                className="px-3 py-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-40 transition-colors">{'\u2190'}</button>
+              <span className="text-xs text-gray-500">{skillHubPage} / {skillHubTotalPages}</span>
+              <button onClick={() => setSkillHubPage(p => Math.min(skillHubTotalPages, p + 1))} disabled={skillHubPage >= skillHubTotalPages}
+                className="px-3 py-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-40 transition-colors">{'\u2192'}</button>
+            </div>
+          )}
+          </>)}
         </div>
       )}
 

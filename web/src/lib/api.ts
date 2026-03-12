@@ -159,6 +159,7 @@ const _api = {
   installClawHubSkill: (skillId: string, agentId?: string) => post('/system/clawhub/install', { skillId, agentId }),
   uninstallSkill: (skillId: string, agentId?: string) => post('/system/clawhub/uninstall', { skillId, agentId }),
   checkSkillDeps: (env?: string[], bins?: string[], anyBins?: string[]) => post('/system/clawhub/check-deps', { env, bins, anyBins }),
+  getSkillHubCatalog: () => get('/system/skillhub/catalog'),
   getCronJobs: () => get('/system/cron'),
   updateCronJobs: (jobs: any[]) => put('/system/cron', { jobs }),
   getDocs: () => get('/system/docs'),

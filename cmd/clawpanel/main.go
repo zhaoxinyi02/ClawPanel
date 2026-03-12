@@ -251,6 +251,7 @@ func runServer(stopCh chan struct{}) {
 			auth.POST("/system/clawhub/install", handler.InstallClawHubSkill(cfg))
 			auth.POST("/system/clawhub/uninstall", handler.UninstallSkill(cfg))
 			auth.POST("/system/clawhub/check-deps", handler.CheckSkillDeps(cfg))
+			auth.GET("/system/skillhub/catalog", handler.GetSkillHubCatalog(cfg))
 
 			// 定时任务
 			auth.GET("/system/cron", handler.GetCronJobs(cfg))

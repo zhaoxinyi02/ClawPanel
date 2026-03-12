@@ -319,6 +319,16 @@ const en: Translations = {
     srcExtraDir: 'Extra Dir',
     srcScript: 'Script',
     srcConfig: 'Config',
+    skillHub: 'SkillHub',
+    skillHubTitle: 'SkillHub \u2014 Tencent Cloud',
+    skillHubSubtitle: 'China mirror, ClawHub compatible',
+    skillHubFeatured: '\u2b50 Featured',
+    skillHubByCategory: 'By Category',
+    skillHubSkills: 'skills',
+    skillHubLoading: 'Loading SkillHub catalog...',
+    skillHubEmpty: 'Click sync to load SkillHub catalog',
+    skillHubLoadError: 'Failed to load SkillHub, please try again later',
+    searchSkillHub: 'Search SkillHub skills...',
   },
 
   sysConfig: {

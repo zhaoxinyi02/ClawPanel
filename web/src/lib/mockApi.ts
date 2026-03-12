@@ -621,6 +621,31 @@ export const mockApi = {
     const allMet = envR.every(r => r.found) && binR.every(r => r.found) && (anyR.length === 0 || anyR.some(r => r.found));
     return { ok: true, allMet, env: envR, bins: binR, anyBins: anyR };
   },
+  getSkillHubCatalog: async () => {
+    await delay(600);
+    return {
+      ok: true, total: 12911,
+      generatedAt: '2026-03-01T13:44:23Z',
+      featured: ['github', 'openai-whisper', 'skill-vetter', 'sequential-thinking', 'browser', 'google-maps', 'firecrawl', 'fetch', 'puppeteer', 'slack'],
+      categories: {
+        'AI \u667a\u80fd': ['ai', 'llm', 'gpt', 'openai', 'claude', 'machine-learning'],
+        '\u5f00\u53d1\u5de5\u5177': ['developer', 'code', 'git', 'github', 'devops'],
+        '\u6548\u7387\u63d0\u5347': ['productivity', 'automation', 'workflow'],
+        '\u6570\u636e\u5206\u6790': ['data', 'analytics', 'visualization'],
+        '\u5185\u5bb9\u521b\u4f5c': ['content', 'writing', 'blog', 'seo'],
+        '\u5b89\u5168\u5408\u89c4': ['security', 'audit', 'compliance'],
+        '\u901a\u8baf\u534f\u4f5c': ['communication', 'slack', 'discord'],
+      },
+      skills: [
+        { slug: 'github', name: 'Github', description: 'GitHub integration for repository management', description_zh: 'GitHub \u96c6\u6210\u5de5\u5177\uff0c\u652f\u6301\u4ed3\u5e93\u7ba1\u7406\u3001PR\u3001Issue', version: '1.0.1', tags: ['developer', 'git'], downloads: 59000, stars: 198, score: 128858.2, owner: 'clawhub', updated_at: 1772065840450 },
+        { slug: 'openai-whisper', name: 'OpenAI Whisper', description: 'Speech-to-text using OpenAI Whisper', description_zh: 'OpenAI Whisper \u8bed\u97f3\u8f6c\u6587\u5b57', version: '2.1.0', tags: ['ai', 'llm'], downloads: 32000, stars: 156, score: 98234.5, owner: 'clawhub', updated_at: 1772065840450 },
+        { slug: 'sequential-thinking', name: 'Sequential Thinking', description: 'Step-by-step reasoning tool', description_zh: '\u987a\u5e8f\u601d\u7ef4\u63a8\u7406\u5de5\u5177', version: '1.3.2', tags: ['ai', 'productivity'], downloads: 45000, stars: 210, score: 115000, owner: 'clawhub', updated_at: 1772065840450 },
+        { slug: 'browser', name: 'Browser', description: 'Web browsing and scraping tool', description_zh: '\u7f51\u9875\u6d4f\u89c8\u4e0e\u6293\u53d6\u5de5\u5177', version: '1.5.0', tags: ['developer', 'automation'], downloads: 28000, stars: 120, score: 82000, owner: 'clawhub', updated_at: 1772065840450 },
+        { slug: 'google-maps', name: 'Google Maps', description: 'Google Maps integration', description_zh: '\u8c37\u6b4c\u5730\u56fe\u96c6\u6210', version: '1.0.0', tags: ['data', 'visualization'], downloads: 12000, stars: 65, score: 35000, owner: 'clawhub', updated_at: 1772065840450 },
+        { slug: 'skill-vetter', name: 'Skill Vetter', description: 'Skill quality assessment tool', description_zh: '\u6280\u80fd\u8d28\u91cf\u8bc4\u4f30\u5de5\u5177', version: '0.9.0', tags: ['security', 'audit'], downloads: 8000, stars: 42, score: 22000, owner: 'clawhub', updated_at: 1772065840450 },
+      ],
+    };
+  },
   getCronJobs: async () => { await delay(200); return { ok: true, jobs: FAKE_CRON_JOBS }; },
   updateCronJobs: async () => { await delay(300); return { ok: true }; },
   getDocs: async () => { await delay(200); return { ok: true, docs: [{ name: 'system-prompt.md', path: 'system-prompt.md', content: '# System Prompt\n\nYou are OpenClaw, a helpful AI assistant.' }] }; },

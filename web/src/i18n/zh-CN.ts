@@ -319,6 +319,16 @@ const zhCN: Translations = {
     srcExtraDir: '额外目录',
     srcScript: '脚本',
     srcConfig: '配置项',
+    skillHub: 'SkillHub',
+    skillHubTitle: 'SkillHub — 腾讯云',
+    skillHubSubtitle: '中国镜像，兼容 ClawHub 插件生态',
+    skillHubFeatured: '⭐ 精选',
+    skillHubByCategory: '分类浏览',
+    skillHubSkills: '个技能',
+    skillHubLoading: '加载 SkillHub 目录...',
+    skillHubEmpty: '点击同步加载 SkillHub 目录',
+    skillHubLoadError: 'SkillHub 加载失败，请稍后重试',
+    searchSkillHub: '搜索 SkillHub 插件...',
   },
 
   sysConfig: {
