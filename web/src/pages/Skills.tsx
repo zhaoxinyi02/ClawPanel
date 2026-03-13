@@ -151,6 +151,7 @@ export default function Skills() {
   const [skillHubCategory, setSkillHubCategory] = useState<string>('all');
   const [skillHubView, setSkillHubView] = useState<'featured' | 'category' | 'all'>('featured');
   const [skillHubPage, setSkillHubPage] = useState(1);
+  const [storeView, setStoreView] = useState<'grid5' | 'list2'>('grid5');
   const skillHubPageSize = 30;
 
   const debouncedHubSearch = useCallback(() => {
@@ -591,6 +592,15 @@ export default function Skills() {
   });
   const hubCategories = Array.from(new Set(clawHubSkills.map(s => s.category).filter(Boolean) as string[])).sort();
   const clawHubSiteUrl = buildClawHubLink(clawHubRegistryBase, '/skills?sort=downloads');
+  const storeBadgeCount = hubSource === 'skillhub'
+    ? (skillHubCatalog?.total ?? filteredSkillHubSkills.length)
+    : (hubTotal || hubFiltered.length || clawHubSkills.length);
+  const storeGridClasses = storeView === 'grid5'
+    ? 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5 gap-4'
+    : 'grid grid-cols-1 xl:grid-cols-2 gap-4';
+  const clawHubDescriptionClamp = storeView === 'grid5' ? 'line-clamp-3' : 'line-clamp-4';
+  const skillHubDescriptionClamp = storeView === 'grid5' ? 'line-clamp-2' : 'line-clamp-4';
+  const skillHubTagLimit = storeView === 'grid5' ? 3 : 6;
 
   const getSourceBadge = (source: string) => {
     const badges: Record<string, { label: string; color: string }> = {
@@ -643,7 +653,7 @@ export default function Skills() {
         </button>
         <button onClick={() => setTab('clawhub')}
           className={`${modern ? 'px-3.5 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 border' : 'pb-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2'} ${tab === 'clawhub' ? (modern ? 'border-blue-100/80 bg-blue-50/85 dark:bg-blue-900/20 dark:border-blue-800/40 text-blue-700 dark:text-blue-300 shadow-sm' : 'border-violet-600 text-violet-700 dark:text-violet-400') : (modern ? 'border-transparent text-gray-500 hover:bg-white/70 dark:hover:bg-slate-800/70 hover:text-gray-700 dark:hover:text-gray-300' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300')}`}>
-          <Globe size={16} />{t.skills.clawHubTab} <span className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs px-1.5 py-0.5 rounded-full">{clawHubSkills.length}</span>
+          <Globe size={16} />{t.skills.storeTab} <span className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs px-1.5 py-0.5 rounded-full">{storeBadgeCount}</span>
         </button>
       </div>
 
@@ -803,16 +813,29 @@ export default function Skills() {
 
       {tab === 'clawhub' && (
         <div className="space-y-4">
-          {/* Source Switcher */}
-          <div className="flex items-center gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl w-fit">
-            <button onClick={() => setHubSource('clawhub')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${hubSource === 'clawhub' ? 'bg-white dark:bg-gray-700 text-violet-600 dark:text-violet-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
-              <Globe size={14} /> ClawHub
-            </button>
-            <button onClick={() => setHubSource('skillhub')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${hubSource === 'skillhub' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
-              <Star size={14} /> {t.skills.skillHub || 'SkillHub'}
-            </button>
+          {/* Store Toolbar */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl w-fit">
+              <button onClick={() => setHubSource('clawhub')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${hubSource === 'clawhub' ? 'bg-white dark:bg-gray-700 text-violet-600 dark:text-violet-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                <Globe size={14} /> {t.skills.officialClawHub}
+              </button>
+              <button onClick={() => setHubSource('skillhub')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${hubSource === 'skillhub' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                <Star size={14} /> {t.skills.tencentSkillHub}
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl w-fit">
+              <button onClick={() => setStoreView('grid5')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${storeView === 'grid5' ? 'bg-white dark:bg-gray-700 text-violet-600 dark:text-violet-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                {t.skills.storeGridView}
+              </button>
+              <button onClick={() => setStoreView('list2')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${storeView === 'list2' ? 'bg-white dark:bg-gray-700 text-violet-600 dark:text-violet-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                {t.skills.storeListView}
+              </button>
+            </div>
           </div>
 
           {/* ClawHub Source */}
@@ -878,7 +901,7 @@ export default function Skills() {
               <p className="text-sm">{t.skills.loadingClawHub}</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className={storeGridClasses}>
               {hubFiltered.length === 0 ? (
                 <div className="col-span-full flex flex-col items-center justify-center py-16 text-gray-400 border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-xl">
                   <Package size={32} className="opacity-20 mb-2" />
@@ -913,7 +936,7 @@ export default function Skills() {
                     </div>
 
                     <div className="flex-1 mb-4">
-                      <p className="text-xs text-gray-500 line-clamp-3 mb-1" title={skill.description}>{skill.description}</p>
+                      <p className={`text-xs text-gray-500 mb-1 ${clawHubDescriptionClamp}`} title={skill.description}>{skill.description}</p>
                       {skill.author && <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">by {skill.author}</p>}
                       {depResults[skill.id] && !depResults[skill.id].allMet && (
                         <div className="mt-2 px-2 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/40">
@@ -1063,7 +1086,7 @@ export default function Skills() {
               <p className="text-sm">{t.skills.skillHubEmpty || '\u70b9\u51fb\u540c\u6b65\u52a0\u8f7d SkillHub \u76ee\u5f55'}</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className={storeGridClasses}>
               {skillHubPagedSkills.length === 0 ? (
                 <div className="col-span-full flex flex-col items-center justify-center py-16 text-gray-400 border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-xl">
                   <Package size={32} className="opacity-20 mb-2" />
@@ -1091,13 +1114,13 @@ export default function Skills() {
                       </div>
                     </div>
                     <div className="flex-1 mb-4">
-                      <p className="text-xs text-gray-500 line-clamp-2 mb-1" title={skill.description_zh || skill.description}>{skill.description_zh || skill.description}</p>
+                      <p className={`text-xs text-gray-500 mb-1 ${skillHubDescriptionClamp}`} title={skill.description_zh || skill.description}>{skill.description_zh || skill.description}</p>
                       {skill.tags?.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-2">
-                          {skill.tags.slice(0, 3).map(tag => (
+                          {skill.tags.slice(0, skillHubTagLimit).map(tag => (
                             <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-500 dark:text-blue-400">{tag}</span>
                           ))}
-                          {skill.tags.length > 3 && <span className="text-[10px] text-gray-400">+{skill.tags.length - 3}</span>}
+                          {skill.tags.length > skillHubTagLimit && <span className="text-[10px] text-gray-400">+{skill.tags.length - skillHubTagLimit}</span>}
                         </div>
                       )}
                       {skill.owner && <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">by {skill.owner}</p>}

@@ -244,9 +244,12 @@ export interface Translations {
     localSkills: string;
     plugins: string;
     clawHub: string;
+    storeTab: string;
     installedTab: string;
     pluginsTab: string;
     clawHubTab: string;
+    officialClawHub: string;
+    tencentSkillHub: string;
     searchInstalled: string;
     searchClawHub: string;
     allFilter: string;
@@ -334,6 +337,8 @@ export interface Translations {
     srcExtraDir: string;
     srcScript: string;
     srcConfig: string;
+    storeGridView: string;
+    storeListView: string;
     skillHub: string;
     skillHubTitle: string;
     skillHubSubtitle: string;
