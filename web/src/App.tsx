@@ -8,6 +8,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import ActivityLog from './pages/ActivityLog';
 import Channels from './pages/Channels';
+import HelpDocs from './pages/HelpDocs';
 import Skills from './pages/Skills';
 import CronJobs from './pages/CronJobs';
 import SystemConfig from './pages/SystemConfig';
@@ -40,6 +41,7 @@ export default function App() {
         <Route path="/logs" element={<ActivityLog ws={ws} />} />
         <Route path="/channels" element={<OpenClawRequired openclawStatus={ws.openclawStatus} processStatus={ws.processStatus}><Channels /></OpenClawRequired>} />
         <Route path="/skills" element={<OpenClawRequired openclawStatus={ws.openclawStatus} processStatus={ws.processStatus}><Skills /></OpenClawRequired>} />
+        <Route path="/docs" element={<HelpDocs />} />
         <Route path="/plugins" element={<OpenClawRequired openclawStatus={ws.openclawStatus} processStatus={ws.processStatus}><Plugins /></OpenClawRequired>} />
         {enableAgents && (
           <Route path="/agents" element={<OpenClawRequired openclawStatus={ws.openclawStatus} processStatus={ws.processStatus}><Agents /></OpenClawRequired>} />

@@ -373,6 +373,37 @@ export interface Translations {
     wrongPassword: string;
   };
 
+  onboarding: {
+    skipGuide: string;
+    startGuide: string;
+    welcomeTitle: string;
+    slogan: string;
+    tagSingleBinary: string;
+    tagChannels: string;
+    tagAgents: string;
+    tagWorkflow: string;
+    stepHint: string;
+    prevStep: string;
+    installStepTitle: string;
+    tabLinuxMac: string;
+    tabWindows: string;
+    copyCommand: string;
+    copyToast: string;
+    installHint: string;
+    coreNavTitle: string;
+    coreNavProgress: string;
+    coreNavDashboardTitle: string;
+    coreNavDashboardDesc: string;
+    coreNavChannelsTitle: string;
+    coreNavChannelsDesc: string;
+    coreNavConfigTitle: string;
+    coreNavConfigDesc: string;
+    coreNavSkillsTitle: string;
+    coreNavSkillsDesc: string;
+    coreNavPluginsTitle: string;
+    coreNavPluginsDesc: string;
+  };
+
   // Workspace
   workspace: {
     title: string;

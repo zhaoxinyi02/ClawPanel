@@ -181,6 +181,128 @@ const FAKE_WORKFLOW_RUNS = [
   { id: 'run-2', templateId: 'tpl-2', templateName: '代码审查', status: 'running', startedAt: Date.now() - 600000, steps: [{ key: 'diff', status: 'completed' }, { key: 'review', status: 'running' }] },
 ];
 
+const HELP_ONBOARDING_KEY = 'mock.help.onboarding.status';
+const HELP_ONBOARDING_POLICY_KEY = 'mock.help.onboarding.policy';
+const HELP_CONFIG_KEY = 'mock.help.config';
+
+function getMockOnboardingStore(): Record<string, { completed: boolean; completed_at: string | null }> {
+  try {
+    return JSON.parse(localStorage.getItem(HELP_ONBOARDING_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function setMockOnboardingStore(store: Record<string, { completed: boolean; completed_at: string | null }>) {
+  localStorage.setItem(HELP_ONBOARDING_KEY, JSON.stringify(store));
+}
+
+function getMockOnboardingPolicy() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HELP_ONBOARDING_POLICY_KEY) || '{}');
+    return {
+      version: raw.version || 'v1',
+      enabled_at: raw.enabled_at || new Date(Date.now() - 86400000).toISOString(),
+      force_token: raw.force_token || 'base',
+      force_updated_at: raw.force_updated_at || null,
+    };
+  } catch {
+    return {
+      version: 'v1',
+      enabled_at: new Date(Date.now() - 86400000).toISOString(),
+      force_token: 'base',
+      force_updated_at: null,
+    };
+  }
+}
+
+function setMockOnboardingPolicy(policy: { version: string; enabled_at: string; force_token: string; force_updated_at: string | null }) {
+  localStorage.setItem(HELP_ONBOARDING_POLICY_KEY, JSON.stringify(policy));
+}
+
+function getMockHelpConfig() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HELP_CONFIG_KEY) || '{}');
+    return {
+      docs_default_lang: raw.docs_default_lang || 'zh-CN',
+      search_backend: raw.search_backend === 'backend' ? 'backend' : 'frontend',
+    };
+  } catch {
+    return {
+      docs_default_lang: 'zh-CN',
+      search_backend: 'frontend',
+    };
+  }
+}
+
+function setMockHelpConfig(config: { docs_default_lang: string; search_backend: 'frontend' | 'backend' }) {
+  localStorage.setItem(HELP_CONFIG_KEY, JSON.stringify(config));
+}
+
+function slugifyHeading(text: string): string {
+  const normalized = text.trim().toLowerCase().replace(/\s+/g, '-');
+  return encodeURIComponent(normalized).replace(/%/g, '') || 'heading';
+}
+
+async function searchReadmeMarkdown(query: string, limit = 20) {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+
+  let markdown = '';
+  try {
+    const res = await fetch('/README.md');
+    if (res.ok) markdown = await res.text();
+  } catch {}
+
+  if (!markdown) {
+    return [
+      {
+        sectionId: 'clawpanel',
+        sectionTitle: 'ClawPanel',
+        sectionPath: 'ClawPanel',
+        snippet: 'ClawPanel 在线帮助文档搜索当前使用 mock 数据返回。',
+        score: 1,
+      },
+    ].filter(item => `${item.sectionTitle} ${item.snippet}`.toLowerCase().includes(q)).slice(0, limit);
+  }
+
+  const lines = markdown.split('\n');
+  const results: Array<{ sectionId: string; sectionTitle: string; sectionPath: string; snippet: string; score: number }> = [];
+  const stack: Array<{ id: string; text: string; level: number }> = [];
+  let inCodeFence = false;
+
+  lines.forEach((raw) => {
+    const line = raw.trim();
+    if (/^```/.test(line)) {
+      inCodeFence = !inCodeFence;
+      return;
+    }
+    if (inCodeFence || !line) return;
+
+    const headingMatch = raw.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const text = headingMatch[2].trim();
+      while (stack.length > 0 && stack[stack.length - 1].level >= level) stack.pop();
+      stack.push({ id: slugifyHeading(text), text, level });
+      return;
+    }
+
+    if (!line.toLowerCase().includes(q)) return;
+    const current = stack[stack.length - 1];
+    if (!current) return;
+    results.push({
+      sectionId: current.id,
+      sectionTitle: current.text,
+      sectionPath: stack.map(item => item.text).join(' > '),
+      snippet: line.slice(0, 240),
+      score: 1,
+    });
+  });
+
+  return results.slice(0, limit);
+}
+
 const FAKE_SESSIONS = [
   { id: 'sess-1', agentId: 'main', type: 'dm', peer: 'ou_demo_a', messageCount: 24, createdAt: Date.now() - 86400000, lastMessageAt: Date.now() - 3600000 },
   { id: 'sess-2', agentId: 'main', type: 'group', peer: 'oc_demo_group', messageCount: 8, createdAt: Date.now() - 172800000, lastMessageAt: Date.now() - 7200000 },
@@ -394,6 +516,63 @@ export const mockApi = {
   controlWorkflowRun: async (_id: string, _action: string, _reply?: string) => { await delay(300); return { ok: true }; },
   resendWorkflowArtifact: async (_id: string, _data: any) => { await delay(300); return { ok: true }; },
   deleteWorkflowRun: async (_id: string) => { await delay(200); return { ok: true }; },
+
+  // --- Help System ---
+  getHelpOnboardingPolicy: async () => { await delay(120); return { ok: true, data: getMockOnboardingPolicy() }; },
+  updateHelpOnboardingPolicy: async (data: { version: string }) => {
+    await delay(140);
+    const now = new Date().toISOString();
+    const current = getMockOnboardingPolicy();
+    const next = {
+      version: data.version || current.version || 'v1',
+      enabled_at: now,
+      force_token: now,
+      force_updated_at: now,
+    };
+    setMockOnboardingPolicy(next);
+    return { ok: true, data: next };
+  },
+  resetHelpOnboarding: async (data?: { user_id?: string; version?: string }) => {
+    await delay(140);
+    if (data?.version) {
+      const store = getMockOnboardingStore();
+      delete store[data.version];
+      setMockOnboardingStore(store);
+    } else {
+      setMockOnboardingStore({});
+    }
+    return { ok: true, data: { affected: 1 } };
+  },
+  getHelpOnboardingStatus: async (version?: string) => {
+    await delay(120);
+    const policy = getMockOnboardingPolicy();
+    const key = version || policy.version;
+    const store = getMockOnboardingStore();
+    const row = store[key] || { completed: false, completed_at: null };
+    return { ok: true, data: { user_id: 'demo', version: key, completed: row.completed, completed_at: row.completed_at } };
+  },
+  completeHelpOnboarding: async (version: string) => {
+    await delay(120);
+    const store = getMockOnboardingStore();
+    store[version] = { completed: true, completed_at: new Date().toISOString() };
+    setMockOnboardingStore(store);
+    return { ok: true, data: { user_id: 'demo', version, completed: true, completed_at: store[version].completed_at } };
+  },
+  getHelpConfig: async () => { await delay(120); return { ok: true, data: getMockHelpConfig() }; },
+  updateHelpConfig: async (data: { docs_default_lang: string; search_backend: 'frontend' | 'backend' }) => {
+    await delay(140);
+    const next: { docs_default_lang: string; search_backend: 'frontend' | 'backend' } = {
+      docs_default_lang: data.docs_default_lang || 'zh-CN',
+      search_backend: data.search_backend === 'backend' ? 'backend' : 'frontend',
+    };
+    setMockHelpConfig(next);
+    return { ok: true, data: next };
+  },
+  searchHelpDocs: async (q: string, _lang?: string, limit = 20, _docId?: string) => {
+    await delay(120);
+    const results = await searchReadmeMarkdown(q, limit);
+    return { ok: true, data: results };
+  },
 
   // --- Sessions ---
   getSessions: async (_agent?: string) => { await delay(200); const sessions = _agent ? FAKE_SESSIONS.filter(s => s.agentId === _agent) : FAKE_SESSIONS; return { ok: true, sessions: JSON.parse(JSON.stringify(sessions)) }; },

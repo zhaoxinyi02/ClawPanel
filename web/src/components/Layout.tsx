@@ -8,7 +8,9 @@ import {
 import { useI18n } from '../i18n';
 import AIAssistant from './AIAssistant';
 import MessageCenter, { TaskInfo } from './MessageCenter';
+import OnboardingModal from './OnboardingModal';
 import { api } from '../lib/api';
+import { getOnboardingSeen, hasOnboardingSessionShown, markOnboardingSessionShown, normalizeOnboardingPolicy, setOnboardingSeen } from '../constants/help';
 import { resolveOpenClawRuntime } from '../lib/openclawRuntime';
 
 interface Props { onLogout: () => void; napcatStatus: any; wechatStatus?: any; openclawStatus?: any; processStatus?: any; wsMessages?: any[]; }
@@ -117,8 +119,17 @@ export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawS
     { to: '/cron', icon: Clock, label: t.nav.cronJobs },
     { to: '/sessions', icon: MessageSquare, label: '会话管理' },
     { to: '/workspace', icon: FolderOpen, label: t.nav.workspace },
+    { to: '/docs', icon: ScrollText, label: locale === 'zh-CN' ? '帮助文档' : 'Help Docs' },
     { to: '/config', icon: Settings, label: t.nav.systemConfig },
   ];
+
+  const tourIdByTo: Record<string, string> = {
+    '/': 'nav-dashboard',
+    '/channels': 'nav-channels',
+    '/config': 'nav-config',
+    '/skills': 'nav-skills',
+    '/plugins': 'nav-plugins',
+  };
 
   const mobileNavItems = [
     { to: '/', icon: LayoutDashboard, label: t.nav.dashboard },
@@ -137,6 +148,48 @@ export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawS
     return false;
   });
   const [open, setOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [onboardingPolicy, setOnboardingPolicy] = useState(() => normalizeOnboardingPolicy());
+  const onboardingCheckedRef = useRef(false);
+
+  useEffect(() => {
+    if (location.pathname === '/login' || onboardingCheckedRef.current) return;
+
+    let cancelled = false;
+
+    const syncOnboardingState = async () => {
+      const policyRes = await api.getHelpOnboardingPolicy().catch(() => null);
+      const policy = normalizeOnboardingPolicy(policyRes?.ok ? policyRes.data : null);
+      const forceToken = policy.force_token || 'base';
+
+      if (cancelled) return;
+      setOnboardingPolicy(policy);
+
+      const localCompleted = getOnboardingSeen(policy.version, forceToken);
+      const sessionShown = hasOnboardingSessionShown(policy.version, forceToken);
+      const statusRes = await api.getHelpOnboardingStatus(policy.version).catch(() => null);
+
+      if (cancelled) return;
+
+      const remoteCompleted = Boolean(statusRes?.ok && statusRes.data?.completed);
+      if (remoteCompleted && !localCompleted) {
+        setOnboardingSeen(policy.version, forceToken);
+      }
+
+      if (!localCompleted && !remoteCompleted && !sessionShown) {
+        markOnboardingSessionShown(policy.version, forceToken);
+        setOnboardingOpen(true);
+      }
+
+      onboardingCheckedRef.current = true;
+    };
+
+    void syncOnboardingState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [location.pathname]);
 
   useEffect(() => {
     document.body.dataset.uiMode = 'modern';
@@ -186,6 +239,7 @@ export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawS
     { label: '定时任务', keywords: ['cron', 'jobs', '定时任务'], path: '/cron' },
     { label: '会话管理', keywords: ['session', 'sessions', '会话'], path: '/sessions' },
     { label: '工作区', keywords: ['workspace', '工作区', '文件'], path: '/workspace' },
+    { label: locale === 'zh-CN' ? '帮助文档' : 'Help Docs', keywords: ['docs', 'help', '文档', '帮助', 'faq'], path: '/docs' },
     { label: '系统配置', keywords: ['config', 'settings', '系统配置'], path: '/config' },
   ];
 
@@ -273,6 +327,7 @@ export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawS
         <nav className="flex-1 space-y-1 overflow-y-auto p-3 ui-modern-scrollbar">
           {navItems.map(({ to, icon: Icon, label }) => (
             <NavLink key={to} to={to} end={to === '/'} onClick={() => setOpen(false)}
+              data-tour={tourIdByTo[to]}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[13px] transition-all duration-200 group border ${isActive ? 'ui-modern-nav-link active font-semibold translate-x-0.5' : 'ui-modern-nav-link border-transparent hover:-translate-y-0.5 hover:translate-x-0.5 hover:border-blue-100/80 hover:text-slate-900'}`
               }>
@@ -364,6 +419,10 @@ export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawS
               </div>
             </div>
             <div className="flex items-center gap-3">
+              <button onClick={() => handleSearchGo('/docs')} className="hidden xl:inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3.5 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-white hover:text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white">
+                <ScrollText size={16} />
+                <span>{locale === 'zh-CN' ? '文档' : 'Docs'}</span>
+              </button>
               <button onClick={toggleDark} className="w-10 h-10 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:text-slate-700 dark:hover:text-white transition-colors inline-flex items-center justify-center">
                 {dark ? <Sun size={17} /> : <Moon size={17} />}
               </button>
@@ -379,6 +438,12 @@ export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawS
                 </button>
                 {profileOpen && (
                   <div className="absolute top-full right-0 mt-2 w-44 rounded-2xl ui-modern-card p-2 z-50">
+                    <button onClick={() => { setProfileOpen(false); setOnboardingOpen(true); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-slate-600 hover:bg-slate-100 transition-colors">
+                      <Sparkles size={15} /> {locale === 'zh-CN' ? '新手引导' : 'Onboarding'}
+                    </button>
+                    <button onClick={() => { setProfileOpen(false); handleSearchGo('/docs'); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-slate-600 hover:bg-slate-100 transition-colors">
+                      <ScrollText size={15} /> {locale === 'zh-CN' ? '帮助文档' : 'Help Docs'}
+                    </button>
                     <button onClick={() => { setProfileOpen(false); onLogout(); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-red-600 hover:bg-red-50 transition-colors">
                       <LogOut size={15} /> 退出登录
                     </button>
@@ -443,7 +508,7 @@ export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawS
           {mobileNavItems.map(({ to, icon: Icon, label }) => {
             const active = location.pathname === to || (to !== '/' && location.pathname.startsWith(to));
             return (
-              <button key={to} onClick={() => handleSearchGo(to)} className={`flex min-h-[62px] flex-col items-center justify-center gap-1 rounded-2xl border text-[11px] font-medium transition-all ${active ? 'border-blue-200/80 bg-[linear-gradient(135deg,rgba(59,130,246,0.18),rgba(14,165,233,0.12))] text-blue-700 shadow-[0_12px_24px_rgba(37,99,235,0.12)] dark:border-blue-400/20 dark:bg-[linear-gradient(135deg,rgba(37,99,235,0.24),rgba(14,165,233,0.12))] dark:text-blue-100' : 'border-transparent bg-white/40 text-slate-500 dark:bg-slate-900/28 dark:text-slate-400'}`}>
+              <button key={to} data-tour={tourIdByTo[to]} onClick={() => handleSearchGo(to)} className={`flex min-h-[62px] flex-col items-center justify-center gap-1 rounded-2xl border text-[11px] font-medium transition-all ${active ? 'border-blue-200/80 bg-[linear-gradient(135deg,rgba(59,130,246,0.18),rgba(14,165,233,0.12))] text-blue-700 shadow-[0_12px_24px_rgba(37,99,235,0.12)] dark:border-blue-400/20 dark:bg-[linear-gradient(135deg,rgba(37,99,235,0.24),rgba(14,165,233,0.12))] dark:text-blue-100' : 'border-transparent bg-white/40 text-slate-500 dark:bg-slate-900/28 dark:text-slate-400'}`}>
                 <Icon size={17} />
                 <span className="truncate px-1">{label}</span>
               </button>
@@ -456,6 +521,12 @@ export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawS
         </div>
       </nav>
       <AIAssistant />
+      <OnboardingModal
+        open={onboardingOpen}
+        onClose={() => setOnboardingOpen(false)}
+        version={onboardingPolicy.version}
+        forceToken={onboardingPolicy.force_token || undefined}
+      />
     </div>
   );
 }
