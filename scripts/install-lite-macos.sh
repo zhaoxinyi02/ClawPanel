@@ -136,6 +136,13 @@ info "服务标签: ${SERVICE_LABEL}"
 info "目标架构: darwin/${ARCH}"
 echo ""
 
+if lsof -iTCP:19527 -sTCP:LISTEN -n -P >/dev/null 2>&1; then
+  warn "检测到 19527 端口已被占用，可能已经安装并运行了旧的 ClawPanel Pro/Lite。"
+  warn "请先卸载旧面板，或停止现有服务后再安装 Lite。"
+  lsof -iTCP:19527 -sTCP:LISTEN -n -P || true
+  exit 1
+fi
+
 step 1 $TOTAL_STEPS "下载 ClawPanel Lite v${VERSION}"
 if [[ -n "$LOCAL_PACKAGE_PATH" ]]; then
   cp -f "$LOCAL_PACKAGE_PATH" "$TMP_DIR/$PACKAGE_NAME"

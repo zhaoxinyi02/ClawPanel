@@ -96,11 +96,20 @@ func runServer(stopCh chan struct{}) {
 	procMgr := process.NewManager(cfg)
 
 	// 自动启动 OpenClaw（如果已安装且配置存在）
-	if cfg.OpenClawConfigExists() {
-		if changed, err := cfg.NormalizeOpenClawJSONFile(); err != nil {
-			log.Printf("[ClawPanel] OpenClaw 配置兼容清洗失败: %v", err)
-		} else if changed {
-			log.Println("[ClawPanel] 已自动清理 OpenClaw 配置中的旧版兼容字段")
+	// Lite 版即使 openclaw.json 尚不存在，只要内嵌运行时可用也应自动启动
+	// （ensureOpenClawConfig 会在 Start 内部创建缺失的配置文件）
+	shouldAutoStart := cfg.OpenClawConfigExists()
+	if !shouldAutoStart && cfg.IsLiteEdition() && cfg.OpenClawInstalled() {
+		shouldAutoStart = true
+		log.Println("[ClawPanel] Lite 版首次启动，openclaw.json 尚不存在，将由进程管理器自动创建")
+	}
+	if shouldAutoStart {
+		if cfg.OpenClawConfigExists() {
+			if changed, err := cfg.NormalizeOpenClawJSONFile(); err != nil {
+				log.Printf("[ClawPanel] OpenClaw 配置兼容清洗失败: %v", err)
+			} else if changed {
+				log.Println("[ClawPanel] 已自动清理 OpenClaw 配置中的旧版兼容字段")
+			}
 		}
 		if procMgr.GatewayListening() {
 			log.Println("[ClawPanel] 检测到 OpenClaw 网关已在运行，跳过自动启动")
@@ -109,7 +118,10 @@ func runServer(stopCh chan struct{}) {
 		} else {
 			log.Println("[ClawPanel] OpenClaw 已自动启动")
 		}
+	} else {
+		log.Println("[ClawPanel] OpenClaw 未安装或配置不存在，跳过自动启动")
 	}
+	log.Printf("[ClawPanel] OpenClaw 目录: %s", cfg.OpenClawDir)
 
 	// 初始化 WebSocket Hub
 	wsHub := websocket.NewHub()

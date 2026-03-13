@@ -1,7 +1,7 @@
 {
   "latest_version": "0.1.10",
   "release_time": "2026-03-13T00:20:00+08:00",
-  "release_note": "## ClawPanel Lite v0.1.10\n\n- 修复 fresh Linux Lite 安装后 OpenClaw 与网关离线的问题\n- 默认关闭 memory slot，避免 `memory-core` 缺失导致配置校验失败\n- Lite 服务默认增加 `NODE_OPTIONS=--max-old-space-size=2048`，降低 gateway OOM 风险",
+  "release_note": "## ClawPanel Lite v0.1.10\n\n- 修复 Lite 首次安装后 OpenClaw 不自动启动的根因（openclaw.json 鸡生蛋问题）\n- 放宽 daemon fork 检测超时，解决冷启动 gateway 初始化慢导致离线的问题\n- crash-restart 增加退避上限，避免 gateway 崩溃时无限重启\n- 默认关闭 memory slot，降低 gateway OOM 风险",
   "download_urls": {
     "linux_amd64": "http://47.76.58.84:16198/clawpanel/releases/clawpanel-lite-core-v0.1.10-linux-amd64.tar.gz",
     "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.1.10/clawpanel-lite-core-v0.1.10-darwin-amd64.tar.gz",

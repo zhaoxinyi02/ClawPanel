@@ -92,6 +92,14 @@ gitee_releases = gitee_api('/releases?per_page=100')
 
 gitee_tags = {r.get('tag_name'): r for r in gitee_releases}
 
+def gitee_asset_names(release):
+    names = set()
+    for asset in release.get('assets') or []:
+        name = (asset or {}).get('name')
+        if name:
+            names.add(name)
+    return names
+
 for prefix in ('pro-v', 'lite-v'):
     gh_candidates = [r for r in gh_releases if r.get('tag_name', '').startswith(prefix)]
     if not gh_candidates:
@@ -102,35 +110,51 @@ for prefix in ('pro-v', 'lite-v'):
     title = latest['name'] or tag
     print(f'[Gitee Sync] latest GitHub {prefix}: {tag}')
     if tag in gitee_tags:
-        print(f'[Gitee Sync] {tag} already exists on Gitee, skip')
-        continue
+        release = gitee_tags[tag]
+        print(f'[Gitee Sync] {tag} already exists on Gitee, checking assets ...')
+    else:
+        print(f'[Gitee Sync] creating Gitee release {tag} ...')
+        release = gitee_api('/releases', method='POST', data={
+            'tag_name': tag,
+            'target_commitish': tag,
+            'name': title,
+            'body': latest.get('body') or f'Auto synced from GitHub release {tag}',
+            'prerelease': 'false',
+        })
 
-    print(f'[Gitee Sync] creating Gitee release {tag} ...')
-    release = gitee_api('/releases', method='POST', data={
-        'tag_name': tag,
-        'target_commitish': tag,
-        'name': title,
-        'body': latest.get('body') or f'Auto synced from GitHub release {tag}',
-        'prerelease': 'false',
-    })
     release_id = release['id']
+    existing_assets = gitee_asset_names(release)
     release_dir = sync_root / tag
     release_dir.mkdir(parents=True, exist_ok=True)
 
     for asset in latest.get('assets', []):
         name = asset['name']
+        if name in existing_assets:
+            print(f'[Gitee Sync] asset already exists on Gitee, skip: {name}')
+            continue
         url = asset['browser_download_url']
         target = release_dir / name
-        print(f'[Gitee Sync] downloading {name} from GitHub ...')
-        subprocess.check_call(['curl', '--http1.1', '--retry', '3', '--retry-delay', '2', '-fL', url, '-o', str(target)])
-        print(f'[Gitee Sync] uploading {name} to Gitee ...')
+        if not target.exists():
+            print(f'[Gitee Sync] downloading {name} from GitHub ...')
+            subprocess.check_call([
+                'curl', '--http1.1', '--progress-bar', '--retry', '3', '--retry-delay', '2',
+                '--connect-timeout', '15', '--max-time', '7200',
+                '-fL', url, '-o', str(target),
+            ])
+        else:
+            print(f'[Gitee Sync] reuse local cached asset: {name}')
+        size_mb = target.stat().st_size / 1024 / 1024
+        print(f'[Gitee Sync] uploading {name} to Gitee ... ({size_mb:.1f} MB)')
         try:
             subprocess.check_call([
-                'curl', '-fsSL', '-X', 'POST', '--retry', '3', '--retry-delay', '2',
+                'curl', '--http1.1', '--progress-bar', '-fL', '-X', 'POST', '--retry', '3', '--retry-delay', '2',
+                '--connect-timeout', '15', '--max-time', '7200', '--speed-time', '30', '--speed-limit', '10240',
+                '-H', 'Expect:',
                 '-F', f'name={name}',
                 '-F', f'file=@{target}',
                 f'https://gitee.com/api/v5/repos/{gitee_owner}/{gitee_repo}/releases/{release_id}/attach_files?access_token={gitee_token}',
             ])
+            existing_assets.add(name)
         except subprocess.CalledProcessError:
             print(f'[Gitee Sync] WARN upload failed for {name}, continue')
 

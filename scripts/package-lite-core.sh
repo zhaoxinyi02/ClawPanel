@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-VERSION=${1:-${VERSION:-0.1.9}}
+VERSION=${1:-${VERSION:-0.1.10}}
 TARGET_OS=${TARGET_OS:-linux}
 TARGET_ARCH=${TARGET_ARCH:-amd64}
 NODE_VERSION=${NODE_VERSION:-22.22.1}
