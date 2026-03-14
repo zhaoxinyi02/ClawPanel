@@ -4,7 +4,6 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useI18n } from '../i18n';
 import { copyTextWithFallback, fetchHelpMarkdown } from '../constants/help';
-import { api } from '../lib/api';
 
 // 目录项类型定义
 interface TocItem {
@@ -220,7 +219,6 @@ export default function HelpDocs() {
   const [searchResults, setSearchResults] = useState<SearchIndexItem[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [pendingExternalUrl, setPendingExternalUrl] = useState<string | null>(null);
-  const [helpConfig, setHelpConfig] = useState({ docs_default_lang: 'zh-CN', search_backend: 'frontend' as 'frontend' | 'backend' });
   const pageRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -413,23 +411,6 @@ export default function HelpDocs() {
 
   // 快捷键支持
   useEffect(() => {
-    const loadHelpConfig = async () => {
-      try {
-        const r = await api.getHelpConfig();
-        const next = r?.data || r;
-        if (next) {
-          setHelpConfig({
-            docs_default_lang: next.docs_default_lang || 'zh-CN',
-            search_backend: next.search_backend === 'backend' ? 'backend' : 'frontend',
-          });
-        }
-      } catch {}
-    };
-
-    loadHelpConfig();
-  }, []);
-
-  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       // Ctrl/Cmd + K 或 Ctrl/Cmd + F: 打开搜索框
       if ((event.ctrlKey || event.metaKey) && (event.key === 'k' || event.key === 'f')) {
@@ -488,23 +469,7 @@ export default function HelpDocs() {
     }
 
     let active = true;
-    const runSearch = async () => {
-      if (helpConfig.search_backend === 'backend') {
-        try {
-          const r = await api.searchHelpDocs(query.trim(), helpConfig.docs_default_lang, 20, 'clawpanel-main');
-          const backendResults = (r?.data?.results || r?.results || []).map((item: any) => ({
-            sectionId: item.sectionId || item.section_id,
-            sectionTitle: item.sectionTitle || item.section_title,
-            sectionPath: item.sectionPath || item.section_path,
-            content: item.content || item.snippet || '',
-          }));
-          if (active) {
-            setSearchResults(backendResults.filter((item: SearchIndexItem) => item.sectionId));
-            return;
-          }
-        } catch {}
-      }
-
+    const runSearch = () => {
       const results = searchIndex.filter(item => {
         const content = item.content.toLowerCase();
         const title = item.sectionTitle.toLowerCase();
@@ -518,7 +483,7 @@ export default function HelpDocs() {
     return () => {
       active = false;
     };
-  }, [helpConfig.docs_default_lang, helpConfig.search_backend, query, searchIndex]);
+  }, [query, searchIndex]);
 
   // 初次加载时如果 URL 带有 hash，则滚动到对应标题
   useEffect(() => {

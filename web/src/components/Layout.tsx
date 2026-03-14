@@ -3,7 +3,7 @@ import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, ScrollText, Radio, Sparkles, Clock, Settings,
   Moon, Sun, LogOut, Menu, FolderOpen, Languages, MessageSquare,
-  RotateCw, RefreshCw, Power, Puzzle, Bot, Search, Bell, ChevronDown, GitBranch,
+  RotateCw, RefreshCw, Power, Puzzle, Bot, Search, Bell, ChevronDown, GitBranch, HelpCircle,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import AIAssistant from './AIAssistant';
@@ -111,7 +111,7 @@ export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawS
     { to: '/cron', icon: Clock, label: t.nav.cronJobs },
     { to: '/sessions', icon: MessageSquare, label: '会话管理' },
     { to: '/workspace', icon: FolderOpen, label: t.nav.workspace },
-    { to: '/docs', icon: ScrollText, label: locale === 'zh-CN' ? '帮助文档' : 'Help Docs' },
+    { to: '/docs', icon: HelpCircle, label: locale === 'zh-CN' ? '帮助文档' : 'Help Docs' },
     { to: '/config', icon: Settings, label: t.nav.systemConfig },
   ];
 
@@ -147,40 +147,19 @@ export default function Layout({ onLogout, napcatStatus, wechatStatus, openclawS
   useEffect(() => {
     if (location.pathname === '/login' || onboardingCheckedRef.current) return;
 
-    let cancelled = false;
+    const policy = normalizeOnboardingPolicy();
+    const forceToken = policy.force_token || 'base';
+    setOnboardingPolicy(policy);
 
-    const syncOnboardingState = async () => {
-      const policyRes = await api.getHelpOnboardingPolicy().catch(() => null);
-      const policy = normalizeOnboardingPolicy(policyRes?.ok ? policyRes.data : null);
-      const forceToken = policy.force_token || 'base';
+    const localCompleted = getOnboardingSeen(policy.version, forceToken);
+    const sessionShown = hasOnboardingSessionShown(policy.version, forceToken);
 
-      if (cancelled) return;
-      setOnboardingPolicy(policy);
+    if (!localCompleted && !sessionShown) {
+      markOnboardingSessionShown(policy.version, forceToken);
+      setOnboardingOpen(true);
+    }
 
-      const localCompleted = getOnboardingSeen(policy.version, forceToken);
-      const sessionShown = hasOnboardingSessionShown(policy.version, forceToken);
-      const statusRes = await api.getHelpOnboardingStatus(policy.version).catch(() => null);
-
-      if (cancelled) return;
-
-      const remoteCompleted = Boolean(statusRes?.ok && statusRes.data?.completed);
-      if (remoteCompleted && !localCompleted) {
-        setOnboardingSeen(policy.version, forceToken);
-      }
-
-      if (!localCompleted && !remoteCompleted && !sessionShown) {
-        markOnboardingSessionShown(policy.version, forceToken);
-        setOnboardingOpen(true);
-      }
-
-      onboardingCheckedRef.current = true;
-    };
-
-    void syncOnboardingState();
-
-    return () => {
-      cancelled = true;
-    };
+    onboardingCheckedRef.current = true;
   }, [location.pathname]);
 
   useEffect(() => {

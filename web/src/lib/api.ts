@@ -229,20 +229,6 @@ const _api = {
   controlWorkflowRun: (id: string, action: string, reply?: string) => post(`/workflows/runs/${id}/control`, { action, reply }),
   resendWorkflowArtifact: (id: string, data: { stepKey?: string; fileName?: string }) => post(`/workflows/runs/${id}/artifacts/resend`, data),
   deleteWorkflowRun: (id: string) => del(`/workflows/runs/${id}`),
-  // Help system
-  getHelpOnboardingPolicy: () => get('/v1/help/onboarding/policy'),
-  updateHelpOnboardingPolicy: (data: { version: string }) => put('/v1/help/onboarding/policy', data),
-  resetHelpOnboarding: (data?: { user_id?: string; version?: string }) => post('/v1/help/onboarding/reset', data || {}),
-  getHelpOnboardingStatus: (version?: string) => get(`/v1/help/onboarding/status${version ? `?version=${encodeURIComponent(version)}` : ''}`),
-  completeHelpOnboarding: (version: string, deviceId?: string) => post('/v1/help/onboarding/complete', { version, device_id: deviceId }),
-  getHelpConfig: () => get('/v1/help/config'),
-  updateHelpConfig: (data: { docs_default_lang: string; search_backend: 'frontend' | 'backend' }) => put('/v1/help/config', data),
-  searchHelpDocs: (q: string, lang?: string, limit = 20, docId?: string) => {
-    const params = new URLSearchParams({ q, limit: String(limit) });
-    if (lang) params.set('lang', lang);
-    if (docId) params.set('doc_id', docId);
-    return get(`/v1/help/search?${params.toString()}`);
-  },
 };
 
 // In demo mode, replace all API calls with mock data

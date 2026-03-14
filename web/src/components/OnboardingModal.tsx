@@ -3,7 +3,6 @@ import { X, ChevronLeft, Copy, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import { DEFAULT_ONBOARDING_FORCE_TOKEN, DEFAULT_ONBOARDING_VERSION, HelpFaqItem, setOnboardingSeen } from '../constants/help';
-import { api } from '../lib/api';
 
 interface OnboardingModalProps {
   open: boolean;
@@ -33,13 +32,8 @@ export default function OnboardingModal({ open, onClose, version = DEFAULT_ONBOA
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
-  const completeOnboarding = useCallback(async () => {
+  const completeOnboarding = useCallback(() => {
     setOnboardingSeen(version, forceToken);
-    try {
-      await api.completeHelpOnboarding(version);
-    } catch {
-      // Keep local completion even if backend sync is temporarily unavailable.
-    }
   }, [forceToken, version]);
 
   // 所有Hook必须放在最前面，不能有条件返回
@@ -157,7 +151,7 @@ export default function OnboardingModal({ open, onClose, version = DEFAULT_ONBOA
 
     if (step < TOTAL_STEPS) setStep(step + 1);
     else {
-      void completeOnboarding();
+      completeOnboarding();
       onClose();
     }
   };
@@ -181,12 +175,12 @@ export default function OnboardingModal({ open, onClose, version = DEFAULT_ONBOA
   }, [navigate, onClose]);
 
   const handleFinishAndClose = useCallback(() => {
-    void completeOnboarding();
+    completeOnboarding();
     onClose();
   }, [completeOnboarding, onClose]);
 
   const handleFinishAndOpenDocs = useCallback(() => {
-    void completeOnboarding();
+    completeOnboarding();
     navigate('/docs');
     onClose();
   }, [completeOnboarding, navigate, onClose]);
