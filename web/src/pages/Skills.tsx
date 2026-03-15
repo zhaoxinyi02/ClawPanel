@@ -4,7 +4,7 @@ import { useOutletContext } from 'react-router-dom';
 import { api } from '../lib/api';
 import {
   Sparkles, Search, ToggleLeft, ToggleRight, Download,
-  RefreshCw, Package, Globe, Check, Loader2, ExternalLink, X, Key, FolderOpen, Plug, Trash2, ArrowUpCircle, CheckSquare, Square, Upload, Star, TrendingUp,
+  RefreshCw, Package, Globe, Check, Loader2, ExternalLink, X, Key, FolderOpen, Plug, Trash2, ArrowUpCircle, CheckSquare, Square, Upload, Star, TrendingUp, Copy,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import MobileActionTray from '../components/MobileActionTray';
@@ -124,7 +124,7 @@ function buildClawHubLink(base: string, path: string): string {
 }
 
 export default function Skills() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { uiMode } = (useOutletContext() as { uiMode?: 'modern' }) || {};
   const modern = uiMode === 'modern';
   const [skills, setSkills] = useState<SkillEntry[]>([]);
@@ -146,6 +146,8 @@ export default function Skills() {
   const [confirmUninstall, setConfirmUninstall] = useState<{ id: string; name: string; installTarget: StoreInstallTarget } | null>(null);
   const [detailSkill, setDetailSkill] = useState<any | null>(null);
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set());
+  const [selectedPlugins, setSelectedPlugins] = useState<Set<string>>(new Set());
+  const [copyTarget, setCopyTarget] = useState<{ skillId: string; skillName: string } | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [configSkill, setConfigSkill] = useState<SkillEntry | null>(null);
   const [configSnapshot, setConfigSnapshot] = useState<SkillConfigSnapshot | null>(null);
@@ -556,6 +558,37 @@ export default function Skills() {
     }
   };
 
+  const bulkTogglePlugins = async (enable: boolean) => {
+    const targets = plugins.filter(p => selectedPlugins.has(p.id));
+    let count = 0;
+    for (const p of targets) {
+      try {
+        const r = await api.togglePlugin(p.id, enable);
+        if (r.ok) count++;
+      } catch {}
+    }
+    setMsg(`${count}/${targets.length} ${enable ? (locale === 'zh-CN' ? '已启用' : 'enabled') : (locale === 'zh-CN' ? '已禁用' : 'disabled')}`);
+    setSelectedPlugins(new Set());
+    await loadSkills();
+    setTimeout(() => setMsg(''), 3000);
+  };
+
+  const bulkUninstallPlugins = async () => {
+    if (!confirm(locale === 'zh-CN' ? `确定批量卸载 ${selectedPlugins.size} 个插件？` : `Uninstall ${selectedPlugins.size} plugins?`)) return;
+    const targets = plugins.filter(p => selectedPlugins.has(p.id));
+    let count = 0;
+    for (const p of targets) {
+      try {
+        const r = await api.uninstallPlugin(p.id, false);
+        if (r.ok) count++;
+      } catch {}
+    }
+    setMsg(`${count}/${targets.length} ${locale === 'zh-CN' ? '已卸载' : 'uninstalled'}`);
+    setSelectedPlugins(new Set());
+    await loadSkills();
+    setTimeout(() => setMsg(''), 3000);
+  };
+
   const handleUpdateSkill = async (skillId: string) => {
     setUpdating(skillId);
     try {
@@ -928,6 +961,15 @@ export default function Skills() {
                           {uninstalling === (skill.skillKey || skill.id) ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
                         </button>
                       )}
+                      {(skill.source === 'workspace' || skill.source === 'installed' || skill.source === 'managed') && (
+                        <button
+                          onClick={() => setCopyTarget({ skillId: skill.skillKey || skill.id, skillName: skill.name })}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors shrink-0"
+                          title={locale === 'zh-CN' ? '复制到其他智能体' : 'Copy to other agent'}
+                        >
+                          <Copy size={16} />
+                        </button>
+                      )}
                         <button onClick={() => toggleSkill(skill)} className="relative group/toggle focus:outline-none shrink-0" title={skill.enabled ? t.common.running : t.common.stopped}>
                         {skill.enabled 
                           ? <ToggleRight size={36} className="text-emerald-500 transition-transform group-hover/toggle:scale-105" /> 
@@ -956,10 +998,38 @@ export default function Skills() {
             </div>
           ) : (
             <div className="grid gap-3">
+              <div className="flex items-center justify-between px-1">
+                <button onClick={() => {
+                  if (selectedPlugins.size === plugins.length && plugins.length > 0) setSelectedPlugins(new Set());
+                  else setSelectedPlugins(new Set(plugins.map(p => p.id)));
+                }} className="text-xs text-gray-500 hover:text-violet-600 transition-colors flex items-center gap-1">
+                  {selectedPlugins.size === plugins.length && plugins.length > 0 ? <CheckSquare size={14} /> : <Square size={14} />}
+                  {selectedPlugins.size === plugins.length && plugins.length > 0 ? (locale === 'zh-CN' ? '取消全选' : 'Deselect All') : (locale === 'zh-CN' ? '全选' : 'Select All')}
+                </button>
+                {selectedPlugins.size > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">{locale === 'zh-CN' ? `已选 ${selectedPlugins.size}` : `${selectedPlugins.size} selected`}</span>
+                    <button onClick={() => bulkTogglePlugins(true)} className="text-xs px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 border border-emerald-100 dark:border-emerald-800 hover:bg-emerald-100 transition-colors">
+                      {locale === 'zh-CN' ? '批量启用' : 'Enable'}
+                    </button>
+                    <button onClick={() => bulkTogglePlugins(false)} className="text-xs px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 hover:bg-gray-200 transition-colors">
+                      {locale === 'zh-CN' ? '批量禁用' : 'Disable'}
+                    </button>
+                    <button onClick={bulkUninstallPlugins} className="text-xs px-2.5 py-1 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-600 border border-red-100 dark:border-red-800 hover:bg-red-100 transition-colors">
+                      {locale === 'zh-CN' ? '批量卸载' : 'Uninstall'}
+                    </button>
+                  </div>
+                )}
+              </div>
               {plugins.map(plugin => (
                 <div key={plugin.id} className={`${modern ? 'relative overflow-hidden rounded-[24px] p-4 border border-white/65 dark:border-slate-700/50 bg-[linear-gradient(145deg,rgba(255,255,255,0.84),rgba(239,246,255,0.62))] dark:bg-[linear-gradient(145deg,rgba(15,23,42,0.88),rgba(30,64,175,0.10))] shadow-[0_18px_40px_rgba(15,23,42,0.06)] backdrop-blur-xl' : 'bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700/50'} hover:shadow-md transition-all group`}>
                   {modern && <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent dark:via-slate-200/20" />}
                   <div className="flex items-center gap-3">
+                    <button onClick={() => {
+                      setSelectedPlugins(prev => { const n = new Set(prev); if (n.has(plugin.id)) n.delete(plugin.id); else n.add(plugin.id); return n; });
+                    }} className="shrink-0 text-gray-400 hover:text-violet-600 transition-colors">
+                      {selectedPlugins.has(plugin.id) ? <CheckSquare size={18} className="text-violet-600" /> : <Square size={18} />}
+                    </button>
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm border ${plugin.enabled ? 'bg-[linear-gradient(135deg,rgba(37,99,235,0.18),rgba(14,165,233,0.12))] border-blue-100/80 dark:border-blue-800/40' : 'bg-gray-100 dark:bg-gray-700 border-transparent'}`}>
                       <Plug size={18} className={plugin.enabled ? 'text-blue-600 dark:text-blue-300' : 'text-gray-400'} />
                     </div>
@@ -1731,6 +1801,57 @@ export default function Skills() {
               <button onClick={() => setDetailSkill(null)}
                 className={`${modern ? 'page-modern-action px-4 py-2 text-xs' : 'px-4 py-2 text-xs font-medium rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors'}`}>
                 {t.common.close}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Copy Skill to Other Agent Modal */}
+      {copyTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setCopyTarget(null)}>
+          <div className={`${modern ? 'relative overflow-hidden rounded-[24px] p-6 border border-white/65 dark:border-slate-700/50 bg-[linear-gradient(145deg,rgba(255,255,255,0.92),rgba(239,246,255,0.72))] dark:bg-[linear-gradient(145deg,rgba(15,23,42,0.95),rgba(30,64,175,0.12))] shadow-2xl backdrop-blur-xl' : 'bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-6 border border-gray-200 dark:border-gray-700'} max-w-sm w-full mx-4`} onClick={e => e.stopPropagation()}>
+            {modern && <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent dark:via-slate-200/20" />}
+            <h3 className="text-base font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+              <Copy size={16} className="text-blue-600" />
+              {locale === 'zh-CN' ? '复制技能' : 'Copy Skill'}
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">{copyTarget.skillName}</p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 block mb-1">{locale === 'zh-CN' ? '目标智能体' : 'Target Agent'}</label>
+                <select id="copy-target-select" className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="__global__">{locale === 'zh-CN' ? '全局 (Global)' : 'Global'}</option>
+                  {agents.filter(a => a.id !== selectedAgent).map(a => (
+                    <option key={a.id} value={a.id}>{a.id}{a.default ? ' ⭐' : ''}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button onClick={() => setCopyTarget(null)} className={`flex-1 ${modern ? 'page-modern-action px-4 py-2 text-sm' : 'px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors'}`}>
+                {t.common.cancel}
+              </button>
+              <button onClick={async () => {
+                const sel = (document.getElementById('copy-target-select') as HTMLSelectElement)?.value;
+                if (!sel) return;
+                const target = sel === '__global__' ? 'global' : 'agent';
+                const agentId = sel === '__global__' ? '' : sel;
+                try {
+                  const r = await api.installClawHubSkill(copyTarget.skillId, agentId, target as any);
+                  if (r.ok) {
+                    setMsg((locale === 'zh-CN' ? '已复制到 ' : 'Copied to ') + (sel === '__global__' ? 'Global' : sel));
+                  } else {
+                    setMsg(locale === 'zh-CN' ? '复制失败' : 'Copy failed');
+                  }
+                } catch {
+                  setMsg(locale === 'zh-CN' ? '复制失败' : 'Copy failed');
+                }
+                setCopyTarget(null);
+                await loadSkills();
+                setTimeout(() => setMsg(''), 3000);
+              }} className={`flex-1 ${modern ? 'page-modern-accent px-4 py-2 text-sm' : 'px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors'}`}>
+                {locale === 'zh-CN' ? '复制' : 'Copy'}
               </button>
             </div>
           </div>
