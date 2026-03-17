@@ -162,7 +162,7 @@ export default function Skills() {
   const configImportRef = useRef<HTMLInputElement>(null);
 
   // SkillHub state
-  const [hubSource] = useState<'clawhub' | 'skillhub'>('clawhub');
+  const [hubSource, setHubSource] = useState<'clawhub' | 'skillhub'>('clawhub');
   const [skillHubCatalog, setSkillHubCatalog] = useState<SkillHubCatalog | null>(null);
   const [skillHubLoading, setSkillHubLoading] = useState(false);
   const [skillHubError, setSkillHubError] = useState('');
@@ -280,9 +280,13 @@ export default function Skills() {
   // Custom marketplace auto refresh on entry
   useEffect(() => {
     if (tab === 'clawhub') {
-      loadClawHub(1);
+      if (hubSource === 'clawhub') {
+        loadClawHub(1);
+      } else if (!skillHubCliStatus && !skillHubCliLoading) {
+        loadSkillHubStatus();
+      }
     }
-  }, [tab, selectedAgent, storeInstallTarget]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, hubSource, selectedAgent, storeInstallTarget]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getSkillScope = (source: string): Exclude<SkillScopeFilter, 'all'> => {
     switch (source) {
@@ -985,9 +989,15 @@ export default function Skills() {
         <div className="space-y-4">
           {/* Store Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl w-fit px-3 py-2">
-              <Globe size={14} className="text-violet-600 dark:text-violet-300" />
-              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">ClawPanel 自定义技能仓库（GitHub 优先，失败回退 Gitee）</span>
+            <div className="flex items-center gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl w-fit">
+              <button onClick={() => setHubSource('clawhub')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${hubSource === 'clawhub' ? 'bg-white dark:bg-gray-700 text-violet-600 dark:text-violet-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                <Globe size={14} /> ClawPanel 自定义仓库
+              </button>
+              <button onClick={() => setHubSource('skillhub')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${hubSource === 'skillhub' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                <Star size={14} /> {t.skills.tencentSkillHub}
+              </button>
             </div>
 
             <div className="flex items-center gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl w-fit">
@@ -1055,7 +1065,7 @@ export default function Skills() {
 
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-             <input value={search} onChange={e => { setSearch(e.target.value); debouncedHubSearch(); }} onKeyDown={e => e.key === 'Enter' && handleSearchClawHub()} placeholder="搜索 ClawPanel 自定义技能"
+            <input value={search} onChange={e => { setSearch(e.target.value); debouncedHubSearch(); }} onKeyDown={e => e.key === 'Enter' && handleSearchClawHub()} placeholder="搜索 ClawPanel 自定义技能"
               className="w-full pl-9 pr-10 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all" />
             <button onClick={handleSearchClawHub} className="absolute right-3 top-1/2 -translate-y-1/2 text-violet-600 hover:text-violet-700">
               <Search size={14} />
