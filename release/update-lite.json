@@ -1,11 +1,11 @@
 {
-  "latest_version": "0.1.15",
-  "release_time": "2026-03-19T23:40:00+08:00",
-  "release_note": "## ClawPanel Lite v0.1.15\n\n- 修复技能目录所有权同步逻辑的跨平台构建问题\n- 继续修复面板安装技能后的目录 owner 对齐\n- 收口活动日志、最近活动与企业微信状态体验",
+  "latest_version": "0.1.16",
+  "release_time": "2026-03-20T14:25:00+08:00",
+  "release_note": "## ClawPanel Lite v0.1.16\n\n- 修复 Lite 构建产物错误显示 Pro 版本号的问题\n- 重新发布版本号正确的 Lite 构建包\n- 建议现有 Lite 环境升级到本版本",
   "download_urls": {
-    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.1.15/clawpanel-lite-core-v0.1.15-linux-amd64.tar.gz",
-    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.1.15/clawpanel-lite-core-v0.1.15-darwin-amd64.tar.gz",
-    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.1.15/clawpanel-lite-core-v0.1.15-darwin-arm64.tar.gz"
+    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.1.16/clawpanel-lite-core-v0.1.16-linux-amd64.tar.gz",
+    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.1.16/clawpanel-lite-core-v0.1.16-darwin-amd64.tar.gz",
+    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.1.16/clawpanel-lite-core-v0.1.16-darwin-arm64.tar.gz"
   },
   "major_change": false,
   "change_warning": ""
