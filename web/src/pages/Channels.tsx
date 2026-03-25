@@ -465,10 +465,10 @@ const CHANNEL_REQUIRED_FIELDS: Record<string, string[]> = {
   matrix: ['homeserverUrl', 'accessToken'],
   twitch: ['username', 'oauthToken', 'channels'],
 };
-// 飞书官方版插件 ID 集合（优先新 ID）
-const FEISHU_OFFICIAL_IDS = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
-// 所有飞书插件 ID（含社区版）
-const FEISHU_ALL_IDS = ['openclaw-lark', 'feishu-openclaw-plugin', 'feishu'] as const;
+// 飞书官方版当前仅认可 openclaw-lark，旧 ID 仅做历史兼容清理。
+const FEISHU_OFFICIAL_IDS = ['openclaw-lark'] as const;
+// 所有当前有效的飞书插件 ID（含社区版）。
+const FEISHU_ALL_IDS = ['openclaw-lark', 'feishu'] as const;
 const WECOM_BOT_PLUGIN_IDS = ['wecom-openclaw-plugin', 'wecom'] as const;
 
 function getEnabledPluginEntry(entries: Record<string, any>, ids: readonly string[]): string | null {

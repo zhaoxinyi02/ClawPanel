@@ -18,11 +18,16 @@ import (
 	"github.com/zhaoxinyi02/ClawPanel/internal/process"
 )
 
-// 飞书官方版插件 ID 集合（优先级从高到低：新 ID 优先）
-var feishuOfficialPluginIDs = []string{"openclaw-lark", "feishu-openclaw-plugin"}
+const (
+	canonicalFeishuOfficialPluginID  = "openclaw-lark"
+	canonicalFeishuCommunityPluginID = "feishu"
+)
 
-// 所有飞书插件 ID（官方版 + 社区版）
-var feishuAllPluginIDs = []string{"openclaw-lark", "feishu-openclaw-plugin", "feishu"}
+// 飞书官方版当前仅认可新 ID，旧 ID 仅用于清理历史脏配置。
+var feishuOfficialPluginIDs = []string{canonicalFeishuOfficialPluginID}
+
+// 当前有效的飞书插件 ID（官方版 + 社区版）。
+var feishuAllPluginIDs = []string{canonicalFeishuOfficialPluginID, canonicalFeishuCommunityPluginID}
 
 // 企业微信机器人插件 ID（优先级从高到低：新 ID 优先）
 var wecomBotPluginIDs = []string{"wecom-openclaw-plugin", "wecom"}
@@ -1214,7 +1219,6 @@ func ToggleChannel(cfg *config.Config, procMgr *process.Manager, napcatMon *moni
 		if ocConfig == nil {
 			ocConfig = map[string]interface{}{}
 		}
-
 		// 更新 channels
 		channels, _ := ocConfig["channels"].(map[string]interface{})
 		if channels == nil {
@@ -1225,6 +1229,9 @@ func ToggleChannel(cfg *config.Config, procMgr *process.Manager, napcatMon *moni
 		plugins, _ := ocConfig["plugins"].(map[string]interface{})
 		if plugins == nil {
 			plugins = map[string]interface{}{}
+		}
+		if req.ChannelID == "feishu" {
+			plugins = cleanupLegacyFeishuPluginIDs(plugins)
 		}
 		entries, _ := plugins["entries"].(map[string]interface{})
 		if entries == nil {
@@ -1290,24 +1297,29 @@ func ToggleChannel(cfg *config.Config, procMgr *process.Manager, napcatMon *moni
 				delete(channels, "wecom-app")
 			}
 
-			// 飞书特殊处理：确定当前活跃的 plugin entry ID，启用/禁用正确的条目
+			// 飞书特殊处理：启用时自愈目标插件 entry，并同步 plugins.allow
 			if req.ChannelID == "feishu" {
-				activeEntryID := resolveActiveFeishuEntryID(entries)
-				pe, _ := entries[activeEntryID].(map[string]interface{})
-				if pe == nil {
-					pe = map[string]interface{}{}
-				}
-				pe["enabled"] = req.Enabled
-				entries[activeEntryID] = pe
-				// 禁用所有其他飞书变体
+				targetEntryID := resolveFeishuToggleEntryID(plugins, entries)
+				disableIDs := make([]string, 0, len(feishuAllPluginIDs)-1)
 				for _, othID := range feishuAllPluginIDs {
-					if othID == activeEntryID {
+					if othID == targetEntryID {
 						continue
 					}
-					if otherEntry, ok := entries[othID].(map[string]interface{}); ok {
-						otherEntry["enabled"] = false
-						entries[othID] = otherEntry
+					disableIDs = append(disableIDs, othID)
+				}
+				if req.Enabled {
+					plugins = ensureFeishuPluginSelection(plugins, targetEntryID, disableIDs)
+					entries, _ = plugins["entries"].(map[string]interface{})
+				} else {
+					for _, pluginID := range feishuAllPluginIDs {
+						entry, _ := entries[pluginID].(map[string]interface{})
+						if entry == nil {
+							continue
+						}
+						entry["enabled"] = false
+						entries[pluginID] = entry
 					}
+					plugins["entries"] = entries
 				}
 			} else if req.ChannelID == "wecom" {
 				entryID := resolveWecomBotEntryID(entries)
@@ -1602,33 +1614,156 @@ func isNativeOpenAI(baseURL string) bool {
 	return strings.Contains(strings.ToLower(baseURL), "api.openai.com")
 }
 
-// resolveActiveFeishuEntryID 返回当前启用的飞书插件 entry ID
-func resolveActiveFeishuEntryID(entries map[string]interface{}) string {
-	for _, id := range feishuAllPluginIDs {
+// resolveFeishuEntryID 从 candidates 中查找飞书插件 entry ID。
+// requireEnabled=true 时只返回 enabled 的；false 时先找 enabled 再找 present。
+// 未找到返回 ""。
+func resolveFeishuEntryID(entries map[string]interface{}, candidates []string, requireEnabled bool) string {
+	for _, id := range candidates {
 		if entry, ok := entries[id].(map[string]interface{}); ok {
 			if enabled, _ := entry["enabled"].(bool); enabled {
 				return id
 			}
 		}
 	}
-	// 没有 enabled 的，返回有 entry 的第一个
-	for _, id := range feishuAllPluginIDs {
+	if requireEnabled {
+		return ""
+	}
+	for _, id := range candidates {
 		if entries[id] != nil {
 			return id
 		}
 	}
-	return "feishu"
+	return ""
 }
 
-// resolveOfficialFeishuID 返回已安装的官方版飞书插件 ID（优先新 ID）
-func resolveOfficialFeishuID(entries map[string]interface{}) string {
-	for _, id := range feishuOfficialPluginIDs {
-		if entries[id] != nil {
+func cleanupLegacyFeishuPluginIDs(plugins map[string]interface{}) map[string]interface{} {
+	if plugins == nil {
+		plugins = map[string]interface{}{}
+	}
+	entries, _ := plugins["entries"].(map[string]interface{})
+	if entries != nil {
+		delete(entries, "feishu-openclaw-plugin")
+		plugins["entries"] = entries
+	}
+	allowList, _ := plugins["allow"].([]interface{})
+	plugins["allow"] = removeStringFromInterfaceSlice(allowList, "feishu-openclaw-plugin")
+	return plugins
+}
+
+func resolveFeishuPluginIDFromAllow(plugins map[string]interface{}, candidates []string) string {
+	allowList, _ := plugins["allow"].([]interface{})
+	for _, value := range allowList {
+		pluginID := strings.TrimSpace(fmt.Sprint(value))
+		if containsString(candidates, pluginID) {
+			return pluginID
+		}
+	}
+	return ""
+}
+
+func resolveFeishuPluginIDFromInstalls(plugins map[string]interface{}, candidates []string) string {
+	installs, _ := plugins["installs"].(map[string]interface{})
+	for _, id := range candidates {
+		if installs[id] != nil {
 			return id
 		}
 	}
-	// 默认返回新 ID
-	return feishuOfficialPluginIDs[0]
+	return ""
+}
+
+// resolvePreferredOfficialFeishuID 确定官方版飞书插件 ID。
+// 优先级：entries 中已启用 → allow 列表 → entries 中已存在 → installs → 默认 canonical ID。
+func resolvePreferredOfficialFeishuID(plugins map[string]interface{}, entries map[string]interface{}) string {
+	if id := resolveFeishuEntryID(entries, feishuOfficialPluginIDs, true); id != "" {
+		return id
+	}
+	if allowID := resolveFeishuPluginIDFromAllow(plugins, feishuOfficialPluginIDs); allowID != "" {
+		return allowID
+	}
+	if id := resolveFeishuEntryID(entries, feishuOfficialPluginIDs, false); id != "" {
+		return id
+	}
+	if installedID := resolveFeishuPluginIDFromInstalls(plugins, feishuOfficialPluginIDs); installedID != "" {
+		return installedID
+	}
+	return canonicalFeishuOfficialPluginID
+}
+
+// resolveFeishuToggleEntryID 确定飞书渠道开关操作的目标 entry ID（官方版或社区版均可）。
+// 优先级：entries 中已启用 → allow 列表 → entries 中已存在 → 官方已安装 → 社区已安装 → 默认社区版。
+func resolveFeishuToggleEntryID(plugins map[string]interface{}, entries map[string]interface{}) string {
+	if id := resolveFeishuEntryID(entries, feishuAllPluginIDs, true); id != "" {
+		return id
+	}
+	if allowID := resolveFeishuPluginIDFromAllow(plugins, feishuAllPluginIDs); allowID != "" {
+		return allowID
+	}
+	if id := resolveFeishuEntryID(entries, feishuAllPluginIDs, false); id != "" {
+		return id
+	}
+	if installedID := resolveFeishuPluginIDFromInstalls(plugins, feishuOfficialPluginIDs); installedID != "" {
+		return installedID
+	}
+	if installedID := resolveFeishuPluginIDFromInstalls(plugins, []string{canonicalFeishuCommunityPluginID}); installedID != "" {
+		return installedID
+	}
+	return canonicalFeishuCommunityPluginID
+}
+
+func ensureStringSliceContains(values []interface{}, target string) []interface{} {
+	for _, value := range values {
+		if strings.TrimSpace(fmt.Sprint(value)) == target {
+			return values
+		}
+	}
+	return append(values, target)
+}
+
+func removeStringFromInterfaceSlice(values []interface{}, targets ...string) []interface{} {
+	if len(values) == 0 || len(targets) == 0 {
+		return values
+	}
+	result := make([]interface{}, 0, len(values))
+	for _, value := range values {
+		current := strings.TrimSpace(fmt.Sprint(value))
+		if current != "" && containsString(targets, current) {
+			continue
+		}
+		result = append(result, value)
+	}
+	return result
+}
+
+func ensureFeishuPluginSelection(plugins map[string]interface{}, enableID string, disableIDs []string) map[string]interface{} {
+	if plugins == nil {
+		plugins = map[string]interface{}{}
+	}
+	entries, _ := plugins["entries"].(map[string]interface{})
+	if entries == nil {
+		entries = map[string]interface{}{}
+	}
+	entry, _ := entries[enableID].(map[string]interface{})
+	if entry == nil {
+		entry = map[string]interface{}{}
+	}
+	entry["enabled"] = true
+	entries[enableID] = entry
+	for _, disableID := range disableIDs {
+		if disableID == enableID {
+			continue
+		}
+		if otherEntry, ok := entries[disableID].(map[string]interface{}); ok {
+			otherEntry["enabled"] = false
+			entries[disableID] = otherEntry
+		}
+	}
+	plugins["entries"] = entries
+
+	allowList, _ := plugins["allow"].([]interface{})
+	allowList = removeStringFromInterfaceSlice(allowList, disableIDs...)
+	allowList = ensureStringSliceContains(allowList, enableID)
+	plugins["allow"] = allowList
+	return plugins
 }
 
 // SwitchFeishuVariant 切换飞书插件版本（官方版 / ClawTeam 版）
@@ -1656,62 +1791,33 @@ func SwitchFeishuVariant(cfg *config.Config, procMgr *process.Manager, sysLog ..
 			entries = map[string]interface{}{}
 		}
 
-		// 互斥设置 enabled
-		// Lite 版只有内置插件目录 "feishu"，不存在 "feishu-openclaw-plugin"；
-		// Pro 版支持多种官方插件 ID（openclaw-lark、feishu-openclaw-plugin）
+		// 飞书变体切换：官方版优先保留当前实际存在的官方 ID，社区版固定使用 feishu，并同步 plugins.allow
 		var enableID string
-		var disableIDs []string
 		label := "ClawTeam 社区版"
-		if cfg.IsLiteEdition() {
-			// Lite 版两种变体都映射到同一个内置插件 "feishu"
-			enableID = "feishu"
-			if req.Variant == "official" {
-				label = "飞书官方版"
-			}
-		} else if req.Variant == "official" {
-			// Pro 版：启用当前已安装的官方版 ID（优先新 ID openclaw-lark）
-			enableID = resolveOfficialFeishuID(entries)
-			disableIDs = []string{"feishu"}
+		if req.Variant == "official" {
+			enableID = resolvePreferredOfficialFeishuID(plugins, entries)
 			label = "飞书官方版"
 		} else {
-			enableID = "feishu"
-			disableIDs = append([]string{}, feishuOfficialPluginIDs...)
+			enableID = canonicalFeishuCommunityPluginID
 		}
-
-		enableEntry, _ := entries[enableID].(map[string]interface{})
-		if enableEntry == nil {
-			enableEntry = map[string]interface{}{}
-		}
-		enableEntry["enabled"] = true
-		entries[enableID] = enableEntry
-
-		for _, disableID := range disableIDs {
-			disableEntry, _ := entries[disableID].(map[string]interface{})
-			if disableEntry != nil {
-				disableEntry["enabled"] = false
-				entries[disableID] = disableEntry
+		disableIDs := make([]string, 0, len(feishuAllPluginIDs)-1)
+		for _, pluginID := range feishuAllPluginIDs {
+			if pluginID == enableID {
+				continue
 			}
+			disableIDs = append(disableIDs, pluginID)
 		}
-		if req.Variant == "official" {
-			for _, aliasID := range feishuOfficialPluginIDs {
-				if aliasID == enableID {
-					continue
-				}
-				if aliasEntry, ok := entries[aliasID].(map[string]interface{}); ok {
-					aliasEntry["enabled"] = false
-					entries[aliasID] = aliasEntry
-				}
-			}
-		}
+		plugins = ensureFeishuPluginSelection(plugins, enableID, disableIDs)
+		entries, _ = plugins["entries"].(map[string]interface{})
 
-		// 清理可能存在的 feishu-openclaw-plugin 脏 entry（Lite 版无此插件）
+		// Lite 版只有内置插件目录 feishu；同时统一清理旧官方 ID 脏配置
 		if cfg.IsLiteEdition() {
 			for _, aliasID := range feishuOfficialPluginIDs {
 				delete(entries, aliasID)
 			}
+			plugins["entries"] = entries
 		}
-
-		plugins["entries"] = entries
+		plugins = cleanupLegacyFeishuPluginIDs(plugins)
 		ocConfig["plugins"] = plugins
 
 		if err := cfg.WriteOpenClawJSON(ocConfig); err != nil {

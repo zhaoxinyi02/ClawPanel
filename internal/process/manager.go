@@ -561,6 +561,9 @@ func (m *Manager) getGatewayPort() string {
 }
 
 func (m *Manager) readGatewayConfig() map[string]interface{} {
+	if m == nil || m.cfg == nil {
+		return nil
+	}
 	ocDir := m.cfg.OpenClawDir
 	if ocDir == "" {
 		home, _ := os.UserHomeDir()

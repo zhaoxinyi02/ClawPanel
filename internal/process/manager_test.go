@@ -275,6 +275,15 @@ func TestGetGatewayPortCheckTargetsUsesRuntimeFallbackWhenLoopbackUnavailable(t 
 	}
 }
 
+func TestGatewayPortIntWithNilConfigFallsBackToDefaultPort(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewManager(nil)
+	if got := mgr.GatewayPortInt(); got != 18789 {
+		t.Fatalf("expected GatewayPortInt to return default 18789 when manager config is nil, got %d", got)
+	}
+}
+
 func newOpenClawDir(t *testing.T) string {
 	t.Helper()
 	openclawDir := filepath.Join(t.TempDir(), ".openclaw")
