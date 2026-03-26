@@ -14,6 +14,15 @@ import (
 	"github.com/zhaoxinyi02/ClawPanel/internal/config"
 )
 
+func findAgentByID(list []map[string]interface{}, id string) map[string]interface{} {
+	for _, item := range list {
+		if strings.TrimSpace(toString(item["id"])) == id {
+			return item
+		}
+	}
+	return nil
+}
+
 // GetOpenClawAgents 返回多智能体配置与统计信息。
 func GetOpenClawAgents(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -187,6 +196,9 @@ func CreateOpenClawAgent(cfg *config.Config) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 			return
 		}
+		if created := findAgentByID(list, id); created != nil {
+			_ = scaffoldAgentFiles(cfg, created)
+		}
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	}
 }
@@ -275,6 +287,7 @@ func UpdateOpenClawAgent(cfg *config.Config) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 			return
 		}
+		_ = scaffoldAgentFiles(cfg, merged)
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	}
 }

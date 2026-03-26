@@ -203,10 +203,11 @@ const _api = {
   aiChat: (messages: { role: string; content: string }[], providerId?: string, modelId?: string) => postLong('/system/ai-chat', { messages, providerId, modelId }, 120000),
   // Panel chat
   getPanelChatSessions: () => get('/panel-chat/sessions'),
-  createPanelChatSession: (data?: { title?: string; chatType?: 'direct' | 'group'; agentId?: string; targetId?: string; targetName?: string }) => post('/panel-chat/sessions', data || {}),
+  createPanelChatSession: (data?: { title?: string; chatType?: 'direct' | 'group'; agentId?: string; participantAgentIds?: string[]; controllerAgentId?: string; preferredAgentId?: string; targetId?: string; targetName?: string }) => post('/panel-chat/sessions', data || {}),
   getPanelChatSessionDetail: (id: string) => get(`/panel-chat/sessions/${id}`),
+  getPanelChatLatestTask: (id: string) => get(`/panel-chat/sessions/${id}/task`),
   renamePanelChatSession: (id: string, title: string) => put(`/panel-chat/sessions/${id}`, { title }),
-  sendPanelChatMessage: (id: string, message: string) => postLong(`/panel-chat/sessions/${id}/messages`, { message }, 300000),
+  sendPanelChatMessage: (id: string, message: string, preferredAgentId?: string) => postLong(`/panel-chat/sessions/${id}/messages`, { message, preferredAgentId }, 300000),
   cancelPanelChatMessage: (id: string) => post(`/panel-chat/sessions/${id}/cancel`),
   deletePanelChatSession: (id: string) => del(`/panel-chat/sessions/${id}`),
   // Event Log

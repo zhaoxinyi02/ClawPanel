@@ -288,6 +288,7 @@ func runServer(stopCh chan struct{}) {
 			auth.GET("/panel-chat/sessions", handler.ListPanelChatSessions(cfg))
 			auth.POST("/panel-chat/sessions", handler.CreatePanelChatSession(cfg))
 			auth.GET("/panel-chat/sessions/:id", handler.GetPanelChatSessionDetail(cfg))
+			auth.GET("/panel-chat/sessions/:id/task", handler.GetPanelChatLatestTask(cfg))
 			auth.PUT("/panel-chat/sessions/:id", handler.RenamePanelChatSession(cfg))
 			auth.POST("/panel-chat/sessions/:id/messages", handler.SendPanelChatMessage(cfg))
 			auth.POST("/panel-chat/sessions/:id/cancel", handler.CancelPanelChatMessage(cfg))

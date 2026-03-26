@@ -449,12 +449,15 @@ let fakeSessionMessages: Record<string, FakeSessionMessage[]> = loadDemoState(
 saveDemoState(DEMO_SESSIONS_STORAGE_KEY, fakeSessions);
 saveDemoState(DEMO_SESSION_MESSAGES_STORAGE_KEY, fakeSessionMessages);
 
-let fakePanelChatSessions = [
+let fakePanelChatSessions: any[] = [
   {
     id: 'panel-demo-1',
     openclawSessionId: 'panel-demo-1',
     agentId: 'main',
     chatType: 'direct',
+    controllerAgentId: 'main',
+    preferredAgentId: 'main',
+    participantAgentIds: ['main'],
     title: '本地开发助手',
     createdAt: Date.now() - 3600000,
     updatedAt: Date.now() - 120000,
@@ -858,7 +861,7 @@ export const mockApi = {
   checkModelHealth: async (_baseUrl: string, _apiKey: string, _apiType: string, _modelId?: string) => { await delay(1500); return { ok: true, healthy: true, latencyMs: 320, model: _modelId || 'default' }; },
   aiChat: async (_messages: any[], _providerId?: string, _modelId?: string) => { await delay(1000); return { ok: true, reply: { role: 'assistant', content: '这是 Demo 模式的 AI 回复。在前端开发模式下，AI 聊天功能返回模拟数据。' } }; },
   getPanelChatSessions: async () => { await delay(120); return { ok: true, sessions: JSON.parse(JSON.stringify(fakePanelChatSessions)) }; },
-  createPanelChatSession: async (data?: { title?: string; chatType?: 'direct' | 'group'; agentId?: string }) => {
+  createPanelChatSession: async (data?: { title?: string; chatType?: 'direct' | 'group'; agentId?: string; participantAgentIds?: string[]; controllerAgentId?: string; preferredAgentId?: string }) => {
     await delay(180);
     const now = Date.now();
     const session = {
@@ -866,6 +869,9 @@ export const mockApi = {
       openclawSessionId: `panel-demo-${now}`,
       agentId: data?.agentId || 'main',
       chatType: data?.chatType || 'direct',
+      participantAgentIds: data?.participantAgentIds || [data?.agentId || 'main'],
+      controllerAgentId: data?.controllerAgentId || data?.agentId || 'main',
+      preferredAgentId: data?.preferredAgentId || data?.controllerAgentId || data?.agentId || 'main',
       title: data?.title || '新对话',
       createdAt: now,
       updatedAt: now,
@@ -889,14 +895,19 @@ export const mockApi = {
     session.title = title || '新对话';
     return { ok: true, session };
   },
-  sendPanelChatMessage: async (id: string, message: string) => {
+  sendPanelChatMessage: async (id: string, message: string, preferredAgentId?: string) => {
     await delay(900);
     const session = fakePanelChatSessions.find(item => item.id === id);
     if (!session) return { ok: false, error: 'not found' };
     const now = Date.now();
     const userMessage = { id: `user-${now}`, role: 'user', content: message, timestamp: new Date(now).toISOString() };
-    const botMessage = { id: `assistant-${now}`, role: 'assistant', content: `Demo 模式下，OpenClaw 会在这里直接回复你，并且可以继续使用本地技能与工作区能力。\n\n你刚刚说的是：${message}`, timestamp: new Date(now + 1000).toISOString() };
-    fakePanelChatMessages[id] = [...(fakePanelChatMessages[id] || []), userMessage, botMessage];
+    const botMessage = session.chatType === 'group'
+      ? { id: `assistant-${now}`, role: 'assistant', agentId: session.controllerAgentId || 'main', stage: 'final', content: `这是群聊 Demo：主智能体已收到任务，并优先参考 ${preferredAgentId || session.controllerAgentId || 'main'} 的处理意见后给出最终总结。\n\n任务内容：${message}`, timestamp: new Date(now + 1000).toISOString() }
+      : { id: `assistant-${now}`, role: 'assistant', content: `Demo 模式下，OpenClaw 会在这里直接回复你，并且可以继续使用本地技能与工作区能力。\n\n你刚刚说的是：${message}`, timestamp: new Date(now + 1000).toISOString() };
+    const internalMessage = session.chatType === 'group' && preferredAgentId && preferredAgentId !== (session.controllerAgentId || 'main')
+      ? [{ id: `internal-${now}`, role: 'assistant', agentId: preferredAgentId, internal: true, stage: 'report', content: `这是来自 ${preferredAgentId} 的内部协作回报。`, timestamp: new Date(now + 500).toISOString() }]
+      : [];
+    fakePanelChatMessages[id] = [...(fakePanelChatMessages[id] || []), userMessage, ...internalMessage, botMessage];
     session.updatedAt = now + 1000;
     session.messageCount = fakePanelChatMessages[id].length;
     session.lastMessage = message;

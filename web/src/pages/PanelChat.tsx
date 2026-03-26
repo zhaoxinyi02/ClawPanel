@@ -1,6 +1,6 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Bot, Check, Copy, Loader2, MessageSquarePlus, Send, Square, Trash2, Users } from 'lucide-react';
+import { Bot, Check, ChevronDown, ChevronUp, Copy, Loader2, MessageSquarePlus, Send, Square, Trash2, User, Users } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from '../lib/api';
@@ -11,6 +11,11 @@ type PanelChatSession = {
   openclawSessionId: string;
   agentId: string;
   chatType: 'direct' | 'group';
+  participantAgentIds?: string[];
+  controllerAgentId?: string;
+  preferredAgentId?: string;
+  groupAgentSessionIds?: Record<string, string>;
+  status?: 'idle' | 'dispatching' | 'running' | 'reviewing' | 'done';
   title: string;
   targetId?: string;
   targetName?: string;
@@ -29,14 +34,39 @@ type PanelChatMessage = {
   sessionId?: string;
   images?: { src: string; mimeType?: string }[];
   agentId?: string;
-  stage?: 'user' | 'plan' | 'dispatch' | 'report' | 'final';
+  stage?: 'user' | 'plan' | 'dispatch' | 'report' | 'review' | 'final';
+  internal?: boolean;
+};
+
+type GroupSessionDraft = {
+  open: boolean;
+  title: string;
+  agentIds: string[];
 };
 
 type ChatMode = 'direct' | 'group';
 
+type GroupMessageView = 'all' | 'internal' | 'final';
+
 type AgentOption = {
   id: string;
   name?: string;
+  isDefault?: boolean;
+};
+
+type GroupTaskBundle = {
+  taskId: string;
+  meta: {
+    status: string;
+    currentStage: string;
+    title: string;
+  };
+  spec?: string;
+  result?: string;
+  error?: string;
+  timeline?: Array<{ time: string; type: string; agentId?: string; targetAgentId?: string; message?: string }>;
+  subtasks?: Record<string, { agentId: string; role: string; status: string; summary?: string }>;
+  artifacts?: Record<string, string>;
 };
 
 function normalizeUserMessageContent(content: string) {
@@ -50,6 +80,7 @@ function stageLabel(stage: PanelChatMessage['stage'], locale: string) {
       case 'plan': return 'Main Agent Analysis';
       case 'dispatch': return 'Task Dispatch';
       case 'report': return 'Agent Reports';
+      case 'review': return 'Reviewer Validation';
       case 'final': return 'Main Agent Summary';
       default: return '';
     }
@@ -59,12 +90,59 @@ function stageLabel(stage: PanelChatMessage['stage'], locale: string) {
     case 'plan': return '主 Agent 分析';
     case 'dispatch': return '任务分派';
     case 'report': return 'Agent 回报';
+    case 'review': return '校验复核';
     case 'final': return '主 Agent 汇总';
     default: return '';
   }
 }
 
+function isDiagramLine(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (/^#{1,6}\s/.test(trimmed)) return false;
+  if (/^[*-]\s/.test(trimmed)) return false;
+  if (/[┌┐└┘├┤┬┴┼│─]/.test(trimmed)) return true;
+  return false;
+}
+
+function formatDiagramBlocks(content: string) {
+  const lines = content.split('\n');
+  const out: string[] = [];
+  let buffer: string[] = [];
+
+  const flush = () => {
+    if (buffer.length === 0) return;
+    if (buffer.length >= 2) {
+      out.push('```text');
+      out.push(...buffer);
+      out.push('```');
+    } else {
+      out.push(...buffer);
+    }
+    buffer = [];
+  };
+
+  for (const line of lines) {
+    if (isDiagramLine(line)) {
+      buffer.push(line);
+      continue;
+    }
+    flush();
+    out.push(line);
+  }
+  flush();
+  return out.join('\n');
+}
+
 function agentBadgeTone(agentId: string) {
+  const normalized = agentId.trim().toLowerCase();
+  const fixed: Record<string, string> = {
+    main: 'border border-sky-200 bg-sky-100 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/15 dark:text-sky-200',
+    coding: 'border border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-200',
+    writer: 'border border-violet-200 bg-violet-100 text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/15 dark:text-violet-200',
+    reviewer: 'border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-200',
+  };
+  if (fixed[normalized]) return fixed[normalized];
   const tones = [
     'border border-sky-200 bg-sky-100 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/15 dark:text-sky-200',
     'border border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-200',
@@ -76,36 +154,46 @@ function agentBadgeTone(agentId: string) {
   return tones[hash];
 }
 
-function buildMockGroupMessages(agentIds: string[], locale: string): PanelChatMessage[] {
-  const now = Date.now();
-  const mainAgent = agentIds[0] || 'main';
-  const workers = agentIds.slice(1, 4);
-  const list = workers.length > 0 ? workers : ['research', 'coding', 'qa'];
-  const lines = locale === 'en'
-    ? {
-        user: 'Please prepare a coordinated plan for the next game patch. We need a spring version update with a new boss event, balance tuning for three classes, shop bundle refresh, and a low-risk rollout schedule for live servers.',
-        mainPlan: `**${mainAgent}** received the patch request and split it into production tracks:\n\n- **${list[0]}**: review event content scope, boss mechanics, and reward pacing\n- **${list[1]}**: define combat balance adjustments and patch-note wording for the affected classes\n- **${list[2]}**: assess release risks, shop refresh timing, and live rollout safeguards`,
-        workerA: `**${list[0]}**: Event proposal ready. The new seasonal boss should run as a 14-day limited event with three difficulty tiers, milestone rewards on days 3/7/14, and a story intro that reuses the current chapter hub to reduce asset risk.`,
-        workerB: `**${list[1]}**: Balance draft ready. Warrior survivability can be reduced slightly in PvP, Mage burst should gain a longer cooldown window, and Ranger sustained damage needs a small uplift for raid viability. Patch notes should frame this as role differentiation rather than hard nerfs.`,
-        workerC: `**${list[2]}**: Release risks are manageable if we stage the update: deploy data and store bundles first, enable the boss event behind a timed switch, and monitor payment, matchmaking, and boss clear-rate metrics in the first 2 hours.`,
-        final: `**${mainAgent}**: Final rollout summary: launch the spring version in three phases - preload assets and store refresh, publish balance adjustments with clear notes, then open the seasonal boss event by switch control. This keeps monetization, gameplay, and live risk under separate checkpoints.`,
-      }
-    : {
-        user: '请为下一次游戏版本更新准备一份协同方案：版本主题是春季庆典，需要上线新世界 Boss 活动、调整三个职业平衡、更新商城礼包，并给出一个适合正式服的低风险发布节奏。',
-        mainPlan: `**${mainAgent}** 已接收版本更新任务，并拆分为具体工作流：\n\n- **${list[0]}**：梳理活动内容范围、Boss 机制与奖励节奏\n- **${list[1]}**：制定职业平衡调整方案，并整理公告文案口径\n- **${list[2]}**：评估上线风险、商城刷新时机与正式服灰度策略`,
-        workerA: `**${list[0]}**：活动方案已整理。建议新世界 Boss 采用 14 天限时活动，设置 3 档难度，并在第 3 / 7 / 14 天发放阶段奖励；剧情入口复用现有章节大厅，可以显著降低资源制作风险。`,
-        workerB: `**${list[1]}**：平衡草案已完成。战士在 PvP 的生存能力建议小幅下调，法师爆发保留但延长关键技能冷却窗口，游侠则提升持续输出能力，以增强团本存在感。公告中应强调“职业定位优化”，避免玩家直接理解为单纯削弱。`,
-        workerC: `**${list[2]}**：上线风险可控，前提是分阶段发布：先预热资源和商城礼包，再推送平衡调整与版本说明，最后通过开关开放世界 Boss 活动，并在前 2 小时重点观察支付、匹配和 Boss 通关率指标。`,
-        final: `**${mainAgent}**：我已汇总各 Agent 结果。建议春季版本按三阶段落地：先完成资源预加载与商城刷新，再发布平衡改动与说明公告，最后通过开关控制开放新 Boss 活动。这样能把商业、玩法和正式服风险拆开管理，便于逐段验证。`,
-      };
-  return [
-    { id: 'group-user', role: 'user', content: lines.user, timestamp: new Date(now).toISOString(), sessionId: 'group-demo', stage: 'user' },
-    { id: 'group-main-plan', role: 'assistant', agentId: mainAgent, content: lines.mainPlan, timestamp: new Date(now + 1000).toISOString(), sessionId: 'group-demo', stage: 'plan' },
-    { id: 'group-worker-a', role: 'assistant', agentId: list[0], content: lines.workerA, timestamp: new Date(now + 2000).toISOString(), sessionId: 'group-demo', stage: 'dispatch' },
-    { id: 'group-worker-b', role: 'assistant', agentId: list[1], content: lines.workerB, timestamp: new Date(now + 3000).toISOString(), sessionId: 'group-demo', stage: 'dispatch' },
-    { id: 'group-worker-c', role: 'assistant', agentId: list[2], content: lines.workerC, timestamp: new Date(now + 4000).toISOString(), sessionId: 'group-demo', stage: 'report' },
-    { id: 'group-main-final', role: 'assistant', agentId: mainAgent, content: lines.final, timestamp: new Date(now + 5000).toISOString(), sessionId: 'group-demo', stage: 'final' },
-  ];
+function agentDisplayName(agent: AgentOption | null | undefined) {
+  if (!agent) return '';
+  return agent.name ? `${agent.name} (${agent.id})` : agent.id;
+}
+
+function statusLabel(status: PanelChatSession['status'], locale: string) {
+  if (locale === 'en') {
+    switch (status) {
+      case 'dispatching': return 'Dispatching';
+      case 'running': return 'Running';
+      case 'reviewing': return 'Reviewing';
+      case 'done': return 'Done';
+      default: return 'Idle';
+    }
+  }
+  switch (status) {
+    case 'dispatching': return '分派中';
+    case 'running': return '执行中';
+    case 'reviewing': return '校验中';
+    case 'done': return '已完成';
+    default: return '空闲';
+  }
+}
+
+function groupPhaseSteps(locale: string) {
+  return locale === 'en'
+    ? [
+        { id: 'user', label: 'Task' },
+        { id: 'plan', label: 'Dispatch' },
+        { id: 'report', label: 'Execute' },
+        { id: 'review', label: 'Review' },
+        { id: 'final', label: 'Deliver' },
+      ]
+    : [
+        { id: 'user', label: '任务' },
+        { id: 'plan', label: '分派' },
+        { id: 'report', label: '执行' },
+        { id: 'review', label: '校验' },
+        { id: 'final', label: '交付' },
+      ];
 }
 
 export default function PanelChat() {
@@ -119,6 +207,12 @@ export default function PanelChat() {
   const [groupSessions, setGroupSessions] = useState<PanelChatSession[]>([]);
   const [groupMessages, setGroupMessages] = useState<Record<string, PanelChatMessage[]>>({});
   const [agents, setAgents] = useState<AgentOption[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState('main');
+  const [selectedGroupAgentId, setSelectedGroupAgentId] = useState('main');
+  const [groupDraft, setGroupDraft] = useState<GroupSessionDraft>({ open: false, title: '', agentIds: ['main'] });
+  const [groupTask, setGroupTask] = useState<GroupTaskBundle | null>(null);
+  const [showGroupTaskCard, setShowGroupTaskCard] = useState(true);
+  const [groupMessageView, setGroupMessageView] = useState<GroupMessageView>('all');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [processingSessionId, setProcessingSessionId] = useState('');
@@ -134,6 +228,7 @@ export default function PanelChat() {
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const previousAssistantRef = useRef('');
   const selectedIdRef = useRef('');
+  const detailRequestIdRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
   const abortMarkerHandledRef = useRef<Record<string, boolean>>({});
   const activeRequestIdRef = useRef(0);
@@ -142,15 +237,29 @@ export default function PanelChat() {
     if (locale === 'en') {
       return {
         title: 'Panel Chat',
-        subtitle: 'Talk to the local OpenClaw agent directly in the panel. Single-chat first, with group-chat structure reserved.',
+        subtitle: 'Talk to local OpenClaw directly in the panel, with single-agent and multi-agent collaboration modes.',
         direct: 'Direct chat',
-        group: 'Group chat (reserved)',
+        group: 'Group chat',
         newChat: 'New chat',
         emptyTitle: 'Start a local OpenClaw conversation',
         emptyDesc: 'Configure a model first, then chat with OpenClaw here directly.',
         hint: 'OpenClaw can use local files, workspace context, and installed skills here just like its native local mode.',
         input: 'Ask OpenClaw to analyze files, edit code, or use installed skills...',
-        groupInput: 'Coming soon.',
+        groupInput: 'Message the group. Main agent will coordinate the final answer.',
+        agentLabel: 'Agent',
+        agentForNewChat: 'Agent for new chat',
+        defaultAgentSuffix: 'default',
+        openWithAgent: 'New session with this agent',
+        groupReplyAgent: 'Preferred group agent',
+        createGroupTitle: 'Create group session',
+        groupParticipantHint: 'Select agents that can join this collaboration session.',
+        createGroupConfirm: 'Create group chat',
+        taskCard: 'Task card',
+        showTaskCard: 'Show task card',
+        hideTaskCard: 'Hide task card',
+        viewAll: 'All',
+        viewInternal: 'Internal',
+        viewFinal: 'Final',
         sending: 'Sending...',
         stop: 'Stop',
         processing: 'OpenClaw is thinking...',
@@ -176,15 +285,29 @@ export default function PanelChat() {
     }
     return {
       title: '面板聊天',
-      subtitle: '直接在面板里和本地 OpenClaw 交互。',
+      subtitle: '直接在面板里和本地 OpenClaw 交互，并支持多智能体协作。',
       direct: '单聊',
-      group: '群聊（预留）',
+      group: '群聊',
       newChat: '新建会话',
       emptyTitle: '开始一段本地 OpenClaw 对话',
       emptyDesc: '先在系统配置里配好模型，然后就可以在这里与OpenClaw直接聊天。',
       hint: '这里会直接调用本地 OpenClaw，能继续使用它已安装的技能、工作区上下文和本地文件能力。',
       input: '给 OpenClaw 发消息，比如让它分析文件、修改代码或调用已安装技能...',
-      groupInput: '即将上线，敬请期待',
+      groupInput: '输入群聊任务，最终由主智能体统一汇总回复。',
+      agentLabel: '智能体',
+      agentForNewChat: '新会话使用智能体',
+      defaultAgentSuffix: '默认',
+      openWithAgent: '以该智能体另开新会话',
+      groupReplyAgent: '优先处理智能体',
+      createGroupTitle: '新建群聊会话',
+      groupParticipantHint: '选择要参与本次协作的智能体，main 将默认作为主控。',
+      createGroupConfirm: '创建群聊',
+      taskCard: '协作任务卡片',
+      showTaskCard: '显示任务卡片',
+      hideTaskCard: '隐藏任务卡片',
+      viewAll: '全部',
+      viewInternal: '内部协作',
+      viewFinal: '最终结论',
       sending: '发送中...',
       stop: '中止',
       processing: 'OpenClaw 思考中...',
@@ -209,21 +332,81 @@ export default function PanelChat() {
     };
   }, [locale]);
 
-  const displayedSessions = chatMode === 'group' ? groupSessions : sessions;
+  const directSessions = useMemo(() => {
+    if (!selectedAgentId) return sessions.filter(item => item.chatType === 'direct');
+    return sessions.filter(item => item.chatType === 'direct' && item.agentId === selectedAgentId);
+  }, [selectedAgentId, sessions]);
+  const displayedSessions = directSessions;
   const selectedSession = displayedSessions.find(item => item.id === selectedId) || null;
-  const liveMessages = chatMode === 'group' ? (groupMessages[selectedId] || []) : messages;
-  const processing = chatMode === 'direct' && ((!!selectedId && processingSessionId === selectedId) || !!selectedSession?.processing);
+  const liveMessages = messages;
+  const processing = (!!selectedId && processingSessionId === selectedId) || !!selectedSession?.processing;
   const interactionLocked = loading || !!processingSessionId || creating;
   const sessionSwitchLocked = creating;
+  const selectedAgentMeta = useMemo(() => agents.find(item => item.id === selectedSession?.agentId) || null, [agents, selectedSession?.agentId]);
+  const selectedDraftAgentMeta = useMemo(() => agents.find(item => item.id === selectedAgentId) || null, [agents, selectedAgentId]);
   const timelineMessages = useMemo(() => {
-    const pending = chatMode === 'direct' && pendingUserMessage && pendingUserMessage.sessionId === selectedId && !liveMessages.some(item => item.role === 'user' && normalizeUserMessageContent(item.content) === normalizeUserMessageContent(pendingUserMessage.content)) ? [pendingUserMessage] : [];
-    return [...liveMessages, ...(chatMode === 'direct' ? (abortedMarkers[selectedId] || []) : []), ...pending].sort((a, b) => {
+    const pending = pendingUserMessage && pendingUserMessage.sessionId === selectedId && !liveMessages.some(item => item.role === 'user' && normalizeUserMessageContent(item.content) === normalizeUserMessageContent(pendingUserMessage.content)) ? [pendingUserMessage] : [];
+    return [...liveMessages, ...(abortedMarkers[selectedId] || []), ...pending].sort((a, b) => {
       const ta = new Date(a.timestamp).getTime();
       const tb = new Date(b.timestamp).getTime();
-      if (ta === tb) return a.id.localeCompare(b.id);
+      if (ta === tb) {
+        const order = (role?: string) => {
+          switch (role) {
+            case 'user': return 0;
+            case 'assistant': return 1;
+            case 'system': return 2;
+            default: return 3;
+          }
+        };
+        const diff = order(a.role) - order(b.role);
+        if (diff !== 0) return diff;
+        return a.id.localeCompare(b.id);
+      }
       return ta - tb;
     });
-  }, [abortedMarkers, chatMode, liveMessages, pendingUserMessage, selectedId]);
+  }, [abortedMarkers, liveMessages, pendingUserMessage, selectedId]);
+
+  const filteredTimelineMessages = useMemo(() => {
+    if (chatMode !== 'group') return timelineMessages;
+    switch (groupMessageView) {
+      case 'internal':
+        return timelineMessages.filter(item => item.internal || item.role === 'system');
+      case 'final':
+        return timelineMessages.filter(item => item.role === 'user' || (!item.internal && item.stage === 'final'));
+      default:
+        return timelineMessages;
+    }
+  }, [chatMode, groupMessageView, timelineMessages]);
+
+  const latestGroupUserTask = useMemo(() => {
+    if (chatMode !== 'group') return '';
+    const latestUser = [...timelineMessages].reverse().find(item => item.role === 'user');
+    return latestUser?.content || '';
+  }, [chatMode, timelineMessages]);
+
+  const groupProgress = useMemo(() => {
+    const steps = groupPhaseSteps(locale);
+    if (chatMode !== 'group') return { steps, activeIndex: 0 };
+    if (groupTask?.subtasks) {
+      const subtasks = Object.values(groupTask.subtasks);
+      const hasReturned = subtasks.some(item => item.status === 'returned');
+      const hasReview = subtasks.some(item => item.role === 'reviewer' && item.status === 'done');
+      const allDone = subtasks.length > 0 && subtasks.every(item => item.status === 'done');
+      let current = 'user';
+      if (hasReturned) current = 'review';
+      else if (allDone) current = 'final';
+      else if (hasReview) current = 'review';
+      else if (subtasks.some(item => item.status === 'done')) current = 'report';
+      else if (processing) current = 'plan';
+      const activeIndex = Math.max(0, steps.findIndex(step => step.id === current));
+      return { steps, activeIndex };
+    }
+    const latestStage = [...timelineMessages].reverse().find(item => !!item.stage)?.stage || 'user';
+    let current = latestStage;
+    if (processing && latestStage === 'plan') current = 'report';
+    const activeIndex = Math.max(0, steps.findIndex(step => step.id === current));
+    return { steps, activeIndex };
+  }, [chatMode, groupTask, locale, processing, timelineMessages]);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -238,6 +421,32 @@ export default function PanelChat() {
       setRenaming(false);
     }
   }, [selectedSession]);
+
+  useEffect(() => {
+    if (chatMode !== 'direct') return;
+    if (selectedSession?.agentId) {
+      setSelectedAgentId(selectedSession.agentId);
+    }
+  }, [chatMode, selectedSession?.agentId]);
+
+  useEffect(() => {
+    if (chatMode !== 'group') return;
+    if (!selectedSession) return;
+    setSelectedGroupAgentId(selectedSession.preferredAgentId || selectedSession.controllerAgentId || selectedSession.participantAgentIds?.[0] || 'main');
+  }, [chatMode, selectedSession]);
+
+  useEffect(() => {
+    if (chatMode !== 'direct') return;
+    if (!selectedAgentId) return;
+    if (selectedId && directSessions.some(item => item.id === selectedId)) return;
+    setSelectedId(directSessions[0]?.id || '');
+  }, [chatMode, directSessions, selectedAgentId, selectedId]);
+
+  useEffect(() => {
+    if (chatMode !== 'group') return;
+    if (selectedId && groupSessions.some(item => item.id === selectedId)) return;
+    setSelectedId(groupSessions[0]?.id || '');
+  }, [chatMode, groupSessions, selectedId]);
 
   useEffect(() => {
     if (!pendingUserMessage || pendingUserMessage.sessionId !== selectedId) return;
@@ -263,44 +472,37 @@ export default function PanelChat() {
     });
   }, [text.failedLoad]);
 
-  const ensureGroupDemoSession = useCallback((agentList: AgentOption[]) => {
-    const workerIds = agentList.map(item => item.id).filter(Boolean);
-    const demoSession: PanelChatSession = {
-      id: 'group-demo',
-      openclawSessionId: 'group-demo',
-      agentId: workerIds[0] || 'main',
-      chatType: 'group',
-      title: locale === 'en' ? 'Multi-Agent Demo' : '多 Agent 协作演示',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      messageCount: 6,
-      lastMessage: locale === 'en' ? 'Main agent completed the orchestration summary.' : '主 Agent 已完成协作汇总。',
-    };
-    setGroupSessions([demoSession]);
-    setGroupMessages({ 'group-demo': buildMockGroupMessages(workerIds, locale) });
-    return demoSession.id;
-  }, [locale]);
-
   const loadAgents = useCallback(async () => {
     try {
       const res = await api.getAgentsConfig();
       const list = Array.isArray(res?.agents?.list) ? res.agents.list : [];
-      const normalized = list.map((item: any) => ({ id: String(item?.id || '').trim(), name: String(item?.name || '').trim() })).filter((item: AgentOption) => item.id);
+      const defaultAgent = typeof res?.agents?.default === 'string' ? String(res.agents.default).trim() : '';
+      const normalized = list.map((item: any) => ({ id: String(item?.id || '').trim(), name: String(item?.name || '').trim(), isDefault: String(item?.id || '').trim() === defaultAgent || !!item?.default })).filter((item: AgentOption) => item.id);
       setAgents(normalized);
-      ensureGroupDemoSession(normalized);
+      setSelectedAgentId(current => current || defaultAgent || normalized[0]?.id || 'main');
+      setSelectedGroupAgentId(current => current || defaultAgent || normalized[0]?.id || 'main');
+      setGroupDraft(current => ({ ...current, agentIds: current.agentIds.length > 0 ? current.agentIds : [defaultAgent || normalized[0]?.id || 'main'] }));
     } catch {
       const fallback = [{ id: 'main' }, { id: 'planner' }, { id: 'coder' }, { id: 'reviewer' }];
       setAgents(fallback);
-      ensureGroupDemoSession(fallback);
+      setSelectedAgentId(current => current || fallback[0].id);
+      setSelectedGroupAgentId(current => current || fallback[0].id);
+      setGroupDraft(current => ({ ...current, agentIds: current.agentIds.length > 0 ? current.agentIds : [fallback[0].id] }));
     }
-  }, [ensureGroupDemoSession]);
+  }, []);
 
   const loadDetail = useCallback(async (id: string) => {
+    const requestId = detailRequestIdRef.current + 1;
+    detailRequestIdRef.current = requestId;
     if (!id) {
       setMessages([]);
+      setPendingUserMessage(null);
       return;
     }
+    setMessages([]);
+    setPendingUserMessage(null);
     const res = await api.getPanelChatSessionDetail(id);
+    if (detailRequestIdRef.current != requestId) return;
     if (!res?.ok) {
       setErrorText(text.failedDetail);
       return;
@@ -309,6 +511,16 @@ export default function PanelChat() {
     setMessages(Array.isArray(res.messages) ? res.messages : []);
     setPendingUserMessage(null);
   }, [text.failedDetail]);
+
+  const loadLatestTask = useCallback(async (id: string) => {
+    if (!id) {
+      setGroupTask(null);
+      return;
+    }
+    const res = await api.getPanelChatLatestTask(id);
+    if (!res?.ok) return;
+    setGroupTask(res.task || null);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -321,16 +533,35 @@ export default function PanelChat() {
   }, [loadAgents, loadSessions]);
 
   useEffect(() => {
-    if (chatMode === 'group') return;
     loadDetail(selectedId);
-  }, [chatMode, loadDetail, selectedId]);
+  }, [loadDetail, selectedId]);
 
   useEffect(() => {
+    if (chatMode !== 'group') {
+      setGroupTask(null);
+      return;
+    }
+    void loadLatestTask(selectedId);
+  }, [chatMode, loadLatestTask, selectedId]);
+
+  useEffect(() => {
+    if (chatMode !== 'group' || !processing || !selectedId) return;
+    const timer = window.setInterval(() => {
+      void loadLatestTask(selectedId);
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [chatMode, loadLatestTask, processing, selectedId]);
+
+  useEffect(() => {
+    setMessages([]);
+    setPendingUserMessage(null);
+    setErrorText('');
+  }, [chatMode]);
+
+  useLayoutEffect(() => {
     const container = messageListRef.current;
     if (!container) return;
-    requestAnimationFrame(() => {
-      container.scrollTop = container.scrollHeight;
-    });
+    container.scrollTop = container.scrollHeight;
   }, [messages, pendingUserMessage, processing]);
 
   useEffect(() => {
@@ -344,12 +575,13 @@ export default function PanelChat() {
     }
   }, [messages]);
 
-  const createSession = useCallback(async () => {
+  const createSession = useCallback(async (agentOverride?: string) => {
     if (creating) return '';
     setCreating(true);
     setErrorText('');
     try {
-      const res = await api.createPanelChatSession({ chatType: 'direct' });
+      const agentId = (agentOverride || selectedAgentId || agents[0]?.id || 'main').trim();
+      const res = await api.createPanelChatSession({ chatType: 'direct', agentId });
       if (!res?.ok || !res.session?.id) {
         setErrorText(text.failedCreate);
         return '';
@@ -361,7 +593,41 @@ export default function PanelChat() {
     } finally {
       setCreating(false);
     }
-  }, [creating, loadSessions, text.failedCreate]);
+  }, [agents, creating, loadSessions, selectedAgentId, text.failedCreate]);
+
+  const createGroupSession = useCallback(async () => {
+    const participantAgentIds = Array.from(new Set(groupDraft.agentIds.filter(Boolean)));
+    if (participantAgentIds.length === 0) {
+      setErrorText(text.failedCreate);
+      return '';
+    }
+    const controllerAgentId = participantAgentIds.includes('main') ? 'main' : participantAgentIds[0];
+    const preferredAgentId = participantAgentIds.includes(selectedGroupAgentId) ? selectedGroupAgentId : controllerAgentId;
+    setCreating(true);
+    setErrorText('');
+    try {
+      const res = await api.createPanelChatSession({
+        title: groupDraft.title,
+        chatType: 'group',
+        agentId: controllerAgentId,
+        participantAgentIds,
+        controllerAgentId,
+        preferredAgentId,
+      } as any);
+      if (!res?.ok || !res.session?.id) {
+        setErrorText(text.failedCreate);
+        return '';
+      }
+      await loadSessions(res.session.id);
+      setSelectedId(res.session.id);
+      setMessages([]);
+      setSelectedGroupAgentId(preferredAgentId);
+      setGroupDraft({ open: false, title: '', agentIds: participantAgentIds });
+      return res.session.id as string;
+    } finally {
+      setCreating(false);
+    }
+  }, [groupDraft, loadSessions, selectedGroupAgentId, text.failedCreate]);
 
   const appendAbortMarker = useCallback((sessionId: string) => {
     if (abortMarkerHandledRef.current[sessionId]) return;
@@ -393,7 +659,8 @@ export default function PanelChat() {
   }, [appendAbortMarker, processingSessionId]);
 
   const handleSend = useCallback(async () => {
-    const message = input.trim();
+    const rawMessage = input.trim();
+    const message = rawMessage;
     if (!message || loading) return;
     let sessionId = selectedId;
     const requestId = activeRequestIdRef.current + 1;
@@ -403,13 +670,14 @@ export default function PanelChat() {
     setInput('');
     try {
       if (!sessionId) {
-        sessionId = await createSession();
+        sessionId = chatMode === 'group' ? await createGroupSession() : await createSession();
       }
       if (!sessionId) return;
+      const effectivePreferredAgentId = chatMode === 'group' ? selectedGroupAgentId : '';
       setPendingUserMessage({
         id: `pending-user-${Date.now()}`,
         role: 'user',
-        content: message,
+        content: rawMessage,
         timestamp: new Date().toISOString(),
         sessionId,
       });
@@ -423,7 +691,7 @@ export default function PanelChat() {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify(chatMode === 'group' ? { message, preferredAgentId: effectivePreferredAgentId } : { message }),
         signal: controller.signal,
       });
       const res = await response.json();
@@ -431,8 +699,20 @@ export default function PanelChat() {
       if (activeRequestIdRef.current !== requestId) return;
       if (res?.ok) {
         abortMarkerHandledRef.current[sessionId] = false;
+        if (chatMode === 'group' && effectivePreferredAgentId) {
+          setSelectedGroupAgentId(effectivePreferredAgentId);
+        }
         if (selectedIdRef.current === sessionId) {
-          setMessages(Array.isArray(res.messages) ? res.messages : []);
+          const nextMessages = Array.isArray(res.messages) ? [...res.messages] : [];
+          if (chatMode === 'group' && nextMessages.length > 0) {
+            for (let i = nextMessages.length - 1; i >= 0; i -= 1) {
+              if (nextMessages[i]?.role === 'user') {
+                nextMessages[i] = { ...nextMessages[i], content: rawMessage };
+                break;
+              }
+            }
+          }
+          setMessages(nextMessages);
           setPendingUserMessage(null);
         }
         await loadSessions(sessionId);
@@ -466,19 +746,13 @@ export default function PanelChat() {
       }
       setLoading(false);
     }
-  }, [appendAbortMarker, createSession, input, loadSessions, loading, selectedId, text.failedSend]);
+  }, [agents, appendAbortMarker, chatMode, createGroupSession, createSession, input, loadSessions, loading, selectedGroupAgentId, selectedId, text.failedSend]);
 
   const handleDelete = useCallback(async () => {
     if (!selectedSession || interactionLocked || !window.confirm(text.deleteConfirm)) return;
-    if (chatMode === 'group') {
-      setGroupSessions([]);
-      setGroupMessages({});
-      setSelectedId('');
-      setMessages([]);
-      return;
-    }
     const deletingId = selectedSession.id;
-    const fallback = sessions.find(item => item.id !== deletingId)?.id || '';
+    const pool = chatMode === 'group' ? groupSessions : directSessions;
+    const fallback = pool.find(item => item.id !== deletingId)?.id || '';
     const res = await api.deletePanelChatSession(deletingId);
     if (!res?.ok) {
       setErrorText(text.failedDelete);
@@ -488,16 +762,10 @@ export default function PanelChat() {
     setSelectedId(fallback);
     if (!fallback) setMessages([]);
     await loadSessions(fallback);
-  }, [chatMode, interactionLocked, loadSessions, selectedSession, sessions, text.deleteConfirm, text.failedDelete]);
+  }, [chatMode, directSessions, groupSessions, interactionLocked, loadSessions, selectedSession, text.deleteConfirm, text.failedDelete]);
 
   const handleRename = useCallback(async () => {
     if (!selectedSession) return;
-    if (chatMode === 'group') {
-      const title = draftTitle.trim() || selectedSession.title;
-      setGroupSessions(current => current.map(item => item.id === selectedSession.id ? { ...item, title } : item));
-      setRenaming(false);
-      return;
-    }
     const title = draftTitle.trim();
     if (!title || title === selectedSession.title) {
       setRenaming(false);
@@ -550,6 +818,16 @@ export default function PanelChat() {
     }
   }, [locale]);
 
+  const handleCreateSessionWithSelectedAgent = useCallback(async () => {
+    const nextId = await createSession(selectedAgentId);
+    if (nextId) {
+      setChatMode('direct');
+      setSelectedId(nextId);
+      setMessages([]);
+      setPendingUserMessage(null);
+    }
+  }, [createSession, selectedAgentId]);
+
   return (
     <div className={`flex h-full min-h-0 flex-col gap-4 ${modern ? 'page-modern' : ''}`}>
       <section className={modern ? 'page-modern-header shrink-0' : 'ui-modern-card flex flex-wrap items-start justify-between gap-4 p-5'}>
@@ -574,10 +852,9 @@ export default function PanelChat() {
           <div className="shrink-0 border-b border-slate-200/70 bg-white/80 px-4 py-4 dark:border-slate-700/70 dark:bg-slate-950/40">
             <div className="flex items-center justify-between gap-3">
               <div className="flex gap-2 text-xs">
-                <button type="button" onClick={() => { setChatMode('direct'); setSelectedId(sessions[0]?.id || ''); }} className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs transition ${chatMode === 'direct' ? 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200' : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900'}`}>{text.direct}</button>
-                <button type="button" onClick={() => { const nextId = groupSessions[0]?.id || ensureGroupDemoSession(agents); setChatMode('group'); setSelectedId(nextId); }} className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs transition ${chatMode === 'group' ? 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200' : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900'}`}>{text.group}</button>
+                <span className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200">{text.direct}</span>
               </div>
-              <button onClick={chatMode === 'group' ? () => { const nextId = ensureGroupDemoSession(agents); setSelectedId(nextId); } : createSession} disabled={interactionLocked} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100">
+              <button onClick={() => void createSession()} disabled={interactionLocked} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100">
                 {creating ? <Loader2 size={14} className="animate-spin" /> : <MessageSquarePlus size={14} />}
                 {text.newChat}
               </button>
@@ -585,8 +862,30 @@ export default function PanelChat() {
             <div className="mt-3 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
               <span className="font-semibold text-slate-900 dark:text-slate-100 tabular-nums">{displayedSessions.length}</span>
               <span>会话</span>
-              {selectedSession && <span className={`rounded-full px-2 py-1 ${agentBadgeTone(selectedSession.agentId)}`}>{selectedSession.agentId}</span>}
             </div>
+            {chatMode === 'direct' && (
+              <div className="mt-3 rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-3 dark:border-slate-700 dark:bg-slate-950/50">
+                <label className="mb-2 block text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">{text.agentForNewChat}</label>
+                <select
+                  value={selectedAgentId}
+                  onChange={event => setSelectedAgentId(event.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-blue-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                >
+                  {agents.map(agent => (
+                    <option key={agent.id} value={agent.id}>{agent.name ? `${agent.name} (${agent.id})` : agent.id}{agent.isDefault ? ` · ${text.defaultAgentSuffix}` : ''}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => void handleCreateSessionWithSelectedAgent()}
+                  disabled={interactionLocked || !selectedAgentId}
+                  className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900"
+                >
+                  {text.openWithAgent}
+                  {selectedDraftAgentMeta && <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${agentBadgeTone(selectedDraftAgentMeta.id)}`}>{agentDisplayName(selectedDraftAgentMeta)}</span>}
+                </button>
+              </div>
+            )}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/70 p-3 dark:bg-slate-950/30">
             {booting ? (
@@ -600,6 +899,11 @@ export default function PanelChat() {
                     key={session.id}
                     onClick={() => {
                       if (sessionSwitchLocked) return;
+                      if (session.id !== selectedId) {
+                        detailRequestIdRef.current += 1;
+                        setMessages([]);
+                        setPendingUserMessage(null);
+                      }
                       setErrorText('');
                       setSelectedId(session.id);
                     }}
@@ -608,9 +912,9 @@ export default function PanelChat() {
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className={`truncate text-sm font-semibold ${selectedId === session.id ? 'text-blue-900 dark:text-blue-100' : 'text-slate-800 dark:text-slate-100'}`}>{session.title || text.newChat}</span>
-                      <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-500 dark:border-slate-600 dark:bg-transparent dark:text-slate-300">{session.chatType === 'group' ? <Users size={12} className="inline-block" /> : text.direct}</span>
+                      <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-500 dark:border-slate-600 dark:bg-transparent dark:text-slate-300">{session.chatType === 'group' ? <Users size={12} className="inline-block" /> : <User size={12} className="inline-block" />}</span>
                     </div>
-                    <p className={`mt-1 line-clamp-2 text-xs ${selectedId === session.id ? 'text-blue-700 dark:text-blue-200' : 'text-slate-500 dark:text-slate-400'}`}>{session.processing ? text.processing : (session.lastMessage || `Agent: ${session.agentId}`)}</p>
+                    <p className={`mt-1 line-clamp-2 text-xs ${selectedId === session.id ? 'text-blue-700 dark:text-blue-200' : 'text-slate-500 dark:text-slate-400'}`}>{session.processing ? text.processing : (session.lastMessage || `${text.agentLabel}: ${agentDisplayName(agents.find(item => item.id === session.agentId)) || session.agentId}`)}</p>
                   </button>
                 ))}
               </div>
@@ -632,20 +936,109 @@ export default function PanelChat() {
               ) : (
                 <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50">{selectedSession?.title || text.emptyTitle}</h3>
               )}
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{selectedSession ? `Agent: ${selectedSession.agentId} · ${selectedSession.chatType}` : text.emptyDesc}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                {selectedSession ? (
+                  selectedSession.chatType === 'group' ? (
+                    <>
+                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 dark:border-slate-700 dark:bg-slate-900">{statusLabel(selectedSession.status, locale)}</span>
+                      <span className="text-slate-400 dark:text-slate-500">主控</span>
+                      <span className={`rounded-full px-2.5 py-1 font-semibold ${agentBadgeTone(selectedSession.controllerAgentId || selectedSession.agentId)}`}>{agentDisplayName(agents.find(item => item.id === (selectedSession.controllerAgentId || selectedSession.agentId))) || selectedSession.controllerAgentId || selectedSession.agentId}</span>
+                      {selectedSession.participantAgentIds && selectedSession.participantAgentIds.filter(agentId => agentId !== (selectedSession.controllerAgentId || selectedSession.agentId)).length > 0 && (
+                        <>
+                          <span className="text-slate-400 dark:text-slate-500">参与</span>
+                          {selectedSession.participantAgentIds.filter(agentId => agentId !== (selectedSession.controllerAgentId || selectedSession.agentId)).map(agentId => {
+                            const agentMeta = agents.find(item => item.id === agentId);
+                            return <span key={agentId} className={`rounded-full px-2.5 py-1 font-semibold ${agentBadgeTone(agentId)}`}>{agentDisplayName(agentMeta) || agentId}</span>;
+                          })}
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <span>{text.agentLabel}:</span>
+                      <span className={`rounded-full px-2.5 py-1 font-semibold ${agentBadgeTone(selectedSession.agentId)}`}>{selectedAgentMeta?.name ? `${selectedAgentMeta.name} (${selectedSession.agentId})` : selectedSession.agentId}</span>
+                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 dark:border-slate-700 dark:bg-slate-900">{statusLabel(selectedSession.status, locale)}</span>
+                    </>
+                  )
+                ) : (
+                  <span>{text.emptyDesc}</span>
+                )}
+              </div>
               {processing && <p className="mt-1 text-xs font-medium text-blue-600 dark:text-blue-300">{text.processing}</p>}
             </div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setRenaming(value => !value)} disabled={!selectedSession || interactionLocked} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900">{text.rename}</button>
-              <button onClick={handleDelete} disabled={!selectedSession || interactionLocked} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900">
-                <Trash2 size={14} />
-                {text.delete}
-              </button>
+              <div className="flex items-center gap-2">
+                {chatMode === 'group' && (
+                  <button type="button" onClick={() => setShowGroupTaskCard(value => !value)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900">
+                    {showGroupTaskCard ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    {showGroupTaskCard ? text.hideTaskCard : text.showTaskCard}
+                  </button>
+                )}
+                <button onClick={() => setRenaming(value => !value)} disabled={!selectedSession || interactionLocked} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900">{text.rename}</button>
+                <button onClick={handleDelete} disabled={!selectedSession || interactionLocked} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900">
+                  <Trash2 size={14} />
+                  {text.delete}
+                </button>
             </div>
           </div>
 
           <div ref={messageListRef} className="min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.08),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.16),transparent_36%)] px-5 py-5 dark:bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.14),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.03),transparent_36%)]">
-            {messages.length === 0 ? (
+            {chatMode === 'group' && selectedSession && (
+              <div className="sticky top-0 z-10 mb-5 space-y-3 bg-transparent pb-2">
+                {showGroupTaskCard && (
+              <div className="rounded-3xl border border-slate-200/80 bg-white/95 p-4 shadow-sm backdrop-blur-sm dark:border-slate-700/80 dark:bg-slate-950/90">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">{text.taskCard}</div>
+                    <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-700 dark:text-slate-200">{latestGroupUserTask || '当前群聊会话正在等待新的协作任务。'}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-slate-400">主控</span>
+                    <span className={`rounded-full px-2.5 py-1 font-semibold ${agentBadgeTone(selectedSession.controllerAgentId || selectedSession.agentId)}`}>{agentDisplayName(agents.find(item => item.id === (selectedSession.controllerAgentId || selectedSession.agentId))) || selectedSession.controllerAgentId || selectedSession.agentId}</span>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-5">
+                  {groupProgress.steps.map((step, index) => {
+                    const active = index === groupProgress.activeIndex;
+                    const done = index < groupProgress.activeIndex || (!processing && index === groupProgress.activeIndex && groupProgress.activeIndex > 0);
+                    return (
+                      <div key={step.id} className={`rounded-2xl border px-3 py-3 text-center transition ${active ? 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200' : done ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200' : 'border-slate-200 bg-slate-50 text-slate-400 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-500'}`}>
+                        <div className="mx-auto mb-2 flex h-7 w-7 items-center justify-center rounded-full border border-current text-[11px] font-semibold">{index + 1}</div>
+                        <div className="text-xs font-medium">{step.label}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+                  {[['all', text.viewAll], ['internal', text.viewInternal], ['final', text.viewFinal]].map(([value, label]) => (
+                    <button key={value} type="button" onClick={() => setGroupMessageView(value as GroupMessageView)} className={`rounded-xl border px-3 py-1.5 transition ${groupMessageView === value ? 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200' : 'border-slate-200 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400'}`}>{label}</button>
+                  ))}
+                </div>
+                {groupTask && (
+                  <div className="mt-4 max-h-[56vh] overflow-y-auto pr-1">
+                  <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-900/60">
+                      <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">子任务状态</div>
+                      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                        {Object.values(groupTask.subtasks || {}).map(subtask => {
+                          const agentMeta = agents.find(item => item.id === subtask.agentId);
+                          return (
+                            <div key={subtask.agentId} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs dark:border-slate-700 dark:bg-slate-950/80">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className={`rounded-full px-2 py-1 font-semibold ${agentBadgeTone(subtask.agentId)}`}>{agentDisplayName(agentMeta) || subtask.agentId}</span>
+                                <span className="rounded-full border border-slate-200 px-2 py-1 text-[10px] text-slate-500 dark:border-slate-700 dark:text-slate-400">{subtask.status}</span>
+                              </div>
+                              {subtask.summary && <p className="mt-2 leading-5 text-slate-500 dark:text-slate-400">{subtask.summary}</p>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                  </div>
+                  </div>
+                )}
+              </div>
+                )}
+              </div>
+            )}
+            {filteredTimelineMessages.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-slate-400">
                 <div className="flex h-16 w-16 items-center justify-center rounded-full border border-blue-100 bg-white/80 text-blue-500 shadow-sm dark:border-blue-500/20 dark:bg-slate-900/70 dark:text-blue-200">
                   <Bot size={28} />
@@ -656,11 +1049,13 @@ export default function PanelChat() {
                 </div>
               </div>
             ) : (
-              <div className="space-y-4">
-                {timelineMessages.map((message, index) => {
+              <div className="flex min-h-full flex-col justify-end">
+                <div className="space-y-4">
+                {filteredTimelineMessages.map((message, index) => {
                   const isUser = message.role === 'user';
                   const isSystem = message.role === 'system';
-                  const showStageDivider = chatMode === 'group' && !!message.stage && (index === 0 || timelineMessages[index - 1]?.stage !== message.stage);
+                  const isInternal = !!message.internal;
+                  const showStageDivider = chatMode === 'group' && !!message.stage && (index === 0 || filteredTimelineMessages[index - 1]?.stage !== message.stage);
                   return (
                     <Fragment key={message.id}>
                     {showStageDivider && (
@@ -680,10 +1075,11 @@ export default function PanelChat() {
                       ) : (
                         <>
                       {!isUser && <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"><Bot size={15} /></div>}
-                      <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm transition ${isUser ? 'rounded-tr-sm bg-[linear-gradient(135deg,#1d4ed8,#0284c7)] text-right text-white shadow-blue-200/50 dark:shadow-none' : 'rounded-tl-sm border border-slate-200/70 bg-white/95 text-slate-700 dark:border-slate-700/70 dark:bg-slate-900/92 dark:text-slate-200'} ${highlightedId === message.id ? 'ring-2 ring-blue-300 dark:ring-blue-500/50' : ''}`}>
+                      <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm transition ${isUser ? 'rounded-tr-sm bg-[linear-gradient(135deg,#1d4ed8,#0284c7)] text-right text-white shadow-blue-200/50 dark:shadow-none' : isInternal ? 'rounded-tl-sm border border-amber-200/80 bg-amber-50 text-slate-700 dark:border-amber-500/20 dark:bg-slate-900 dark:text-slate-200' : 'rounded-tl-sm border border-slate-200/70 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200'} ${highlightedId === message.id ? 'ring-2 ring-blue-300 dark:ring-blue-500/50' : ''}`}>
                         {!isUser && chatMode === 'group' && message.agentId && (
                           <div className="mb-2 flex items-center gap-2 text-[11px]">
                             <span className={`rounded-full px-2.5 py-1 font-semibold ${agentBadgeTone(message.agentId)}`}>{message.agentId}</span>
+                            {isInternal && <span className="rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[10px] text-amber-700 dark:border-amber-500/30 dark:bg-transparent dark:text-amber-200">内部协作</span>}
                             {message.agentId === (agents[0]?.id || 'main') && <span className="text-slate-400 dark:text-slate-500">{locale === 'en' ? 'Lead Agent' : '主 Agent'}</span>}
                           </div>
                         )}
@@ -694,6 +1090,11 @@ export default function PanelChat() {
                                 remarkPlugins={[remarkGfm]}
                                 components={{
                                   p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                                  hr: () => <hr className="my-4 border-slate-200 dark:border-slate-700" />,
+                                  table: ({ children }) => <div className="my-3 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700"><table className="min-w-full border-collapse text-left text-[13px]">{children}</table></div>,
+                                  thead: ({ children }) => <thead className="bg-slate-100 dark:bg-slate-900">{children}</thead>,
+                                  th: ({ children }) => <th className="border-b border-slate-200 px-3 py-2 font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-100">{children}</th>,
+                                  td: ({ children }) => <td className="border-b border-slate-200 px-3 py-2 text-slate-600 dark:border-slate-800 dark:text-slate-300">{children}</td>,
                                   ul: ({ children }) => <ul className="mb-2 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>,
                                   ol: ({ children }) => <ol className="mb-2 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>,
                                   code: ({ className, children, ...props }: any) => {
@@ -728,7 +1129,7 @@ export default function PanelChat() {
                                   },
                                 }}
                               >
-                                {message.content}
+                                {formatDiagramBlocks(message.content)}
                               </ReactMarkdown>
                             )}
                             {Array.isArray(message.images) && message.images.length > 0 && (
@@ -762,6 +1163,7 @@ export default function PanelChat() {
                     </div>
                   </div>
                 )}
+                </div>
               </div>
             )}
           </div>
@@ -779,12 +1181,24 @@ export default function PanelChat() {
                 }}
                 rows={3}
                 placeholder={chatMode === 'group' ? text.groupInput : text.input}
-                disabled={chatMode === 'group'}
                 className="w-full resize-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-slate-400 dark:text-slate-100"
               />
               <div className="flex items-center justify-between px-2 pb-1 pt-2">
-                <div className="text-xs text-slate-400">{text.enterHint}</div>
-                <button onClick={loading ? handleAbort : handleSend} disabled={chatMode === 'group' || creating || (!loading && !input.trim())} className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-50 ${loading ? 'bg-rose-600 hover:bg-rose-500 dark:bg-rose-500 dark:text-white dark:hover:bg-rose-400' : 'bg-slate-900 hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100'}`}>
+                <div className="flex items-center gap-3 text-xs text-slate-400">
+                  <span>{text.enterHint}</span>
+                  {chatMode === 'group' && selectedSession?.participantAgentIds && selectedSession.participantAgentIds.length > 0 && (
+                    <label className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                      <span>{text.groupReplyAgent}</span>
+                      <select value={selectedGroupAgentId} onChange={event => setSelectedGroupAgentId(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+                        {selectedSession.participantAgentIds.map(agentId => {
+                          const agentMeta = agents.find(item => item.id === agentId);
+                          return <option key={agentId} value={agentId}>{agentDisplayName(agentMeta) || agentId}</option>;
+                        })}
+                      </select>
+                    </label>
+                  )}
+                </div>
+                <button onClick={loading ? handleAbort : handleSend} disabled={creating || (!loading && !input.trim())} className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-50 ${loading ? 'bg-rose-600 hover:bg-rose-500 dark:bg-rose-500 dark:text-white dark:hover:bg-rose-400' : 'bg-slate-900 hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100'}`}>
                   {loading ? <Square size={15} fill="currentColor" /> : <Send size={16} />}
                   {loading ? text.stop : text.send}
                 </button>
@@ -793,6 +1207,53 @@ export default function PanelChat() {
           </div>
         </div>
       </section>
+
+      {groupDraft.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4">
+          <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-950">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">{text.createGroupTitle}</h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{text.groupParticipantHint}</p>
+              </div>
+              <button type="button" onClick={() => setGroupDraft(current => ({ ...current, open: false }))} className="rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-300">关闭</button>
+            </div>
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="mb-2 block text-xs text-slate-500 dark:text-slate-400">{text.renamePlaceholder}</label>
+                <input value={groupDraft.title} onChange={event => setGroupDraft(current => ({ ...current, title: event.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" placeholder={text.createGroupTitle} />
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {agents.map(agent => {
+                  const checked = groupDraft.agentIds.includes(agent.id);
+                  return (
+                    <label key={agent.id} className={`flex cursor-pointer items-center justify-between gap-3 rounded-2xl border px-3 py-3 ${checked ? 'border-blue-200 bg-blue-50 dark:border-blue-500/30 dark:bg-blue-500/10' : 'border-slate-200 dark:border-slate-700'}`}>
+                      <div>
+                        <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{agentDisplayName(agent)}</div>
+                        {agent.isDefault && <div className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">{text.defaultAgentSuffix}</div>}
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => setGroupDraft(current => {
+                          const exists = current.agentIds.includes(agent.id);
+                          const agentIds = exists ? current.agentIds.filter(item => item !== agent.id) : [...current.agentIds, agent.id];
+                          return { ...current, agentIds: agentIds.length > 0 ? agentIds : ['main'] };
+                        })}
+                        className="h-4 w-4"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setGroupDraft(current => ({ ...current, open: false }))} className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-300">取消</button>
+                <button type="button" onClick={() => void createGroupSession()} disabled={creating || groupDraft.agentIds.length === 0} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-slate-900">{text.createGroupConfirm}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

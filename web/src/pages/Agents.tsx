@@ -1359,6 +1359,7 @@ function AgentsPage() {
   const [coreFilesLoading, setCoreFilesLoading] = useState(false);
   const [selectedCoreFileName, setSelectedCoreFileName] = useState('AGENTS.md');
   const [coreFileDraft, setCoreFileDraft] = useState('');
+  const [coreFileTouched, setCoreFileTouched] = useState(false);
   const [coreFileSaving, setCoreFileSaving] = useState(false);
   const coreFileDraftResetRef = useRef(false);
   const [sessionsByAgent, setSessionsByAgent] = useState<Record<string, SessionInfo[]>>({});
@@ -1463,7 +1464,13 @@ function AgentsPage() {
   }, [bindings, selectedAgent]);
   const selectedAgentCoreFiles = useMemo(() => {
     if (!selectedAgent) return [];
-    return coreFilesByAgent[selectedAgent.id] || [];
+    const files = coreFilesByAgent[selectedAgent.id] || [];
+    return [...files].sort((a, b) => {
+      if (a.exists !== b.exists) return a.exists ? -1 : 1;
+      if (a.name === 'IDENTITY.md') return -1;
+      if (b.name === 'IDENTITY.md') return 1;
+      return a.name.localeCompare(b.name);
+    });
   }, [coreFilesByAgent, selectedAgent]);
   const selectedCoreFile = useMemo(() => {
     if (selectedAgentCoreFiles.length === 0) return null;
@@ -1477,9 +1484,10 @@ function AgentsPage() {
     return selectedAgentCoreFiles.find(file => file.name === 'HEARTBEAT.md') || null;
   }, [selectedAgentCoreFiles]);
   const coreFileDirty = useMemo(() => {
+    if (!coreFileTouched) return false;
     if (!selectedCoreFile) return coreFileDraft.trim().length > 0;
     return coreFileDraft !== (selectedCoreFile.content || '');
-  }, [coreFileDraft, selectedCoreFile]);
+  }, [coreFileDraft, coreFileTouched, selectedCoreFile]);
   const selectedAgentCronJobs = useMemo(() => {
     if (!selectedAgent) return [];
     return cronJobs.filter(job => resolveCronJobAgentID(job, defaultAgent || 'main') === selectedAgent.id);
@@ -1887,7 +1895,7 @@ function AgentsPage() {
   useEffect(() => {
     if (!selectedAgent) return;
     if (detailTab === 'files') {
-      loadAgentCoreFiles(selectedAgent.id);
+      loadAgentCoreFiles(selectedAgent.id, true);
     }
     if (detailTab === 'capabilities' || detailTab === 'context') {
       loadAgentSessions(selectedAgent.id);
@@ -1898,12 +1906,15 @@ function AgentsPage() {
     const allowReset = coreFileDraftResetRef.current || !coreFileDirty;
     if (selectedAgentCoreFiles.length === 0) {
       if (!allowReset) return;
-      setSelectedCoreFileName('AGENTS.md');
+      setSelectedCoreFileName('IDENTITY.md');
       setCoreFileDraft('');
+      setCoreFileTouched(false);
       coreFileDraftResetRef.current = false;
       return;
     }
-    const nextSelected = selectedAgentCoreFiles.find(file => file.name === selectedCoreFileName) || selectedAgentCoreFiles[0];
+    const preferredFile = selectedAgentCoreFiles.find(file => file.name === 'IDENTITY.md' && file.exists) || selectedAgentCoreFiles.find(file => file.exists) || selectedAgentCoreFiles.find(file => file.name === 'IDENTITY.md');
+    const currentSelected = selectedAgentCoreFiles.find(file => file.name === selectedCoreFileName);
+    const nextSelected = (!currentSelected || !currentSelected.exists) ? (preferredFile || selectedAgentCoreFiles[0]) : currentSelected;
     const nextContent = nextSelected.content || '';
     if (!allowReset && (nextSelected.name !== selectedCoreFileName || nextContent !== coreFileDraft)) return;
     if (nextSelected.name !== selectedCoreFileName) {
@@ -1912,6 +1923,7 @@ function AgentsPage() {
     if (coreFileDraft !== nextContent) {
       setCoreFileDraft(nextContent);
     }
+    setCoreFileTouched(false);
     coreFileDraftResetRef.current = false;
   }, [coreFileDirty, coreFileDraft, selectedAgentCoreFiles, selectedCoreFileName]);
 
@@ -3143,11 +3155,11 @@ function AgentsPage() {
                                           <div className="text-sm font-medium text-gray-900 dark:text-white">{fileMeta.label}</div>
                                           <p className="mt-1 text-[11px] text-gray-500">{fileMeta.description}</p>
                                         </div>
-                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${file.exists ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200'}`}>
+                                        <span className={`inline-flex shrink-0 whitespace-nowrap text-[10px] px-1.5 py-0.5 rounded-full ${file.exists ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200'}`}>
                                           {file.exists ? '已存在' : '缺失'}
                                         </span>
                                       </div>
-                                      <div className="mt-2 text-[11px] text-gray-400">
+                                      <div className="mt-2 whitespace-nowrap text-[11px] text-gray-400 overflow-hidden text-ellipsis">
                                         {file.exists ? `${formatFileSize(file.size)} · ${formatDateTime(file.modified)}` : '保存后会自动创建'}
                                       </div>
                                     </button>
@@ -3199,7 +3211,10 @@ function AgentsPage() {
                                   name="agentCoreFileContent"
                                   aria-label={`${selectedCoreFile.name} 内容`}
                                   value={coreFileDraft}
-                                  onChange={e => setCoreFileDraft(e.target.value)}
+                                  onChange={e => {
+                                    setCoreFileDraft(e.target.value);
+                                    setCoreFileTouched(true);
+                                  }}
                                   rows={20}
                                   className="w-full min-h-[420px] px-3 py-3 text-xs font-mono border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900"
                                 />
