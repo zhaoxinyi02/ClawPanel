@@ -28,6 +28,11 @@ const (
 
 var officialFeishuPluginIDs = []string{"openclaw-lark", "feishu-openclaw-plugin"}
 
+var (
+	gitLookPath   = exec.LookPath
+	gitCloneRunner = runGitClone
+)
+
 // PluginMeta represents a plugin's metadata (plugin.json)
 type PluginMeta struct {
 	ID           string            `json:"id"`
@@ -1319,12 +1324,71 @@ func (m *Manager) installFromNpm(pkgName string) error {
 }
 
 func (m *Manager) installFromGit(gitURL, dest string) error {
-	cmd := exec.Command("git", "clone", "--depth=1", gitURL, dest)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s: %s", err, string(out))
+	if _, err := gitLookPath("git"); err != nil {
+		return fmt.Errorf("未检测到 Git，请先安装 Git 后再重试")
 	}
-	return nil
+
+	var lastErr error
+	var lastOut []byte
+	for attempt := 1; attempt <= 3; attempt++ {
+		out, err := gitCloneRunner(gitURL, dest)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		lastOut = out
+		if attempt == 3 || !isTransientGitCloneError(string(out)) {
+			break
+		}
+		_ = os.RemoveAll(dest)
+		time.Sleep(time.Duration(attempt) * time.Second)
+	}
+
+	msg := strings.TrimSpace(string(lastOut))
+	if msg == "" {
+		msg = strings.TrimSpace(lastErr.Error())
+	}
+	if isTransientGitCloneError(msg) {
+		return fmt.Errorf("网络异常，Git 拉取失败（已自动重试）: %s: %s", lastErr, msg)
+	}
+	return fmt.Errorf("%s: %s", lastErr, msg)
+}
+
+func runGitClone(gitURL, dest string) ([]byte, error) {
+	args := []string{
+		"-c", "http.version=HTTP/1.1",
+		"-c", "http.lowSpeedLimit=1024",
+		"-c", "http.lowSpeedTime=30",
+		"clone", "--depth=1", "--single-branch", gitURL, dest,
+	}
+	cmd := exec.Command("git", args...)
+	cmd.Env = append(os.Environ(),
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_LFS_SKIP_SMUDGE=1",
+	)
+	out, err := cmd.CombinedOutput()
+	return out, err
+}
+
+func isTransientGitCloneError(msg string) bool {
+	lower := strings.ToLower(msg)
+	signatures := []string{
+		"rpc failed",
+		"gnutls recv error",
+		"error decoding the received tls packet",
+		"unexpected disconnect while reading sideband packet",
+		"early eof",
+		"invalid index-pack output",
+		"connection reset by peer",
+		"tls",
+		"timeout",
+	}
+	for _, sig := range signatures {
+		if strings.Contains(lower, sig) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Manager) installFromArchive(url, dest string) error {

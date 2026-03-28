@@ -234,3 +234,41 @@ func TestSendPanelChatMessageRejectsBusySession(t *testing.T) {
 		t.Fatalf("unexpected error: %v", body["error"])
 	}
 }
+
+func TestRewritePanelChatRuntimeConfigSynthesizesImplicitAgent(t *testing.T) {
+	root := t.TempDir()
+	cfg := &config.Config{
+		DataDir:     filepath.Join(root, "data"),
+		OpenClawDir: filepath.Join(root, ".openclaw"),
+		Edition:     "pro",
+	}
+	if err := os.MkdirAll(filepath.Join(cfg.OpenClawDir, "agents", "main", "agent"), 0o755); err != nil {
+		t.Fatalf("mkdir agent dir failed: %v", err)
+	}
+	src := filepath.Join(root, "src-openclaw.json")
+	dst := filepath.Join(root, "dst-openclaw.json")
+	if err := os.WriteFile(src, []byte(`{"agents":{"defaults":{"workspace":"/tmp/work"}},"models":{"providers":{}}}`), 0o644); err != nil {
+		t.Fatalf("write src config failed: %v", err)
+	}
+	session := panelChatSession{ID: "panel-1", AgentID: "main"}
+	if err := rewritePanelChatRuntimeConfig(cfg, src, dst, session); err != nil {
+		t.Fatalf("rewritePanelChatRuntimeConfig failed: %v", err)
+	}
+	data, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("read dst config failed: %v", err)
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		t.Fatalf("unmarshal dst config failed: %v", err)
+	}
+	agents := obj["agents"].(map[string]interface{})
+	list := agents["list"].([]interface{})
+	if len(list) != 1 {
+		t.Fatalf("expected 1 synthesized agent, got %#v", list)
+	}
+	agent := list[0].(map[string]interface{})
+	if got := agent["id"]; got != panelChatScopedAgentID(session.ID, session.AgentID) {
+		t.Fatalf("unexpected synthesized id: %#v", got)
+	}
+}

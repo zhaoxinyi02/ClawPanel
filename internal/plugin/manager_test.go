@@ -4,11 +4,13 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/zhaoxinyi02/ClawPanel/internal/config"
@@ -979,6 +981,59 @@ func TestCopyDirRejectsSymlink(t *testing.T) {
 
 	if err := copyDir(src, dst); err == nil {
 		t.Fatalf("expected symlinked file to be rejected")
+	}
+}
+
+func TestInstallFromGitReportsMissingGitClearly(t *testing.T) {
+	oldLookPath := gitLookPath
+	oldRunner := gitCloneRunner
+	defer func() {
+		gitLookPath = oldLookPath
+		gitCloneRunner = oldRunner
+	}()
+
+	gitLookPath = func(file string) (string, error) {
+		return "", errors.New("not found")
+	}
+	gitCloneRunner = func(gitURL, dest string) ([]byte, error) {
+		t.Fatalf("git clone should not run when git is missing")
+		return nil, nil
+	}
+
+	m := &Manager{}
+	err := m.installFromGit("https://github.com/example/repo.git", filepath.Join(t.TempDir(), "plugin"))
+	if err == nil || !strings.Contains(err.Error(), "未检测到 Git，请先安装 Git 后再重试") {
+		t.Fatalf("expected missing git hint, got %v", err)
+	}
+}
+
+func TestInstallFromGitRetriesTransientTLSFailure(t *testing.T) {
+	oldLookPath := gitLookPath
+	oldRunner := gitCloneRunner
+	defer func() {
+		gitLookPath = oldLookPath
+		gitCloneRunner = oldRunner
+	}()
+
+	gitLookPath = func(file string) (string, error) {
+		return "/usr/bin/git", nil
+	}
+
+	attempts := 0
+	gitCloneRunner = func(gitURL, dest string) ([]byte, error) {
+		attempts++
+		if attempts < 3 {
+			return []byte("error: RPC failed; curl 56 GnuTLS recv error (-9): Error decoding the received TLS packet.\nfatal: early EOF"), errors.New("exit status 128")
+		}
+		return []byte("ok"), nil
+	}
+
+	m := &Manager{}
+	if err := m.installFromGit("https://github.com/example/repo.git", filepath.Join(t.TempDir(), "plugin")); err != nil {
+		t.Fatalf("expected transient clone failure to recover, got %v", err)
+	}
+	if attempts != 3 {
+		t.Fatalf("expected 3 attempts, got %d", attempts)
 	}
 }
 

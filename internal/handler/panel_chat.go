@@ -289,7 +289,7 @@ func ensurePanelChatRuntime(cfg *config.Config, session panelChatSession) (state
 	} else if err = os.MkdirAll(dstWorkspace, 0o755); err != nil {
 		return "", "", "", err
 	}
-	if err = rewritePanelChatRuntimeConfig(sourceConfigPath, configPath, session); err != nil {
+	if err = rewritePanelChatRuntimeConfig(cfg, sourceConfigPath, configPath, session); err != nil {
 		return "", "", "", err
 	}
 	return stateDir, configPath, workDir, nil
@@ -394,7 +394,7 @@ func copyDirWithoutSessions(src, dst string) error {
 	})
 }
 
-func rewritePanelChatRuntimeConfig(srcConfigPath, dstConfigPath string, session panelChatSession) error {
+func rewritePanelChatRuntimeConfig(cfg *config.Config, srcConfigPath, dstConfigPath string, session panelChatSession) error {
 	data, err := os.ReadFile(srcConfigPath)
 	if err != nil {
 		return err
@@ -404,11 +404,10 @@ func rewritePanelChatRuntimeConfig(srcConfigPath, dstConfigPath string, session 
 		return err
 	}
 	agentsMap := readMap(obj["agents"])
-	list, _ := agentsMap["list"].([]interface{})
+	list := materializeAgentList(cfg, obj)
 	newList := make([]interface{}, 0, 1)
-	for _, raw := range list {
-		agent, ok := raw.(map[string]interface{})
-		if !ok || strings.TrimSpace(toString(agent["id"])) != session.AgentID {
+	for _, agent := range list {
+		if strings.TrimSpace(toString(agent["id"])) != session.AgentID {
 			continue
 		}
 		cloned := map[string]interface{}{}
@@ -421,6 +420,14 @@ func rewritePanelChatRuntimeConfig(srcConfigPath, dstConfigPath string, session 
 		cloned["default"] = true
 		newList = append(newList, cloned)
 		break
+	}
+	if len(newList) == 0 && strings.TrimSpace(session.AgentID) != "" {
+		scopedID := panelChatScopedAgentID(session.ID, session.AgentID)
+		newList = append(newList, map[string]interface{}{
+			"id":        scopedID,
+			"workspace": filepath.ToSlash(filepath.Join("openclaw-work", scopedID)),
+			"default":   true,
+		})
 	}
 	agentsMap["list"] = newList
 	obj["agents"] = agentsMap

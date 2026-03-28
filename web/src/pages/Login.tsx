@@ -8,8 +8,8 @@ export default function Login({ onLogin }: { onLogin: (pw: string) => Promise<bo
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submit = async () => {
+    if (loading || !pw) return;
     setLoading(true);
     setErr('');
     const ok = await onLogin(pw);
@@ -17,16 +17,20 @@ export default function Login({ onLogin }: { onLogin: (pw: string) => Promise<bo
     setLoading(false);
   };
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    void submit();
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 p-4">
       <div className="w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center">
-          <img src="/logo.jpg" alt="ClawPanel" className="w-16 h-16 rounded-2xl shadow-lg mb-4" />
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">ClawPanel</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t.login.subtitle}</p>
+          <img src="/logo.png" alt="ClawPanel" className="w-52 max-w-full h-auto object-contain mb-2" />
+          <p className="text-sm text-gray-500 dark:text-gray-400">{t.login.subtitle}</p>
         </div>
         
-        <form onSubmit={submit} className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-800 p-8 space-y-6">
+        <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-800 p-8 space-y-6">
           <div className="space-y-4">
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 ml-1">{t.login.passwordLabel}</label>
@@ -38,8 +42,15 @@ export default function Login({ onLogin }: { onLogin: (pw: string) => Promise<bo
                   type="password" 
                   value={pw} 
                   onChange={e => setPw(e.target.value)} 
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void submit();
+                    }
+                  }}
                   placeholder={t.login.passwordPlaceholder} 
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all" 
+                  autoComplete="current-password"
                   autoFocus 
                 />
               </div>

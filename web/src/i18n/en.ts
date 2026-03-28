@@ -48,11 +48,11 @@ const en: Translations = {
     title: 'ClawPanel',
     subtitle: 'OpenClaw Management Panel',
     passwordLabel: 'Admin Password',
-    passwordPlaceholder: 'Enter ADMIN_TOKEN',
+    passwordPlaceholder: 'Enter panel password',
     loginButton: 'Log In',
     loggingIn: 'Logging in...',
     wrongPassword: 'Wrong password',
-    poweredBy: 'Powered by OpenClaw & NapCat',
+    poweredBy: 'Powered by GitHub/zhaoxinyi02',
   },
 
   nav: {

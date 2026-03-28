@@ -48,11 +48,11 @@ const zhCN: Translations = {
     title: 'ClawPanel',
     subtitle: 'OpenClaw 管理面板',
     passwordLabel: '管理密码',
-    passwordPlaceholder: '请输入 ADMIN_TOKEN',
+    passwordPlaceholder: '请输入面板密码',
     loginButton: '登 录',
     loggingIn: '登录中...',
     wrongPassword: '密码错误',
-    poweredBy: 'Powered by OpenClaw & NapCat',
+    poweredBy: 'Powered by GitHub/zhaoxinyi02',
   },
 
   nav: {
