@@ -404,13 +404,13 @@ func runServer(stopCh chan struct{}) {
 			auth.GET("/plugins/installed", handler.GetInstalledPlugins(pluginMgr))
 			auth.GET("/plugins/:id", handler.GetPluginDetail(pluginMgr))
 			auth.POST("/plugins/registry/refresh", handler.RefreshPluginRegistry(pluginMgr))
-			auth.POST("/plugins/install", handler.InstallPlugin(pluginMgr, taskMgr))
-			auth.DELETE("/plugins/:id", handler.UninstallPlugin(pluginMgr, taskMgr))
+			auth.POST("/plugins/install", handler.InstallPlugin(pluginMgr, taskMgr, procMgr))
+			auth.DELETE("/plugins/:id", handler.UninstallPlugin(pluginMgr, taskMgr, procMgr))
 			auth.PUT("/plugins/:id/toggle", handler.TogglePlugin(pluginMgr))
 			auth.GET("/plugins/:id/config", handler.GetPluginConfig(pluginMgr))
 			auth.PUT("/plugins/:id/config", handler.UpdatePluginConfig(pluginMgr))
 			auth.GET("/plugins/:id/logs", handler.GetPluginLogs(pluginMgr))
-			auth.POST("/plugins/:id/update", handler.UpdatePluginVersion(pluginMgr, taskMgr))
+			auth.POST("/plugins/:id/update", handler.UpdatePluginVersion(pluginMgr, taskMgr, procMgr))
 
 			// 软件环境 & 安装任务
 			auth.GET("/software/list", handler.GetSoftwareList(cfg))

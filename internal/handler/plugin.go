@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/zhaoxinyi02/ClawPanel/internal/plugin"
+	"github.com/zhaoxinyi02/ClawPanel/internal/process"
 	"github.com/zhaoxinyi02/ClawPanel/internal/taskman"
 )
 
@@ -67,7 +68,7 @@ func RefreshPluginRegistry(pm *plugin.Manager) gin.HandlerFunc {
 }
 
 // InstallPlugin installs a plugin from registry or custom URL
-func InstallPlugin(pm *plugin.Manager, tm *taskman.Manager) gin.HandlerFunc {
+func InstallPlugin(pm *plugin.Manager, tm *taskman.Manager, procMgr *process.Manager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			PluginID string `json:"pluginId"`
@@ -78,7 +79,6 @@ func InstallPlugin(pm *plugin.Manager, tm *taskman.Manager) gin.HandlerFunc {
 			return
 		}
 
-		// Check conflicts first
 		conflicts := pm.CheckConflicts(req.PluginID)
 		if len(conflicts) > 0 {
 			c.JSON(http.StatusConflict, gin.H{"ok": false, "error": conflicts[0], "conflicts": conflicts})
@@ -92,11 +92,16 @@ func InstallPlugin(pm *plugin.Manager, tm *taskman.Manager) gin.HandlerFunc {
 			c.JSON(http.StatusOK, gin.H{"ok": false, "error": "该插件已有安装任务正在进行中"})
 			return
 		}
+
 		task := tm.CreateTask("安装插件 "+req.PluginID, "install_plugin_"+req.PluginID)
 		tm.StartTask(task)
+		wasRunning := procMgr != nil && (procMgr.GetStatus().Running || procMgr.GatewayListening())
 		go func() {
 			task.AppendLog("🚀 开始安装插件 " + req.PluginID)
 			err := pm.InstallWithProgress(req.PluginID, req.Source, task.AppendLog)
+			if err == nil {
+				err = restoreOpenClawAfterPluginMutation(procMgr, wasRunning, task.AppendLog)
+			}
 			tm.FinishTask(task, err)
 		}()
 		c.JSON(http.StatusOK, gin.H{"ok": true, "taskId": task.ID, "message": "插件安装任务已创建，请在消息中心查看进度"})
@@ -104,7 +109,7 @@ func InstallPlugin(pm *plugin.Manager, tm *taskman.Manager) gin.HandlerFunc {
 }
 
 // UninstallPlugin removes a plugin
-func UninstallPlugin(pm *plugin.Manager, tm *taskman.Manager) gin.HandlerFunc {
+func UninstallPlugin(pm *plugin.Manager, tm *taskman.Manager, procMgr *process.Manager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
 		cleanupConfig := true
@@ -119,8 +124,10 @@ func UninstallPlugin(pm *plugin.Manager, tm *taskman.Manager) gin.HandlerFunc {
 			c.JSON(http.StatusOK, gin.H{"ok": false, "error": "该插件已有卸载任务正在进行中"})
 			return
 		}
+
 		task := tm.CreateTask("卸载插件 "+id, "uninstall_plugin_"+id)
 		tm.StartTask(task)
+		wasRunning := procMgr != nil && (procMgr.GetStatus().Running || procMgr.GatewayListening())
 		go func() {
 			if cleanupConfig {
 				task.AppendLog("🧹 卸载后将一并清理对应通道配置")
@@ -128,6 +135,9 @@ func UninstallPlugin(pm *plugin.Manager, tm *taskman.Manager) gin.HandlerFunc {
 				task.AppendLog("📦 卸载后将保留通道配置")
 			}
 			err := pm.UninstallWithProgress(id, cleanupConfig, task.AppendLog)
+			if err == nil {
+				err = restoreOpenClawAfterPluginMutation(procMgr, wasRunning, task.AppendLog)
+			}
 			tm.FinishTask(task, err)
 		}()
 		c.JSON(http.StatusOK, gin.H{"ok": true, "taskId": task.ID, "message": "插件卸载任务已创建，请在消息中心查看进度"})
@@ -209,7 +219,7 @@ func GetPluginLogs(pm *plugin.Manager) gin.HandlerFunc {
 }
 
 // UpdatePlugin updates a plugin to the latest version
-func UpdatePluginVersion(pm *plugin.Manager, tm *taskman.Manager) gin.HandlerFunc {
+func UpdatePluginVersion(pm *plugin.Manager, tm *taskman.Manager, procMgr *process.Manager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
 		if tm == nil {
@@ -220,13 +230,44 @@ func UpdatePluginVersion(pm *plugin.Manager, tm *taskman.Manager) gin.HandlerFun
 			c.JSON(http.StatusOK, gin.H{"ok": false, "error": "该插件已有更新任务正在进行中"})
 			return
 		}
+
 		task := tm.CreateTask("更新插件 "+id, "update_plugin_"+id)
 		tm.StartTask(task)
+		wasRunning := procMgr != nil && (procMgr.GetStatus().Running || procMgr.GatewayListening())
 		go func() {
 			task.AppendLog("🔄 开始更新插件 " + id)
 			err := pm.Update(id)
+			if err == nil {
+				err = restoreOpenClawAfterPluginMutation(procMgr, wasRunning, task.AppendLog)
+			}
 			tm.FinishTask(task, err)
 		}()
 		c.JSON(http.StatusOK, gin.H{"ok": true, "taskId": task.ID, "message": "插件更新任务已创建，请在消息中心查看进度"})
 	}
+}
+
+func restoreOpenClawAfterPluginMutation(procMgr *process.Manager, wasRunning bool, logf func(string)) error {
+	if procMgr == nil || !wasRunning {
+		return nil
+	}
+
+	status := procMgr.GetStatus()
+	gatewayRunning := procMgr.GatewayListening()
+	if status.Running || gatewayRunning {
+		if logf != nil {
+			logf("✅ OpenClaw 运行环境已在线")
+		}
+		return nil
+	}
+
+	if logf != nil {
+		logf("🔄 插件变更后正在恢复 OpenClaw 运行环境...")
+	}
+	if err := procMgr.Start(); err != nil {
+		return err
+	}
+	if logf != nil {
+		logf("✅ OpenClaw 运行环境已恢复")
+	}
+	return nil
 }

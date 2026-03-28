@@ -17,7 +17,7 @@ func TestInstallPluginRequiresTaskManager(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	r.POST("/plugins/install", InstallPlugin(&plugin.Manager{}, nil))
+	r.POST("/plugins/install", InstallPlugin(&plugin.Manager{}, nil, nil))
 
 	req := httptest.NewRequest(http.MethodPost, "/plugins/install", strings.NewReader(`{"pluginId":"feishu"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -37,7 +37,7 @@ func TestUninstallPluginRequiresTaskManager(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	r.DELETE("/plugins/:id", UninstallPlugin(&plugin.Manager{}, nil))
+	r.DELETE("/plugins/:id", UninstallPlugin(&plugin.Manager{}, nil, nil))
 
 	req := httptest.NewRequest(http.MethodDelete, "/plugins/feishu", nil)
 	w := httptest.NewRecorder()
@@ -56,7 +56,7 @@ func TestUpdatePluginVersionRequiresTaskManager(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	r.POST("/plugins/:id/update", UpdatePluginVersion(&plugin.Manager{}, nil))
+	r.POST("/plugins/:id/update", UpdatePluginVersion(&plugin.Manager{}, nil, nil))
 
 	req := httptest.NewRequest(http.MethodPost, "/plugins/feishu/update", nil)
 	w := httptest.NewRecorder()
@@ -78,7 +78,7 @@ func TestInstallPluginRejectsDuplicatePendingTask(t *testing.T) {
 	_ = tm.CreateTask("安装插件 feishu", "install_plugin_feishu")
 
 	r := gin.New()
-	r.POST("/plugins/install", InstallPlugin(&plugin.Manager{}, tm))
+	r.POST("/plugins/install", InstallPlugin(&plugin.Manager{}, tm, nil))
 
 	req := httptest.NewRequest(http.MethodPost, "/plugins/install", strings.NewReader(`{"pluginId":"feishu"}`))
 	req.Header.Set("Content-Type", "application/json")
