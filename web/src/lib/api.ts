@@ -117,6 +117,7 @@ const _api = {
   wechatSendFile: (to: string, fileUrl: string, isRoom?: boolean) => post('/wechat/send-file', { to, fileUrl, isRoom }),
   wechatConfig: () => get('/wechat/config'),
   wechatUpdateConfig: (data: any) => put('/wechat/config', data),
+  wechatBridgeDownloadUrl: () => BASE + '/wechat/bridge/download?token=' + (localStorage.getItem('admin-token') || ''),
   // Workspace
   workspaceFiles: (subPath?: string) => get('/workspace/files' + (subPath ? `?path=${encodeURIComponent(subPath)}` : '')),
   workspaceStats: () => get('/workspace/stats'),

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Radio, Wifi, WifiOff, QrCode, Key, Zap, UserCheck, Check, X, Power, Loader2, RefreshCw, LogOut, Sparkles, Download, Package, Wrench, Search, Copy, CheckCircle, AlertTriangle, AlertCircle, Trash2 } from 'lucide-react';
+import { Radio, Wifi, WifiOff, QrCode, Key, Zap, UserCheck, Check, X, Power, Loader2, RefreshCw, LogOut, Sparkles, Download, Package, Wrench, Search, Copy, CheckCircle, AlertTriangle, AlertCircle, Trash2, MessageSquare, Settings2 } from 'lucide-react';
 import InfoTooltip from '../components/InfoTooltip';
 import { useI18n } from '../i18n';
 
@@ -56,6 +56,16 @@ type FeishuAuthorizedSenderBucket = {
   senderCount?: number;
   senderIds?: string[];
   sourceFiles?: string[];
+};
+
+type WechatBridgeState = {
+  connected?: boolean;
+  loggedIn?: boolean;
+  name?: string;
+  bridgeUrl?: string;
+  bridgeToken?: string;
+  kitDir?: string;
+  error?: string;
 };
 
 function isPlainObject(value: any): value is Record<string, any> {
@@ -371,6 +381,7 @@ const CHANNEL_DEFS: ChannelDef[] = [
       { key: 'password', label: '密码', type: 'password' },
     ] },
   { id: 'webchat', label: 'WebChat', description: 'Gateway WebChat UI (内置)', type: 'builtin', configFields: [] },
+  { id: 'wechat-personal', label: '微信个人号 (WeChatFerry)', description: 'Windows 宿主机桥接，支持浏览器直接下载桥接包', type: 'builtin', configFields: [] },
   // Plugin channels
   { id: 'feishu', label: '飞书 / Lark', description: '飞书机器人 WebSocket (插件)', type: 'plugin',
     configFields: [
@@ -537,7 +548,15 @@ function getChannelStatus(
   ocConfig: any,
   installedPlugins: any[],
   qqChannelState: any,
+  wechatBridgeStatus?: WechatBridgeState | null,
 ): 'enabled' | 'configured' | 'unconfigured' {
+  if (ch.id === 'wechat-personal') {
+    const bridgeUrl = String(wechatBridgeStatus?.bridgeUrl || '').trim();
+    const bridgeToken = String(wechatBridgeStatus?.bridgeToken || '').trim();
+    if (wechatBridgeStatus?.connected || wechatBridgeStatus?.loggedIn) return 'enabled';
+    if (bridgeUrl || bridgeToken) return 'configured';
+    return 'unconfigured';
+  }
   // wecom-app is backed by channels.wecom.agent
   const chConf = ch.id === 'wecom-app'
     ? getWecomAppVirtualConfig(ocConfig)
@@ -631,6 +650,10 @@ export default function Channels() {
   const [qqChannelState, setQQChannelState] = useState<any>(null);
   const [channelDrafts, setChannelDrafts] = useState<Record<string, any>>({});
   const [channelFieldTextDrafts, setChannelFieldTextDrafts] = useState<Record<string, string>>({});
+  const [wechatBridgeStatus, setWechatBridgeStatus] = useState<WechatBridgeState | null>(null);
+  const [wechatBridgeConfig, setWechatBridgeConfig] = useState<Record<string, any>>({});
+  const [wechatLoading, setWechatLoading] = useState(false);
+  const [wechatSaving, setWechatSaving] = useState(false);
   const [feishuAdvancedAccounts, setFeishuAdvancedAccounts] = useState(false);
   const [feishuActiveAccountId, setFeishuActiveAccountId] = useState('default');
   const [feishuNewAccountId, setFeishuNewAccountId] = useState('');
@@ -774,6 +797,22 @@ export default function Channels() {
     api.getQQChannelState().then((r: any) => { if (r.ok) setQQChannelState(r.state || null); }).catch(() => {});
   };
 
+  const loadWechatBridge = useCallback(async () => {
+    setWechatLoading(true);
+    try {
+      const [statusResp, configResp] = await Promise.all([
+        api.wechatStatus(),
+        api.wechatConfig(),
+      ]);
+      if (statusResp?.ok) setWechatBridgeStatus(statusResp.status || {});
+      if (configResp?.ok) setWechatBridgeConfig(configResp.config || {});
+    } catch {
+      // noop
+    } finally {
+      setWechatLoading(false);
+    }
+  }, []);
+
   const loadFeishuDmDiagnosis = useCallback(async () => {
     setLoadingFeishuDmDiagnosis(true);
     try {
@@ -835,6 +874,7 @@ export default function Channels() {
       syncFeishuUiState(nextConfig);
     });
     loadFeishuDmDiagnosis();
+    loadWechatBridge();
     api.getRequests().then(r => { if (r.ok) setRequests(r.requests || []); });
   };
 
@@ -856,8 +896,10 @@ export default function Channels() {
       api.napcatStatus().then(r => { if (r.ok) setNapcatStatus(r.status); }).catch(() => {}),
       api.getInstalledPlugins().then((r: any) => { if (r.ok) setInstalledPlugins(r.plugins || []); }).catch(() => {}),
       api.getQQChannelState().then((r: any) => { if (r.ok) setQQChannelState(r.state || null); }).catch(() => {}),
+      api.wechatStatus().then(r => { if (r.ok) setWechatBridgeStatus(r.status || {}); }).catch(() => {}),
+      api.wechatConfig().then(r => { if (r.ok) setWechatBridgeConfig(r.config || {}); }).catch(() => {}),
     ]).catch(() => {});
-  }, []);
+  }, [loadFeishuDmDiagnosis, loadWechatBridge, syncFeishuUiState]);
   // 自动选择第一个已启用的渠道（而非硬编码 QQ）
   useEffect(() => {
     if (selectedChannel) return; // 用户已手动选择
@@ -1187,6 +1229,26 @@ export default function Channels() {
 
   const currentDef = CHANNEL_DEFS.find(c => c.id === selectedChannel);
 
+  const saveWechatBridgeConfig = async () => {
+    setWechatSaving(true);
+    setMsg('');
+    try {
+      const payload = {
+        bridgeUrl: String(wechatBridgeConfig.bridgeUrl || '').trim(),
+        bridgeToken: String(wechatBridgeConfig.bridgeToken || '').trim(),
+      };
+      const r = await api.wechatUpdateConfig(payload);
+      if (!r.ok) throw new Error(r.error || '保存失败');
+      setMsg(r.message || '微信个人号桥接配置已保存');
+      await loadWechatBridge();
+      setTimeout(() => setMsg(''), 4000);
+    } catch (err) {
+      setMsg('保存失败: ' + String(err));
+    } finally {
+      setWechatSaving(false);
+    }
+  };
+
   const syncSelectedChannel = (channelId: string) => {
     setSelectedChannel(channelId);
     const next = new URLSearchParams(searchParams);
@@ -1468,11 +1530,11 @@ export default function Channels() {
   // Sort channels: enabled first, then configured, then unconfigured
   const sortedBuiltin = CHANNEL_DEFS.filter(c => c.type === 'builtin').sort((a, b) => {
     const order = { enabled: 0, configured: 1, unconfigured: 2 };
-    return order[getChannelStatus(a, ocConfig, installedPlugins, qqChannelState)] - order[getChannelStatus(b, ocConfig, installedPlugins, qqChannelState)];
+    return order[getChannelStatus(a, ocConfig, installedPlugins, qqChannelState, wechatBridgeStatus)] - order[getChannelStatus(b, ocConfig, installedPlugins, qqChannelState, wechatBridgeStatus)];
   });
   const sortedPlugin = CHANNEL_DEFS.filter(c => c.type === 'plugin').sort((a, b) => {
     const order = { enabled: 0, configured: 1, unconfigured: 2 };
-    return order[getChannelStatus(a, ocConfig, installedPlugins, qqChannelState)] - order[getChannelStatus(b, ocConfig, installedPlugins, qqChannelState)];
+    return order[getChannelStatus(a, ocConfig, installedPlugins, qqChannelState, wechatBridgeStatus)] - order[getChannelStatus(b, ocConfig, installedPlugins, qqChannelState, wechatBridgeStatus)];
   });
 
   const currentFeishuAllowlistEntries = parseDelimitedList(currentFeishuGroupAllowFrom);
@@ -1649,7 +1711,7 @@ export default function Channels() {
               <h3 className="text-[10px] font-semibold text-gray-400 mb-2 px-2 uppercase tracking-wide">{t.channels.builtinChannels}</h3>
               <div className="space-y-1">
                 {sortedBuiltin.map(ch => {
-                  const st = getChannelStatus(ch, ocConfig, installedPlugins, qqChannelState);
+                  const st = getChannelStatus(ch, ocConfig, installedPlugins, qqChannelState, wechatBridgeStatus);
                   return (
                     <button key={ch.id} onClick={() => syncSelectedChannel(ch.id)}
                       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm transition-all duration-200 group ${
@@ -1676,7 +1738,7 @@ export default function Channels() {
                 <h3 className="text-[10px] font-semibold text-gray-400 mb-2 px-2 uppercase tracking-wide">{t.channels.pluginChannels}</h3>
                 <div className="space-y-1">
                   {sortedPlugin.map(ch => {
-                    const st = getChannelStatus(ch, ocConfig, installedPlugins, qqChannelState);
+                    const st = getChannelStatus(ch, ocConfig, installedPlugins, qqChannelState, wechatBridgeStatus);
                     return (
                       <button key={ch.id} onClick={() => syncSelectedChannel(ch.id)}
                         className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm transition-all duration-200 group ${
@@ -1802,7 +1864,118 @@ export default function Channels() {
             </div>
           )}
 
+          {currentDef && currentDef.id === 'wechat-personal' && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-6 space-y-6">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between pb-4 border-b border-gray-100 dark:border-gray-800">
+                <div className="flex items-center gap-4">
+                  <div className={`p-2.5 rounded-xl ${(wechatBridgeStatus?.connected || wechatBridgeStatus?.loggedIn) ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'}`}>
+                    <MessageSquare size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base text-gray-900 dark:text-white">微信个人号 (WeChatFerry)</h3>
+                    <p className="text-xs text-gray-500 mt-1">这里是主入口。桥接包会生成到服务器本地，同时支持浏览器直接下载 zip 到 Windows 宿主机。</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 xl:justify-end">
+                  <button
+                    onClick={loadWechatBridge}
+                    disabled={wechatLoading}
+                    className={`${modern ? 'page-modern-action px-3 py-2 text-xs' : 'inline-flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all'}`}
+                  >
+                    <RefreshCw size={14} className={wechatLoading ? 'animate-spin' : ''} />
+                    {wechatLoading ? '刷新中...' : '刷新状态'}
+                  </button>
+                  <button
+                    onClick={() => navigate('/config?tab=general')}
+                    className={`${modern ? 'page-modern-action px-3 py-2 text-xs' : 'inline-flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all'}`}
+                  >
+                    <Settings2 size={14} />
+                    高级设置
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-900/30 px-4 py-3">
+                  <div className="text-[11px] text-gray-500">桥接连接</div>
+                  <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{wechatBridgeStatus?.connected ? '桥接在线' : '桥接未连接'}</div>
+                </div>
+                <div className="rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-900/30 px-4 py-3">
+                  <div className="text-[11px] text-gray-500">微信登录</div>
+                  <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{wechatBridgeStatus?.loggedIn ? (wechatBridgeStatus?.name || '已登录') : '未登录'}</div>
+                </div>
+                <div className="rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-900/30 px-4 py-3">
+                  <div className="text-[11px] text-gray-500">生成目录</div>
+                  <div className="mt-1 break-all font-mono text-[11px] text-gray-700 dark:text-gray-200">{wechatBridgeStatus?.kitDir || wechatBridgeConfig?.kitDir || '/opt/clawpanel/data/wechat-wcf-bridge'}</div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-2 text-sm">
+                  <span className="font-medium text-gray-700 dark:text-gray-300">桥接地址</span>
+                  <input
+                    value={wechatBridgeConfig.bridgeUrl || ''}
+                    onChange={e => setWechatBridgeConfig((prev: any) => ({ ...prev, bridgeUrl: e.target.value }))}
+                    placeholder="http://127.0.0.1:19088"
+                    className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-100 dark:focus:ring-violet-900/30 focus:border-violet-500"
+                  />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="font-medium text-gray-700 dark:text-gray-300">桥接 Token</span>
+                  <input
+                    value={wechatBridgeConfig.bridgeToken || ''}
+                    onChange={e => setWechatBridgeConfig((prev: any) => ({ ...prev, bridgeToken: e.target.value }))}
+                    placeholder="clawpanel-wcf"
+                    className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-100 dark:focus:ring-violet-900/30 focus:border-violet-500"
+                  />
+                </label>
+              </div>
+
+              <div className="rounded-2xl border border-blue-100/70 bg-[linear-gradient(145deg,rgba(255,255,255,0.88),rgba(239,246,255,0.78))] px-4 py-4 text-sm text-gray-600 dark:border-blue-900/30 dark:bg-slate-900/50 dark:text-gray-300">
+                <div className="font-medium text-gray-900 dark:text-white">生成位置与使用方式</div>
+                <div className="mt-2 space-y-1 text-xs leading-6">
+                  <div>桥接包默认生成在 <span className="font-mono">/opt/clawpanel/data/wechat-wcf-bridge</span>。</div>
+                  <div>会包含 <span className="font-mono">install-windows.ps1</span>、<span className="font-mono">start-bridge.bat</span>、<span className="font-mono">bridge.mjs</span> 和说明文件。</div>
+                  <div>先点“一键生成桥接包”，再点“浏览器下载桥接包”，就能直接把 zip 下载到你当前浏览器所在的 Windows 宿主机。</div>
+                </div>
+              </div>
+
+              {wechatBridgeStatus?.error && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:border-amber-900/30 dark:bg-amber-950/20 dark:text-amber-300">
+                  当前探测结果：{wechatBridgeStatus.error}
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={() => handleInstallContainer('wechat')}
+                  disabled={installingSw !== null}
+                  className={`${modern ? 'page-modern-accent px-4 py-2 text-sm' : 'inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-all shadow-lg shadow-violet-200 dark:shadow-none hover:shadow-xl'}`}
+                >
+                  {installingSw === 'wechat' ? <Loader2 size={14} className="animate-spin" /> : <Package size={14} />}
+                  {installingSw === 'wechat' ? '生成中...' : '一键生成桥接包'}
+                </button>
+                <a
+                  href={api.wechatBridgeDownloadUrl()}
+                  className={`${modern ? 'page-modern-action px-4 py-2 text-sm' : 'inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all'}`}
+                >
+                  <Download size={14} />
+                  浏览器下载桥接包
+                </a>
+                <button
+                  onClick={saveWechatBridgeConfig}
+                  disabled={wechatSaving}
+                  className={`${modern ? 'page-modern-action px-4 py-2 text-sm' : 'inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all disabled:opacity-50'}`}
+                >
+                  <Check size={14} />
+                  {wechatSaving ? '保存中...' : '保存桥接配置'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {currentDef && !(
+            currentDef.id === 'wechat-personal' ||
             (currentDef.id === 'qq' && (!isQQActuallyInstalled(installedPlugins, qqChannelState) || (!(qqChannelState?.napcatInstalled || isContainerInstalled('napcat')) && softwareList.length > 0))) ||
             (currentDef.type === 'plugin' && currentDef.id !== 'qq' && !isPluginInstalled(currentDef.id))
           ) && (
@@ -1816,10 +1989,10 @@ export default function Channels() {
                     <div className="flex items-center gap-3">
                       <h3 className="font-bold text-base text-gray-900 dark:text-white">{currentDef.label} {t.channels.config}</h3>
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                        getChannelStatus(currentDef, ocConfig, installedPlugins, qqChannelState) === 'enabled' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400' :
-                        getChannelStatus(currentDef, ocConfig, installedPlugins, qqChannelState) === 'configured' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400' :
+                        getChannelStatus(currentDef, ocConfig, installedPlugins, qqChannelState, wechatBridgeStatus) === 'enabled' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400' :
+                        getChannelStatus(currentDef, ocConfig, installedPlugins, qqChannelState, wechatBridgeStatus) === 'configured' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400' :
                         'bg-gray-100 dark:bg-gray-800 text-gray-500'
-                      }`}>{statusLabel(getChannelStatus(currentDef, ocConfig, installedPlugins, qqChannelState))}</span>
+                      }`}>{statusLabel(getChannelStatus(currentDef, ocConfig, installedPlugins, qqChannelState, wechatBridgeStatus))}</span>
                     </div>
                     <p className="text-xs text-gray-500 mt-1">{currentDef.description}</p>
                   </div>

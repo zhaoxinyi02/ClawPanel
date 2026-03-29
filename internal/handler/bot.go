@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"archive/zip"
 	"bytes"
 	"crypto/md5"
 	"crypto/sha256"
@@ -803,6 +804,73 @@ func WechatLoginUrl(cfg *config.Config) gin.HandlerFunc {
 			"mode":        wc["mode"],
 			"kitDir":      wc["kitDir"],
 		})
+	}
+}
+
+func WechatBridgeDownload(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		kitDir := wechatBridgeKitDir(cfg)
+		requiredFiles := []string{
+			"package.json",
+			"bridge.mjs",
+			"install-windows.ps1",
+			"start-bridge.bat",
+			"README.txt",
+			".env.example",
+		}
+		for _, name := range requiredFiles {
+			if _, err := os.Stat(filepath.Join(kitDir, name)); err != nil {
+				c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "桥接包尚未生成，请先点击一键安装"})
+				return
+			}
+		}
+
+		var buf bytes.Buffer
+		zw := zip.NewWriter(&buf)
+		err := filepath.Walk(kitDir, func(path string, info os.FileInfo, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if info.IsDir() {
+				return nil
+			}
+			rel, err := filepath.Rel(kitDir, path)
+			if err != nil {
+				return err
+			}
+			rel = filepath.ToSlash(rel)
+			header, err := zip.FileInfoHeader(info)
+			if err != nil {
+				return err
+			}
+			header.Name = rel
+			header.Method = zip.Deflate
+			writer, err := zw.CreateHeader(header)
+			if err != nil {
+				return err
+			}
+			f, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			_, err = io.Copy(writer, f)
+			return err
+		})
+		if err != nil {
+			_ = zw.Close()
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		if err := zw.Close(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+
+		c.Header("Content-Type", "application/zip")
+		c.Header("Content-Disposition", `attachment; filename="wechat-wcf-bridge.zip"`)
+		c.Header("Content-Length", fmt.Sprintf("%d", buf.Len()))
+		c.Data(http.StatusOK, "application/zip", buf.Bytes())
 	}
 }
 

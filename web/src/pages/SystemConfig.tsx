@@ -6,7 +6,7 @@ import {
   Brain, MessageSquare, Globe, Terminal, Webhook,
   Users, Eye, EyeOff, Key, Plus, Trash2,
   Monitor, HardDrive, FileText, Archive, RotateCcw,
-  CheckCircle, AlertTriangle, Package, Box, Shield, Command, Search
+  CheckCircle, AlertTriangle, Package, Box, Shield, Command, Search, Download
 } from 'lucide-react';
 import InfoTooltip from '../components/InfoTooltip';
 import { useI18n } from '../i18n';
@@ -3148,10 +3148,10 @@ function SoftwareEnvironment({ envInfo, onRefresh }: { envInfo: any; onRefresh: 
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <MessageSquare size={16} className="text-blue-500" /> 微信个人号桥接
+              <MessageSquare size={16} className="text-blue-500" /> 微信个人号桥接（高级设置）
             </h3>
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              这套方案不跑在 WSL。ClawPanel 只负责生成桥接包、保存地址，并通过 HTTP 调宿主机上的 WeChatFerry Bridge。
+              主入口已经移动到“通道管理”。这里保留桥接地址和 Token 的高级设置；ClawPanel 负责生成桥接包，并通过 HTTP 调宿主机上的 WeChatFerry Bridge。
             </p>
           </div>
           <button
@@ -3224,6 +3224,13 @@ function SoftwareEnvironment({ envInfo, onRefresh }: { envInfo: any; onRefresh: 
             {installing === 'wechat' ? <RefreshCw size={14} className="animate-spin" /> : <Package size={14} />}
             {installing === 'wechat' ? '生成中...' : '一键生成 Windows 桥接包'}
           </button>
+          <a
+            href={api.wechatBridgeDownloadUrl()}
+            className="page-modern-secondary px-4 py-2 text-sm font-medium"
+          >
+            <Download size={14} />
+            浏览器下载桥接包
+          </a>
           <button
             onClick={saveWechatConfig}
             disabled={wechatSaving}

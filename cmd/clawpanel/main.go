@@ -384,6 +384,7 @@ func runServer(stopCh chan struct{}) {
 			// WeChat
 			auth.GET("/wechat/status", handler.WechatStatus(cfg))
 			auth.GET("/wechat/login-url", handler.WechatLoginUrl(cfg))
+			auth.GET("/wechat/bridge/download", handler.WechatBridgeDownload(cfg))
 			auth.POST("/wechat/send", handler.WechatSend(cfg))
 			auth.POST("/wechat/send-file", handler.WechatSendFile(cfg))
 			auth.GET("/wechat/config", handler.WechatGetConfig(cfg))
