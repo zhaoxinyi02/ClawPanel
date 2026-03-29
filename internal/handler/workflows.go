@@ -615,6 +615,20 @@ func (rt *workflowRuntime) sendWorkflowAck(channelID, conversationID, userID, me
 			responseURL = ""
 		}
 		return rt.sendWecomText(responseURL, message)
+	case "wechat":
+		target := strings.TrimSpace(conversationID)
+		if target == "" {
+			target = strings.TrimSpace(userID)
+		}
+		if target == "" {
+			return fmt.Errorf("missing WeChat target")
+		}
+		_, err := wechatBridgeRequest(rt.cfg, http.MethodPost, "/send/text", map[string]interface{}{
+			"to":      target,
+			"content": message,
+			"isRoom":  strings.HasSuffix(target, "@chatroom"),
+		})
+		return err
 	default:
 		return fmt.Errorf("channel not supported yet: %s", channelID)
 	}

@@ -179,6 +179,21 @@ func GetStatus(db *sql.DB, cfg *config.Config, procMgr *process.Manager, napcatM
 			}
 		}
 
+		wechatInfo := gin.H{"connected": false, "loggedIn": false}
+		if bridgeResp, err := wechatBridgeRequest(cfg, http.MethodGet, "/status", nil); err == nil {
+			if connected, ok := bridgeResp["connected"]; ok {
+				wechatInfo["connected"] = connected
+			}
+			if loggedIn, ok := bridgeResp["loggedIn"]; ok {
+				wechatInfo["loggedIn"] = loggedIn
+			}
+			for _, key := range []string{"name", "selfWxid", "contacts", "rooms", "version", "message"} {
+				if v, ok := bridgeResp[key]; ok {
+					wechatInfo[key] = v
+				}
+			}
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"ok": true,
 			"panel": gin.H{
@@ -199,6 +214,7 @@ func GetStatus(db *sql.DB, cfg *config.Config, procMgr *process.Manager, napcatM
 				"running": gatewayRunning,
 			},
 			"napcat":  napcatInfo,
+			"wechat":  wechatInfo,
 			"process": procStatus,
 			"admin": gin.H{
 				"uptime":     int64(time.Since(startTime).Seconds()),

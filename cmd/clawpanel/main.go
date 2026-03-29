@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -94,6 +95,7 @@ func runServer(stopCh chan struct{}) {
 
 	// 初始化进程管理器
 	procMgr := process.NewManager(cfg)
+	attachOnly := strings.EqualFold(strings.TrimSpace(os.Getenv("CLAWPANEL_ATTACH_ONLY")), "true")
 
 	// 自动启动 OpenClaw（如果已安装且配置存在）
 	// Lite 版即使 openclaw.json 尚不存在，只要内嵌运行时可用也应自动启动
@@ -103,7 +105,9 @@ func runServer(stopCh chan struct{}) {
 		shouldAutoStart = true
 		log.Println("[ClawPanel] Lite 版首次启动，openclaw.json 尚不存在，将由进程管理器自动创建")
 	}
-	if shouldAutoStart {
+	if attachOnly {
+		log.Println("[ClawPanel] attach-only 模式已启用：复用现有 OpenClaw，不主动启动或停止运行时")
+	} else if shouldAutoStart {
 		if cfg.OpenClawConfigExists() {
 			if changed, err := cfg.NormalizeOpenClawJSONFile(); err != nil {
 				log.Printf("[ClawPanel] OpenClaw 配置兼容清洗失败: %v", err)
@@ -200,6 +204,7 @@ func runServer(stopCh chan struct{}) {
 		// 公开路由
 		api.POST("/auth/login", handler.Login(db, cfg))
 		api.POST("/workflows/intercept", workflowRuntime.InterceptInbound())
+		api.POST("/wechat/callback", handler.WechatBridgeCallback(db, wsHub, workflowRuntime, cfg))
 		api.Any("/panel/updater", handler.ProxyUpdater(cfg))
 		api.Any("/panel/updater/*path", handler.ProxyUpdater(cfg))
 
@@ -481,15 +486,22 @@ func runServer(stopCh chan struct{}) {
 	log.Printf("[ClawPanel] OpenClaw 目录: %s", cfg.OpenClawDir)
 
 	srv := &http.Server{Addr: addr, Handler: r}
+	ln, err := net.Listen("tcp4", addr)
+	if err != nil {
+		log.Fatalf("[ClawPanel] server listen failed: %v", err)
+	}
 
 	// 优雅关闭：监听 stopCh
 	go func() {
 		<-stopCh
-		procMgr.StopAll()
+		if !attachOnly {
+			procMgr.StopAll()
+		}
+		_ = ln.Close()
 		srv.Close()
 	}()
 
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("[ClawPanel] 服务器启动失败: %v", err)
 	}
 }

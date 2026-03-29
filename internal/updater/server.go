@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	UpdaterPort        = 19528
+	UpdaterPort        = 19538
 	TokenValidDuration = 5 * time.Minute
 	TokenSecret        = "clawpanel-updater-secret-2026"
 )
@@ -301,6 +301,11 @@ func (s *Server) RunStandalone() {
 		Addr:    fmt.Sprintf("0.0.0.0:%d", UpdaterPort),
 		Handler: mux,
 	}
+	ln, err := net.Listen("tcp4", s.srv.Addr)
+	if err != nil {
+		log.Printf("[Updater-Standalone] listen failed: %v", err)
+		return
+	}
 	s.running = true
 
 	// Auto-shutdown: exit after 30 min idle or 5 min after both updates finish
@@ -330,6 +335,7 @@ func (s *Server) RunStandalone() {
 				if t, err := time.Parse(time.RFC3339, latestFinish); err == nil {
 					if time.Since(t) > 5*time.Minute {
 						log.Println("[Updater-Standalone] 更新完成超过5分钟，自动退出")
+						_ = ln.Close()
 						s.srv.Close()
 						return
 					}
@@ -339,7 +345,7 @@ func (s *Server) RunStandalone() {
 	}()
 
 	log.Printf("[Updater-Standalone] 独立更新服务已启动 → http://0.0.0.0:%d/updater", UpdaterPort)
-	if err := s.srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := s.srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 		log.Printf("[Updater-Standalone] 服务启动失败: %v", err)
 	}
 	log.Println("[Updater-Standalone] 服务已退出")

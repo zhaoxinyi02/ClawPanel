@@ -2978,13 +2978,31 @@ function SoftwareEnvironment({ envInfo, onRefresh }: { envInfo: any; onRefresh: 
   const [installMsg, setInstallMsg] = useState('');
   const [swData, setSwData] = useState<any[]>([]);
   const [edition, setEdition] = useState('pro');
+  const [wechatConfig, setWechatConfig] = useState<any>({});
+  const [wechatStatus, setWechatStatus] = useState<any>({});
+  const [wechatSaving, setWechatSaving] = useState(false);
+  const [wechatLoading, setWechatLoading] = useState(false);
 
   useEffect(() => {
     api.getSoftwareList().then(r => { if (r.ok) setSwData(r.software || []); }).catch(() => {});
     api.getPanelVersion().then(r => { if (r.ok) setEdition(r.edition || 'pro'); }).catch(() => {});
+    loadWechat();
   }, []);
 
-  // Merge backend software data with envInfo for display
+  const loadWechat = async () => {
+    setWechatLoading(true);
+    try {
+      const [cfgResp, statusResp] = await Promise.all([
+        api.wechatConfig().catch(() => ({ ok: false })),
+        api.wechatStatus().catch(() => ({ ok: false })),
+      ]);
+      if (cfgResp?.ok) setWechatConfig(cfgResp.config || {});
+      if (statusResp?.ok) setWechatStatus(statusResp);
+    } finally {
+      setWechatLoading(false);
+    }
+  };
+
   const getSw = (id: string) => swData.find(s => s.id === id);
 
   const softwareList = [
@@ -2992,10 +3010,10 @@ function SoftwareEnvironment({ envInfo, onRefresh }: { envInfo: any; onRefresh: 
     { id: 'npm', name: 'npm', value: envInfo.software?.npm, required: false, installable: false, category: 'runtime' },
     { id: 'docker', name: 'Docker', value: envInfo.software?.docker, required: false, category: 'runtime', installable: getSw('docker')?.installable ?? true },
     { id: 'git', name: 'Git', value: envInfo.software?.git, required: false, category: 'runtime', installable: getSw('git')?.installable ?? true },
-    { id: 'python', name: 'Python 3', value: envInfo.software?.python, required: false, category: 'runtime', installable: true },
+    { id: 'python', name: 'Python 3', value: envInfo.software?.python, required: false, installable: true, category: 'runtime' },
     { id: 'openclaw', name: 'OpenClaw', value: envInfo.software?.openclaw, required: true, category: 'service', installable: getSw('openclaw')?.installable ?? true },
     { id: 'napcat', name: getSw('napcat')?.name || 'NapCat (QQ个人号)', value: getSw('napcat')?.version || null, required: false, category: 'container', installable: getSw('napcat')?.installable ?? true, status: getSw('napcat')?.status },
-    { id: 'wechat', name: getSw('wechat')?.name || '微信机器人', value: getSw('wechat')?.version || null, required: false, category: 'container', installable: getSw('wechat')?.installable ?? true, status: getSw('wechat')?.status },
+    { id: 'wechat', name: getSw('wechat')?.name || '微信个人号', value: getSw('wechat')?.version || null, required: false, category: 'service', installable: getSw('wechat')?.installable ?? true, status: getSw('wechat')?.status },
   ];
   const visibleSoftwareList = edition === 'lite'
     ? softwareList.filter(s => s.id === 'openclaw').map(s => ({ ...s, value: s.value || '2026.2.26' }))
@@ -3007,7 +3025,9 @@ function SoftwareEnvironment({ envInfo, onRefresh }: { envInfo: any; onRefresh: 
     try {
       const r = await api.installSoftware(id);
       if (r.ok) {
-        setInstallMsg(`✅ ${id} 安装任务已创建，请在消息中心查看进度`);
+        setInstallMsg(id === 'wechat'
+          ? '✅ 已生成 WeChatFerry Bridge 安装包，请按下方步骤复制到 Windows 宿主机安装'
+          : `✅ ${id} 安装任务已创建，请在消息中心查看进度`);
       } else {
         setInstallMsg(`❌ ${r.error || '安装失败'}`);
       }
@@ -3015,7 +3035,26 @@ function SoftwareEnvironment({ envInfo, onRefresh }: { envInfo: any; onRefresh: 
       setInstallMsg(`❌ ${err.message || '请求失败'}`);
     } finally {
       setInstalling(null);
-      setTimeout(() => { setInstallMsg(''); onRefresh(); }, 5000);
+      setTimeout(() => { setInstallMsg(''); onRefresh(); loadWechat(); }, 5000);
+    }
+  };
+
+  const saveWechatConfig = async () => {
+    setWechatSaving(true);
+    setInstallMsg('');
+    try {
+      const r = await api.wechatUpdateConfig(wechatConfig);
+      if (r.ok) {
+        setWechatConfig(r.config || wechatConfig);
+        setInstallMsg('✅ WeChatFerry Bridge 配置已保存');
+        await loadWechat();
+      } else {
+        setInstallMsg(`❌ ${r.error || '微信桥接配置保存失败'}`);
+      }
+    } catch (err: any) {
+      setInstallMsg(`❌ ${err.message || '微信桥接配置保存失败'}`);
+    } finally {
+      setWechatSaving(false);
     }
   };
 
@@ -3043,7 +3082,7 @@ function SoftwareEnvironment({ envInfo, onRefresh }: { envInfo: any; onRefresh: 
             <div className="space-y-3">
               {items.map(sw => {
                 const pluginMissing = sw.status === 'plugin_missing';
-                const installed = pluginMissing || (sw.value && !sw.value.includes('not installed') && !sw.value.includes('not found')) || sw.status === 'running' || sw.status === 'exited';
+                const installed = pluginMissing || (sw.value && !sw.value.includes('not installed') && !sw.value.includes('not found')) || sw.status === 'running' || sw.status === 'exited' || sw.status === 'installed';
                 const isRunning = sw.status === 'running';
                 const installable = sw.installable !== false && !installed;
                 return (
@@ -3056,7 +3095,7 @@ function SoftwareEnvironment({ envInfo, onRefresh }: { envInfo: any; onRefresh: 
                       {sw.required && <span className="block text-[10px] text-amber-600 dark:text-amber-500 font-medium">必需组件</span>}
                     </div>
                     <span className="text-xs text-gray-600 dark:text-gray-400 font-mono flex-1 truncate bg-white dark:bg-gray-800 px-2 py-1 rounded border border-gray-100 dark:border-gray-700">
-                      {pluginMissing ? '已安装 NapCat，但缺少 QQ 个人号插件' : (sw.value || (installed ? 'Docker 容器' : '未安装'))}
+                      {pluginMissing ? '已安装 NapCat，但缺少 QQ 个人号插件' : (sw.value || (installed ? '已安装' : '未安装'))}
                     </span>
                     {installed ? (
                       <span className={`text-xs font-medium px-2.5 py-1 rounded-lg whitespace-nowrap ${pluginMissing ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400' : isRunning ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'}`}>
@@ -3083,6 +3122,97 @@ function SoftwareEnvironment({ envInfo, onRefresh }: { envInfo: any; onRefresh: 
           </div>
         );
       })}
+
+      <div className="page-modern-panel p-6 space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
+              <MessageSquare size={16} className="text-blue-500" /> 微信个人号桥接
+            </h3>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              这套方案不跑在 WSL。ClawPanel 只负责生成桥接包、保存地址，并通过 HTTP 调宿主机上的 WeChatFerry Bridge。
+            </p>
+          </div>
+          <button
+            onClick={loadWechat}
+            disabled={wechatLoading}
+            className="page-modern-secondary px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+          >
+            <RefreshCw size={12} className={wechatLoading ? 'animate-spin' : ''} /> 刷新状态
+          </button>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="space-y-2 text-sm">
+            <span className="font-medium text-gray-700 dark:text-gray-300">桥接地址</span>
+            <input
+              value={wechatConfig.bridgeUrl || ''}
+              onChange={e => setWechatConfig((prev: any) => ({ ...prev, bridgeUrl: e.target.value }))}
+              placeholder="http://127.0.0.1:19088"
+              className="w-full rounded-xl border border-blue-100/70 bg-white/70 px-3 py-2 text-sm outline-none transition focus:border-blue-300 dark:border-blue-900/40 dark:bg-slate-900/60"
+            />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium text-gray-700 dark:text-gray-300">桥接 Token</span>
+            <input
+              value={wechatConfig.bridgeToken || ''}
+              onChange={e => setWechatConfig((prev: any) => ({ ...prev, bridgeToken: e.target.value }))}
+              placeholder="clawpanel-wcf"
+              className="w-full rounded-xl border border-blue-100/70 bg-white/70 px-3 py-2 text-sm outline-none transition focus:border-blue-300 dark:border-blue-900/40 dark:bg-slate-900/60"
+            />
+          </label>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-xl border border-blue-100/70 bg-white/60 px-4 py-3 text-sm dark:border-blue-900/30 dark:bg-slate-900/50">
+            <div className="text-xs text-gray-500 dark:text-gray-400">桥接目录</div>
+            <div className="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-200">{wechatStatus.kitDir || wechatConfig.kitDir || '-'}</div>
+          </div>
+          <div className="rounded-xl border border-blue-100/70 bg-white/60 px-4 py-3 text-sm dark:border-blue-900/30 dark:bg-slate-900/50">
+            <div className="text-xs text-gray-500 dark:text-gray-400">连接状态</div>
+            <div className="mt-1 font-medium text-gray-900 dark:text-white">{wechatStatus.connected ? '桥接在线' : '桥接未连接'}</div>
+          </div>
+          <div className="rounded-xl border border-blue-100/70 bg-white/60 px-4 py-3 text-sm dark:border-blue-900/30 dark:bg-slate-900/50">
+            <div className="text-xs text-gray-500 dark:text-gray-400">微信登录</div>
+            <div className="mt-1 font-medium text-gray-900 dark:text-white">{wechatStatus.loggedIn ? (wechatStatus.name || '已登录') : '未登录'}</div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-blue-100/70 bg-[linear-gradient(145deg,rgba(255,255,255,0.76),rgba(239,246,255,0.6))] px-4 py-4 text-sm text-gray-600 dark:border-blue-900/30 dark:bg-slate-900/50 dark:text-gray-300">
+          <div className="font-medium text-gray-900 dark:text-white">你需要做什么</div>
+          <div className="mt-2 space-y-1 text-xs leading-6">
+            <div>1. 先点上面的“一键安装”，让面板在 WSL 里生成 Windows 桥接包。</div>
+            <div>2. 去 Windows 宿主机打开桥接目录，执行 `install-windows.ps1`。</div>
+            <div>3. 保持 Windows 微信已登录，然后运行 `start-bridge.bat`。</div>
+            <div>4. 如果 WSL 访问不到 `127.0.0.1:19088`，把桥接地址改成 Windows 宿主机 IP 再保存。</div>
+          </div>
+        </div>
+
+        {wechatStatus.error && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:border-amber-900/30 dark:bg-amber-950/20 dark:text-amber-300">
+            当前探测结果：{wechatStatus.error}
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => handleInstall('wechat')}
+            disabled={installing === 'wechat'}
+            className="page-modern-accent px-4 py-2 text-sm font-medium disabled:opacity-50"
+          >
+            {installing === 'wechat' ? <RefreshCw size={14} className="animate-spin" /> : <Package size={14} />}
+            {installing === 'wechat' ? '生成中...' : '一键生成 Windows 桥接包'}
+          </button>
+          <button
+            onClick={saveWechatConfig}
+            disabled={wechatSaving}
+            className="page-modern-secondary px-4 py-2 text-sm font-medium disabled:opacity-50"
+          >
+            <Save size={14} />
+            {wechatSaving ? '保存中...' : '保存桥接配置'}
+          </button>
+        </div>
+      </div>
     </>
   );
 }

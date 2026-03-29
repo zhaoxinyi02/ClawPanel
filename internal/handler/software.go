@@ -416,16 +416,25 @@ func GetSoftwareList(cfg *config.Config) gin.HandlerFunc {
 			Status: napcatStatus, Category: "container", Icon: "message-circle",
 		})
 
-		// WeChat Bot
-		wechatExists, wechatStatus := getDockerContainerStatus("openclaw-wechat")
+		// WeChat Ferry Bridge
+		wechatCfg := loadWechatConfigMap(cfg)
+		wechatExists := strings.TrimSpace(fmt.Sprint(wechatCfg["bridgeUrl"])) != ""
+		wechatStatus := "not_installed"
 		wechatVer := ""
 		if wechatExists {
-			wechatVer = "Docker"
+			wechatVer = "WeChatFerry Bridge"
+			wechatStatus = "installed"
+			if statusResp, err := wechatBridgeRequest(cfg, http.MethodGet, "/status", nil); err == nil {
+				wechatStatus = "running"
+				if version := strings.TrimSpace(fmt.Sprint(statusResp["version"])); version != "" {
+					wechatVer = version
+				}
+			}
 		}
 		list = append(list, SoftwareInfo{
-			ID: "wechat", Name: "微信机器人", Description: "wechatbot-webhook 微信个人号",
+			ID: "wechat", Name: "微信个人号", Description: "Windows 宿主机 WeChatFerry Bridge",
 			Version: wechatVer, Installed: wechatExists, Installable: true,
-			Status: wechatStatus, Category: "container", Icon: "message-square",
+			Status: wechatStatus, Category: "service", Icon: "message-square",
 		})
 
 		c.JSON(http.StatusOK, gin.H{"ok": true, "software": list, "platform": runtime.GOOS})
@@ -2403,42 +2412,282 @@ if ($shellDir -ne "") {
 }
 
 func buildWeChatInstallScript(cfg *config.Config) string {
-	return `
-set -e
-echo "📦 安装微信机器人 Docker 容器..."
+	kitDir := wechatBridgeKitDir(cfg)
+	packageJSON := `{
+  "name": "clawpanel-wechat-wcf-bridge",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "ClawPanel private WeChatFerry bridge",
+  "scripts": {
+    "start": "node bridge.mjs"
+  },
+  "dependencies": {
+    "@wechatferry/agent": "^0.0.26",
+    "file-box": "^1.8.8"
+  }
+}`
+	callbackURL := fmt.Sprintf("http://127.0.0.1:%d/api/wechat/callback", cfg.Port)
+	bridgeJS := `import http from "node:http";
+import { Buffer } from "node:buffer";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { Agent } from "@wechatferry/agent";
+import { FileBox } from "file-box";
 
-if ! command -v docker &>/dev/null; then
-  echo "❌ 需要先安装 Docker"
-  exit 1
-fi
+const port = Number(process.env.WCF_BRIDGE_PORT || 19088);
+const token = String(process.env.WCF_BRIDGE_TOKEN || "clawpanel-wcf").trim();
+const callbackUrl = String(process.env.PANEL_CALLBACK_URL || "__PANEL_CALLBACK_URL__").trim();
+const callbackToken = String(process.env.PANEL_CALLBACK_TOKEN || token).trim();
+const agent = new Agent();
+const state = {
+  connected: false,
+  loggedIn: false,
+  name: "",
+  selfWxid: "",
+  contacts: 0,
+  rooms: 0,
+  version: "WeChatFerry Bridge",
+  message: "等待微信登录",
+  lastError: "",
+};
 
-# Check if already exists
-if docker inspect openclaw-wechat &>/dev/null; then
-  echo "⚠️ openclaw-wechat 容器已存在，正在重新创建..."
-  docker stop openclaw-wechat 2>/dev/null || true
-  docker rm openclaw-wechat 2>/dev/null || true
-fi
+async function refreshState() {
+  try {
+    const contacts = await agent.getContactList();
+    const rooms = await agent.getChatRoomList();
+    state.contacts = Array.isArray(contacts) ? contacts.length : 0;
+    state.rooms = Array.isArray(rooms) ? rooms.length : 0;
+  } catch {}
+}
 
-echo "📥 拉取 wechatbot-webhook 镜像..."
-docker pull dannicool/docker-wechatbot-webhook:latest
+agent.on("login", async (user) => {
+  state.connected = true;
+  state.loggedIn = true;
+  state.name = user?.name || user?.wxid || "已登录";
+  state.selfWxid = user?.wxid || "";
+  state.message = "微信已登录";
+  state.lastError = "";
+  await refreshState();
+});
 
-echo "🔧 创建容器..."
-docker run -d \
-  --name openclaw-wechat \
-  --restart unless-stopped \
-  -p 3002:3001 \
-  -e LOGIN_API_TOKEN=clawpanel-wechat \
-  -e RECVD_MSG_API=http://host.docker.internal:19527/api/wechat/callback \
-  -e ACCEPT_RECVD_MSG_MYSELF=false \
-  -e LOG_LEVEL=info \
-  -v wechat-data:/app/data \
-  --add-host=host.docker.internal:host-gateway \
-  dannicool/docker-wechatbot-webhook:latest
+agent.on("logout", () => {
+  state.loggedIn = false;
+  state.name = "";
+  state.selfWxid = "";
+  state.contacts = 0;
+  state.rooms = 0;
+  state.message = "微信已退出";
+});
 
-echo "⏳ 等待容器启动..."
-sleep 3
+async function postCallback(payload) {
+  if (!callbackUrl) return;
+  const headers = { "Content-Type": "application/json" };
+  if (callbackToken) {
+    headers.Authorization = "Bearer " + callbackToken;
+  }
+  try {
+    await fetch(callbackUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    state.lastError = err instanceof Error ? err.message : String(err || "callback failed");
+  }
+}
 
-echo "✅ 微信机器人安装完成"
-echo "📝 请在通道管理中配置微信并扫码登录"
+agent.on("message", async (msg) => {
+  state.connected = true;
+  if (!state.message || state.message == "ç­‰å¾…å¾®ä¿¡ç™»å½•") {
+    state.message = "æ¡¥æŽ¥è¿è¡Œä¸­";
+  }
+  const talker = String(msg?.roomid || msg?.roomId || msg?.strTalker || msg?.talker || msg?.from || "");
+  const sender = String(msg?.sender || msg?.senderWxid || msg?.fromWxid || msg?.from || "");
+  const content = String(msg?.content || msg?.strContent || msg?.text || "");
+  const isRoom = Boolean(msg?.roomid || msg?.roomId || String(msg?.strTalker || "").endsWith("@chatroom"));
+  const isSelf = Boolean(msg?.isSelf || msg?.isSender || msg?.self);
+  await postCallback({
+    event: "message",
+    talker,
+    sender: sender || (!isRoom ? talker : ""),
+    content,
+    isRoom,
+    isSelf,
+    raw: msg,
+  });
+});
+
+agent.on("error", (err) => {
+  state.connected = false;
+  state.lastError = err instanceof Error ? err.message : String(err || "unknown error");
+  state.message = state.lastError || "桥接异常";
+});
+
+function sendJson(res, status, payload) {
+  const body = JSON.stringify(payload);
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Content-Length": Buffer.byteLength(body),
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  });
+  res.end(body);
+}
+
+function unauthorized(res) {
+  sendJson(res, 401, { ok: false, error: "unauthorized" });
+}
+
+function collectJson(req) {
+  return new Promise((resolve, reject) => {
+    let raw = "";
+    req.on("data", chunk => { raw += chunk; });
+    req.on("end", () => {
+      if (!raw.trim()) {
+        resolve({});
+        return;
+      }
+      try {
+        resolve(JSON.parse(raw));
+      } catch (err) {
+        reject(err);
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+async function downloadToTemp(fileUrl, fileName) {
+  const res = await fetch(fileUrl);
+  if (!res.ok) throw new Error("下载文件失败: " + res.status + " " + res.statusText);
+  const buf = Buffer.from(await res.arrayBuffer());
+  const ext = path.extname(fileName || new URL(fileUrl).pathname) || ".bin";
+  const tempPath = path.join(os.tmpdir(), "clawpanel-wcf-" + Date.now() + ext);
+  await fs.writeFile(tempPath, buf);
+  return tempPath;
+}
+
+const server = http.createServer(async (req, res) => {
+  if (req.method === "OPTIONS") {
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+  if (token) {
+    const auth = String(req.headers.authorization || "");
+    if (auth !== "Bearer " + token) {
+      unauthorized(res);
+      return;
+    }
+  }
+  try {
+    if (req.method === "GET" && req.url === "/status") {
+      sendJson(res, 200, { ok: true, ...state });
+      return;
+    }
+    if (req.method === "POST" && req.url === "/send/text") {
+      const body = await collectJson(req);
+      if (!body.to || !body.content) throw new Error("to and content are required");
+      await agent.sendText(body.to, body.content, Array.isArray(body.mentionIdList) ? body.mentionIdList : []);
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+    if (req.method === "POST" && req.url === "/send/file") {
+      const body = await collectJson(req);
+      if (!body.to || !body.fileUrl) throw new Error("to and fileUrl are required");
+      const tempPath = await downloadToTemp(body.fileUrl, body.fileName || "");
+      try {
+        await agent.sendFile(body.to, FileBox.fromLocal(tempPath));
+      } finally {
+        await fs.unlink(tempPath).catch(() => {});
+      }
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+    sendJson(res, 404, { ok: false, error: "not found" });
+  } catch (err) {
+    sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err || "unknown error") });
+  }
+});
+
+agent.start();
+state.connected = true;
+state.message = "桥接已启动，等待微信登录";
+server.listen(port, "0.0.0.0", () => {
+  console.log("[ClawPanel WCF] bridge listening on " + port);
+});
 `
+	installPS1 := `$ErrorActionPreference = "Stop"
+$Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $Root
+Write-Host "[1/5] 检查 Node.js..."
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+  throw "请先在 Windows 宿主机安装 Node.js 20+：https://nodejs.org/"
+}
+Write-Host "[2/5] 安装依赖..."
+npm install
+Write-Host "[3/5] 生成 .env..."
+if (-not (Test-Path (Join-Path $Root ".env"))) {
+  @"
+WCF_BRIDGE_PORT=19088
+WCF_BRIDGE_TOKEN=clawpanel-wcf
+PANEL_CALLBACK_URL=__PANEL_CALLBACK_URL__
+PANEL_CALLBACK_TOKEN=clawpanel-wcf
+"@ | Set-Content -Encoding UTF8 (Join-Path $Root ".env")
+}
+Write-Host "[4/5] 请确认已在 Windows 上登录桌面微信，并安装 WeChatFerry 依赖。"
+Write-Host "[5/5] 安装完成，执行 start-bridge.bat 即可启动桥接。"
+`
+	startBAT := `@echo off
+cd /d %~dp0
+if exist .env (
+  for /f "usebackq tokens=1,2 delims==" %%a in (".env") do (
+    set %%a=%%b
+  )
+)
+node bridge.mjs
+pause
+`
+	readme := fmt.Sprintf(`ClawPanel 私有 WeChatFerry Bridge
+
+1. 这套桥接必须运行在 Windows 宿主机，不跑在 WSL。
+2. 宿主机先安装 Node.js 20+，并保持 Windows 桌面微信已登录。
+3. 在此目录打开 PowerShell，执行：
+   powershell -ExecutionPolicy Bypass -File .\install-windows.ps1
+4. 然后双击 start-bridge.bat，或在 PowerShell 执行：
+   node bridge.mjs
+5. 回到 ClawPanel 系统配置，桥接地址填写：
+   http://127.0.0.1:19088
+6. 如需让 WSL 面板访问 Windows，可改成宿主机实际 IP，例如：
+   http://<Windows-IP>:19088
+
+当前桥接目录：%s
+`, kitDir)
+	return fmt.Sprintf(`
+set -e
+KIT_DIR=%q
+mkdir -p "$KIT_DIR"
+cat > "$KIT_DIR/package.json" <<'EOF'
+%s
+EOF
+cat > "$KIT_DIR/bridge.mjs" <<'EOF'
+%s
+EOF
+cat > "$KIT_DIR/install-windows.ps1" <<'EOF'
+%s
+EOF
+cat > "$KIT_DIR/start-bridge.bat" <<'EOF'
+%s
+EOF
+cat > "$KIT_DIR/README.txt" <<'EOF'
+%s
+EOF
+	printf "WCF_BRIDGE_PORT=19088\nWCF_BRIDGE_TOKEN=clawpanel-wcf\nPANEL_CALLBACK_URL=%s\nPANEL_CALLBACK_TOKEN=clawpanel-wcf\n" > "$KIT_DIR/.env.example"
+chmod 0644 "$KIT_DIR/package.json" "$KIT_DIR/bridge.mjs" "$KIT_DIR/install-windows.ps1" "$KIT_DIR/start-bridge.bat" "$KIT_DIR/README.txt" "$KIT_DIR/.env.example"
+echo "✅ 已生成 WeChatFerry Bridge 安装包"
+echo "📁 目录: $KIT_DIR"
+echo "➡️ 请把这个目录复制到 Windows 宿主机后执行 install-windows.ps1"
+`, kitDir, packageJSON, strings.ReplaceAll(bridgeJS, "__PANEL_CALLBACK_URL__", callbackURL), strings.ReplaceAll(installPS1, "__PANEL_CALLBACK_URL__", callbackURL), startBAT, readme, callbackURL)
 }

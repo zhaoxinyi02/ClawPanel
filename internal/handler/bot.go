@@ -21,6 +21,11 @@ import (
 	"github.com/zhaoxinyi02/ClawPanel/internal/config"
 )
 
+const (
+	defaultWechatBridgeURL   = "http://127.0.0.1:19088"
+	defaultWechatBridgeToken = "clawpanel-wcf"
+)
+
 // === Admin Config ===
 
 func GetAdminConfig(cfg *config.Config) gin.HandlerFunc {
@@ -677,57 +682,204 @@ func restartNapCatProcess(cfg *config.Config) {
 
 // === WeChat API ===
 
+func wechatBridgeKitDir(cfg *config.Config) string {
+	return filepath.Join(cfg.DataDir, "wechat-wcf-bridge")
+}
+
+func normalizeWechatConfig(cfg *config.Config, raw map[string]interface{}) map[string]interface{} {
+	out := map[string]interface{}{
+		"mode":        "wcferry",
+		"bridgeUrl":   defaultWechatBridgeURL,
+		"bridgeToken": defaultWechatBridgeToken,
+		"kitDir":      wechatBridgeKitDir(cfg),
+	}
+	for k, v := range raw {
+		out[k] = v
+	}
+	if s := strings.TrimSpace(fmt.Sprint(out["mode"])); s != "" {
+		out["mode"] = s
+	}
+	if s := strings.TrimSpace(fmt.Sprint(out["bridgeUrl"])); s != "" {
+		out["bridgeUrl"] = strings.TrimRight(s, "/")
+	}
+	if s := strings.TrimSpace(fmt.Sprint(out["bridgeToken"])); s != "" {
+		out["bridgeToken"] = s
+	}
+	out["kitDir"] = wechatBridgeKitDir(cfg)
+	return out
+}
+
+func loadWechatConfigMap(cfg *config.Config) map[string]interface{} {
+	adminCfg := loadAdminConfig(cfg)
+	if wc, ok := adminCfg["wechat"].(map[string]interface{}); ok && wc != nil {
+		return normalizeWechatConfig(cfg, wc)
+	}
+	return normalizeWechatConfig(cfg, map[string]interface{}{})
+}
+
+func wechatBridgeRequest(cfg *config.Config, method, path string, body interface{}) (map[string]interface{}, error) {
+	wc := loadWechatConfigMap(cfg)
+	baseURL := strings.TrimRight(fmt.Sprint(wc["bridgeUrl"]), "/")
+	if baseURL == "" {
+		baseURL = defaultWechatBridgeURL
+	}
+	var bodyReader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		bodyReader = bytes.NewReader(data)
+	}
+	req, err := http.NewRequest(method, baseURL+path, bodyReader)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token := strings.TrimSpace(fmt.Sprint(wc["bridgeToken"])); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	var result map[string]interface{}
+	if len(data) == 0 {
+		result = map[string]interface{}{}
+	} else if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("bridge returned invalid json: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		msg := strings.TrimSpace(fmt.Sprint(result["error"]))
+		if msg == "" {
+			msg = strings.TrimSpace(fmt.Sprint(result["message"]))
+		}
+		if msg == "" {
+			msg = resp.Status
+		}
+			return nil, fmt.Errorf("%s", msg)
+	}
+	return result, nil
+}
+
 func WechatStatus(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(200, gin.H{"ok": true, "connected": false, "loggedIn": false, "name": ""})
+		wc := loadWechatConfigMap(cfg)
+		resp := gin.H{
+			"ok":         true,
+			"mode":       wc["mode"],
+			"bridgeUrl":  wc["bridgeUrl"],
+			"kitDir":     wc["kitDir"],
+			"configured": strings.TrimSpace(fmt.Sprint(wc["bridgeUrl"])) != "",
+			"connected":  false,
+			"loggedIn":   false,
+			"name":       "",
+		}
+		bridgeResp, err := wechatBridgeRequest(cfg, http.MethodGet, "/status", nil)
+		if err != nil {
+			resp["error"] = err.Error()
+			c.JSON(http.StatusOK, resp)
+			return
+		}
+		for _, key := range []string{"connected", "loggedIn", "name", "selfWxid", "contacts", "rooms", "version", "message"} {
+			if v, ok := bridgeResp[key]; ok {
+				resp[key] = v
+			}
+		}
+		c.JSON(http.StatusOK, resp)
 	}
 }
 
 func WechatLoginUrl(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		adminCfg := loadAdminConfig(cfg)
-		token := ""
-		if wc, ok := adminCfg["wechat"].(map[string]interface{}); ok {
-			if t, ok := wc["token"].(string); ok {
-				token = t
-			}
-		}
-		host := c.Request.Host
-		if idx := strings.Index(host, ":"); idx > 0 {
-			host = host[:idx]
-		}
-		externalUrl := fmt.Sprintf("http://%s:3002/login?token=%s", host, token)
-		c.JSON(200, gin.H{"ok": true, "externalUrl": externalUrl, "internalUrl": ""})
+		wc := loadWechatConfigMap(cfg)
+		c.JSON(http.StatusOK, gin.H{
+			"ok":          true,
+			"externalUrl": wc["bridgeUrl"],
+			"internalUrl": "",
+			"mode":        wc["mode"],
+			"kitDir":      wc["kitDir"],
+		})
 	}
 }
 
 func WechatSend(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(200, gin.H{"ok": true})
+		var body struct {
+			To            string   `json:"to"`
+			Content       string   `json:"content"`
+			IsRoom        bool     `json:"isRoom"`
+			MentionIdList []string `json:"mentionIdList"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		if strings.TrimSpace(body.To) == "" || strings.TrimSpace(body.Content) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "to and content are required"})
+			return
+		}
+		resp, err := wechatBridgeRequest(cfg, http.MethodPost, "/send/text", gin.H{
+			"to":            strings.TrimSpace(body.To),
+			"content":       body.Content,
+			"isRoom":        body.IsRoom,
+			"mentionIdList": body.MentionIdList,
+		})
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true, "data": resp})
 	}
 }
 
 func WechatSendFile(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(200, gin.H{"ok": true})
+		var body struct {
+			To       string `json:"to"`
+			FileURL  string `json:"fileUrl"`
+			FileName string `json:"fileName"`
+			IsRoom   bool   `json:"isRoom"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		if strings.TrimSpace(body.To) == "" || strings.TrimSpace(body.FileURL) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "to and fileUrl are required"})
+			return
+		}
+		resp, err := wechatBridgeRequest(cfg, http.MethodPost, "/send/file", gin.H{
+			"to":       strings.TrimSpace(body.To),
+			"fileUrl":  strings.TrimSpace(body.FileURL),
+			"fileName": strings.TrimSpace(body.FileName),
+			"isRoom":   body.IsRoom,
+		})
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true, "data": resp})
 	}
 }
 
 func WechatGetConfig(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		adminCfg := loadAdminConfig(cfg)
-		wc := adminCfg["wechat"]
-		if wc == nil {
-			wc = map[string]interface{}{}
-		}
-		c.JSON(200, gin.H{"ok": true, "config": wc})
+		wc := loadWechatConfigMap(cfg)
+		c.JSON(http.StatusOK, gin.H{"ok": true, "config": wc})
 	}
 }
 
 func WechatUpdateConfig(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var body map[string]interface{}
-		c.ShouldBindJSON(&body)
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
 		adminCfg := loadAdminConfig(cfg)
 		existing, ok := adminCfg["wechat"].(map[string]interface{})
 		if !ok {
@@ -736,9 +888,9 @@ func WechatUpdateConfig(cfg *config.Config) gin.HandlerFunc {
 		for k, v := range body {
 			existing[k] = v
 		}
-		adminCfg["wechat"] = existing
+		adminCfg["wechat"] = normalizeWechatConfig(cfg, existing)
 		saveAdminConfigData(cfg, adminCfg)
-		c.JSON(200, gin.H{"ok": true})
+		c.JSON(http.StatusOK, gin.H{"ok": true, "config": adminCfg["wechat"]})
 	}
 }
 
