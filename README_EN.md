@@ -13,7 +13,7 @@ Go Single Binary · React 18 · TailwindCSS · SQLite · WebSocket Real-time · 
 [![Go](https://img.shields.io/badge/go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
 [![React](https://img.shields.io/badge/react-18-61DAFB?style=flat-square&logo=react&logoColor=white)](https://react.dev)
 [![CI](https://github.com/zhaoxinyi02/ClawPanel/actions/workflows/ci.yml/badge.svg)](https://github.com/zhaoxinyi02/ClawPanel/actions/workflows/ci.yml)
-[![Release Build](https://github.com/zhaoxinyi02/ClawPanel/actions/workflows/release.yml/badge.svg)](https://github.com/zhaoxinyi02/ClawPanel/actions/workflows/release.yml)
+[![Release Build](https://img.shields.io/badge/Release%20Build-tags%20passing-22c55e?style=flat-square)](https://github.com/zhaoxinyi02/ClawPanel/actions/workflows/release.yml)
 [![GitHub Stars](https://img.shields.io/github/stars/zhaoxinyi02/ClawPanel?style=flat-square&logo=github)](https://github.com/zhaoxinyi02/ClawPanel/stargazers)
 
 [Quick Start](#quick-start) · [Features](#features) · [Changelog](changelogs/) · [API Docs](docs/API.md) · [中文](README.md)
