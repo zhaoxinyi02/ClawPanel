@@ -2433,14 +2433,14 @@ import { Buffer } from "node:buffer";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Agent } from "@wechatferry/agent";
+import { WechatferryAgent } from "@wechatferry/agent";
 import { FileBox } from "file-box";
 
 const port = Number(process.env.WCF_BRIDGE_PORT || 19088);
 const token = String(process.env.WCF_BRIDGE_TOKEN || "clawpanel-wcf").trim();
 const callbackUrl = String(process.env.PANEL_CALLBACK_URL || "__PANEL_CALLBACK_URL__").trim();
 const callbackToken = String(process.env.PANEL_CALLBACK_TOKEN || token).trim();
-const agent = new Agent();
+const agent = new WechatferryAgent();
 const state = {
   connected: false,
   loggedIn: false,
