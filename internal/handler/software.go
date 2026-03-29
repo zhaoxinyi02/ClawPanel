@@ -2424,7 +2424,7 @@ func buildWeChatInstallScript(cfg *config.Config) string {
   },
   "dependencies": {
     "@wechatferry/agent": "^0.0.26",
-    "file-box": "^1.8.8"
+    "file-box": "^1.4.15"
   }
 }`
 	callbackURL := fmt.Sprintf("http://127.0.0.1:%d/api/wechat/callback", cfg.Port)
@@ -2622,13 +2622,16 @@ server.listen(port, "0.0.0.0", () => {
 	installPS1 := `$ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
-Write-Host "[1/5] 检查 Node.js..."
+Write-Host "[1/5] Checking Node.js..."
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-  throw "请先在 Windows 宿主机安装 Node.js 20+：https://nodejs.org/"
+  throw "Please install Node.js 20+ on Windows first: https://nodejs.org/"
 }
-Write-Host "[2/5] 安装依赖..."
+Write-Host "[2/5] Installing dependencies..."
 npm install
-Write-Host "[3/5] 生成 .env..."
+if ($LASTEXITCODE -ne 0) {
+  throw "npm install failed with exit code $LASTEXITCODE"
+}
+Write-Host "[3/5] Writing .env..."
 if (-not (Test-Path (Join-Path $Root ".env"))) {
   @"
 WCF_BRIDGE_PORT=19088
@@ -2637,8 +2640,8 @@ PANEL_CALLBACK_URL=__PANEL_CALLBACK_URL__
 PANEL_CALLBACK_TOKEN=clawpanel-wcf
 "@ | Set-Content -Encoding UTF8 (Join-Path $Root ".env")
 }
-Write-Host "[4/5] 请确认已在 Windows 上登录桌面微信，并安装 WeChatFerry 依赖。"
-Write-Host "[5/5] 安装完成，执行 start-bridge.bat 即可启动桥接。"
+Write-Host "[4/5] Make sure Windows WeChat is logged in."
+Write-Host "[5/5] Done. Run start-bridge.bat to launch the bridge."
 `
 	startBAT := `@echo off
 cd /d %~dp0
