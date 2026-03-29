@@ -1506,50 +1506,6 @@ func isTransientGitCloneError(msg string) bool {
 
 func (m *Manager) installFromArchive(url, dest string) error {
 	return m.installFromArchiveWithRetry(url, dest)
-
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-
-	os.MkdirAll(dest, 0755)
-	tmpFile := filepath.Join(dest, "plugin-archive.tmp")
-	f, err := os.Create(tmpFile)
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmpFile)
-	if _, err := io.Copy(f, resp.Body); err != nil {
-		f.Close()
-		return fmt.Errorf("下载插件失败: %v", err)
-	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("写入插件归档失败: %v", err)
-	}
-
-	// Extract based on extension
-	if strings.HasSuffix(url, ".zip") {
-		cmd := exec.Command("unzip", "-o", tmpFile, "-d", dest)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("解压 zip 失败: %v: %s", err, strings.TrimSpace(string(out)))
-		}
-	} else if strings.HasSuffix(url, ".tar.gz") || strings.HasSuffix(url, ".tgz") {
-		cmd := exec.Command("tar", "-xzf", tmpFile, "-C", dest)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("解压 tar.gz 失败: %v: %s", err, strings.TrimSpace(string(out)))
-		}
-	}
-
-	if err := flattenExtractedArchiveRoot(dest); err != nil {
-		return err
-	}
-	return nil
 }
 
 func flattenExtractedArchiveRoot(dest string) error {
