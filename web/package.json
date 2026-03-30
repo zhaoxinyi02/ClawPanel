@@ -13,7 +13,7 @@
     "@xyflow/react": "^12.10.1",
     "clsx": "^2.1.1",
     "dagre": "^0.8.5",
-    "lucide-react": "^0.460.0",
+    "lucide-react": "^1.7.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
