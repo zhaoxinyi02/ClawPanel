@@ -3047,7 +3047,7 @@ function SoftwareEnvironment({ envInfo, onRefresh }: { envInfo: any; onRefresh: 
       const r = await api.installSoftware(id);
       if (r.ok) {
         setInstallMsg(id === 'wechat'
-          ? '✅ 已生成 WeChatFerry Bridge 安装包，请按下方步骤复制到 Windows 宿主机安装'
+          ? '✅ 微信个人号服务安装任务已创建，请到通道管理里打开登录页扫码登录'
           : `✅ ${id} 安装任务已创建，请在消息中心查看进度`);
       } else {
         setInstallMsg(`❌ ${r.error || '安装失败'}`);
@@ -3143,104 +3143,6 @@ function SoftwareEnvironment({ envInfo, onRefresh }: { envInfo: any; onRefresh: 
           </div>
         );
       })}
-
-      <div className="page-modern-panel p-6 space-y-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <MessageSquare size={16} className="text-blue-500" /> 微信个人号桥接（高级设置）
-            </h3>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              主入口已经移动到“通道管理”。这里保留服务地址和 Token 的高级设置；ClawPanel 负责安装 wechatbot-webhook Docker，并通过 HTTP 与它联动。
-            </p>
-          </div>
-          <button
-            onClick={loadWechat}
-            disabled={wechatLoading}
-            className="page-modern-secondary px-3 py-1.5 text-xs font-medium disabled:opacity-50"
-          >
-            <RefreshCw size={12} className={wechatLoading ? 'animate-spin' : ''} /> 刷新状态
-          </button>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="space-y-2 text-sm">
-            <span className="font-medium text-gray-700 dark:text-gray-300">服务地址</span>
-            <input
-              value={wechatConfig.bridgeUrl || ''}
-              onChange={e => setWechatConfig((prev: any) => ({ ...prev, bridgeUrl: e.target.value }))}
-              placeholder="http://127.0.0.1:3002"
-              className="w-full rounded-xl border border-blue-100/70 bg-white/70 px-3 py-2 text-sm outline-none transition focus:border-blue-300 dark:border-blue-900/40 dark:bg-slate-900/60"
-            />
-          </label>
-          <label className="space-y-2 text-sm">
-            <span className="font-medium text-gray-700 dark:text-gray-300">登录 Token</span>
-            <input
-              value={wechatConfig.bridgeToken || ''}
-              onChange={e => setWechatConfig((prev: any) => ({ ...prev, bridgeToken: e.target.value }))}
-              placeholder="clawpanel-wechat"
-              className="w-full rounded-xl border border-blue-100/70 bg-white/70 px-3 py-2 text-sm outline-none transition focus:border-blue-300 dark:border-blue-900/40 dark:bg-slate-900/60"
-            />
-          </label>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-xl border border-blue-100/70 bg-white/60 px-4 py-3 text-sm dark:border-blue-900/30 dark:bg-slate-900/50">
-            <div className="text-xs text-gray-500 dark:text-gray-400">桥接目录</div>
-            <div className="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-200">{wechatStatus.kitDir || wechatConfig.kitDir || '/opt/clawpanel/data/wechatbot-webhook'}</div>
-          </div>
-          <div className="rounded-xl border border-blue-100/70 bg-white/60 px-4 py-3 text-sm dark:border-blue-900/30 dark:bg-slate-900/50">
-            <div className="text-xs text-gray-500 dark:text-gray-400">连接状态</div>
-            <div className="mt-1 font-medium text-gray-900 dark:text-white">{wechatStatus.connected ? '服务在线' : '服务未连接'}</div>
-          </div>
-          <div className="rounded-xl border border-blue-100/70 bg-white/60 px-4 py-3 text-sm dark:border-blue-900/30 dark:bg-slate-900/50">
-            <div className="text-xs text-gray-500 dark:text-gray-400">微信登录</div>
-            <div className="mt-1 font-medium text-gray-900 dark:text-white">{wechatStatus.loggedIn ? (wechatStatus.name || '已登录') : '未登录'}</div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-blue-100/70 bg-[linear-gradient(145deg,rgba(255,255,255,0.76),rgba(239,246,255,0.6))] px-4 py-4 text-sm text-gray-600 dark:border-blue-900/30 dark:bg-slate-900/50 dark:text-gray-300">
-          <div className="font-medium text-gray-900 dark:text-white">你需要做什么</div>
-          <div className="mt-2 space-y-1 text-xs leading-6">
-            <div>1. 先点上面的“一键安装”，让面板在当前服务器里安装 wechatbot-webhook Docker。</div>
-            <div>2. 安装完成后，回到“通道管理”里的微信个人号，点击“打开登录页”。</div>
-            <div>3. 浏览器打开登录页后扫码登录微信。</div>
-            <div>4. 如需排障，可查看 `/opt/clawpanel/data/wechatbot-webhook/docker-compose.yml` 和容器日志。</div>
-          </div>
-        </div>
-
-        {wechatStatus.error && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:border-amber-900/30 dark:bg-amber-950/20 dark:text-amber-300">
-            当前探测结果：{wechatStatus.error}
-          </div>
-        )}
-
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={() => handleInstall('wechat')}
-            disabled={installing === 'wechat'}
-            className="page-modern-accent px-4 py-2 text-sm font-medium disabled:opacity-50"
-          >
-            {installing === 'wechat' ? <RefreshCw size={14} className="animate-spin" /> : <Package size={14} />}
-            {installing === 'wechat' ? '安装中...' : '一键安装微信服务'}
-          </button>
-          <a
-            href={api.wechatBridgeDownloadUrl()}
-            className="page-modern-secondary px-4 py-2 text-sm font-medium"
-          >
-            <Download size={14} />
-            浏览器下载桥接包
-          </a>
-          <button
-            onClick={saveWechatConfig}
-            disabled={wechatSaving}
-            className="page-modern-secondary px-4 py-2 text-sm font-medium disabled:opacity-50"
-          >
-            <Save size={14} />
-            {wechatSaving ? '保存中...' : '保存桥接配置'}
-          </button>
-        </div>
-      </div>
     </>
   );
 }
