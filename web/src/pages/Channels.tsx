@@ -657,6 +657,7 @@ export default function Channels() {
   const [wechatBridgeConfig, setWechatBridgeConfig] = useState<Record<string, any>>({});
   const [wechatLoading, setWechatLoading] = useState(false);
   const [wechatSaving, setWechatSaving] = useState(false);
+  const [wechatLoginOpen, setWechatLoginOpen] = useState(false);
   const [feishuAdvancedAccounts, setFeishuAdvancedAccounts] = useState(false);
   const [feishuActiveAccountId, setFeishuActiveAccountId] = useState('default');
   const [feishuNewAccountId, setFeishuNewAccountId] = useState('');
@@ -665,6 +666,10 @@ export default function Channels() {
   const qrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const feishuAccountModeInitializedRef = useRef(false);
   const navigate = useNavigate();
+  const wechatSoftware = softwareList.find(s => s.id === 'wechat');
+  const wechatServiceInstalled = !!(wechatSoftware?.installed || ['installed', 'running', 'exited'].includes(String(wechatSoftware?.status || '').toLowerCase()));
+  const wechatServiceOnline = !!wechatBridgeStatus?.connected;
+  const wechatLoggedIn = !!wechatBridgeStatus?.loggedIn;
 
   const normalizeChannelQuery = (value: string | null) => {
     if (!value) return '';
@@ -807,7 +812,7 @@ export default function Channels() {
         api.wechatStatus(),
         api.wechatConfig(),
       ]);
-      if (statusResp?.ok) setWechatBridgeStatus(statusResp.status || {});
+      if (statusResp?.ok) setWechatBridgeStatus(statusResp || {});
       if (configResp?.ok) setWechatBridgeConfig(configResp.config || {});
     } catch {
       // noop
@@ -899,7 +904,7 @@ export default function Channels() {
       api.napcatStatus().then(r => { if (r.ok) setNapcatStatus(r.status); }).catch(() => {}),
       api.getInstalledPlugins().then((r: any) => { if (r.ok) setInstalledPlugins(r.plugins || []); }).catch(() => {}),
       api.getQQChannelState().then((r: any) => { if (r.ok) setQQChannelState(r.state || null); }).catch(() => {}),
-      api.wechatStatus().then(r => { if (r.ok) setWechatBridgeStatus(r.status || {}); }).catch(() => {}),
+      api.wechatStatus().then(r => { if (r.ok) setWechatBridgeStatus(r || {}); }).catch(() => {}),
       api.wechatConfig().then(r => { if (r.ok) setWechatBridgeConfig(r.config || {}); }).catch(() => {}),
     ]).catch(() => {});
   }, [loadFeishuDmDiagnosis, loadWechatBridge, syncFeishuUiState]);
@@ -1871,7 +1876,7 @@ export default function Channels() {
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-6 space-y-6">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between pb-4 border-b border-gray-100 dark:border-gray-800">
                 <div className="flex items-center gap-4">
-                  <div className={`p-2.5 rounded-xl ${(wechatBridgeStatus?.connected || wechatBridgeStatus?.loggedIn) ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'}`}>
+                  <div className={`p-2.5 rounded-xl ${(wechatServiceOnline || wechatLoggedIn || wechatServiceInstalled) ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'}`}>
                     <MessageSquare size={20} />
                   </div>
                   <div>
@@ -1901,11 +1906,13 @@ export default function Channels() {
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-900/30 px-4 py-3">
                   <div className="text-[11px] text-gray-500">服务连接</div>
-                  <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{wechatBridgeStatus?.connected ? '服务在线' : '服务未连接'}</div>
+                  <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
+                    {wechatServiceOnline ? '服务在线' : (wechatServiceInstalled ? '已安装，等待连接' : '尚未安装')}
+                  </div>
                 </div>
                 <div className="rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-900/30 px-4 py-3">
                   <div className="text-[11px] text-gray-500">微信登录</div>
-                  <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{wechatBridgeStatus?.loggedIn ? (wechatBridgeStatus?.name || '已登录') : '未登录'}</div>
+                  <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{wechatLoggedIn ? (wechatBridgeStatus?.name || '已登录') : '未登录'}</div>
                 </div>
                 <div className="rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-900/30 px-4 py-3">
                   <div className="text-[11px] text-gray-500">安装目录</div>
@@ -1956,17 +1963,19 @@ export default function Channels() {
                   className={`${modern ? 'page-modern-accent px-4 py-2 text-sm' : 'inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-all shadow-lg shadow-violet-200 dark:shadow-none hover:shadow-xl'}`}
                 >
                   {installingSw === 'wechat' ? <Loader2 size={14} className="animate-spin" /> : <Package size={14} />}
-                  {installingSw === 'wechat' ? '安装中...' : '一键安装微信服务'}
+                  {installingSw === 'wechat'
+                    ? '安装中...'
+                    : (wechatServiceInstalled ? '重装/重启微信服务' : '一键安装微信服务')}
                 </button>
-                <a
-                  href={wechatBridgeStatus?.loginUrl || '#'}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={`${modern ? 'page-modern-action px-4 py-2 text-sm' : 'inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all'} ${!wechatBridgeStatus?.loginUrl ? 'pointer-events-none opacity-50' : ''}`}
+                <button
+                  type="button"
+                  onClick={() => setWechatLoginOpen(true)}
+                  disabled={!wechatBridgeStatus?.loginUrl || !wechatServiceInstalled}
+                  className={`${modern ? 'page-modern-action px-4 py-2 text-sm' : 'inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all'} ${(!wechatBridgeStatus?.loginUrl || !wechatServiceInstalled) ? 'pointer-events-none opacity-50' : ''}`}
                 >
                   <ExternalLink size={14} />
-                  打开登录页
-                </a>
+                  打开扫码登录
+                </button>
                 <a
                   href={api.wechatBridgeDownloadUrl()}
                   className={`${modern ? 'page-modern-action px-4 py-2 text-sm' : 'inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all'}`}
@@ -1982,6 +1991,45 @@ export default function Channels() {
                   <Check size={14} />
                   {wechatSaving ? '保存中...' : '保存桥接配置'}
                 </button>
+              </div>
+            </div>
+          )}
+
+          {wechatLoginOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm"
+              onClick={() => setWechatLoginOpen(false)}
+            >
+              <div
+                className="flex h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4 dark:border-gray-800">
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900 dark:text-white">微信个人号扫码登录</h3>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">直接在面板内打开登录页扫码。扫码成功后，回到这里点一次“刷新状态”即可。</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setWechatLoginOpen(false)}
+                    className="rounded-xl bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                  >
+                    关闭
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 bg-gray-50 dark:bg-gray-950">
+                  {wechatBridgeStatus?.loginUrl ? (
+                    <iframe
+                      src={wechatBridgeStatus.loginUrl}
+                      title="微信扫码登录"
+                      className="h-full w-full border-0 bg-white"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+                      当前还没有可用的登录地址，请先安装或刷新微信服务状态。
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
