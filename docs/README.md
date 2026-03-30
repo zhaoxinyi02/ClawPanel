@@ -25,6 +25,13 @@
 
 - [plugin-dev/README.md](./plugin-dev/README.md) — 插件开发与管理接口
 
+## 协作与维护
+
+- [../CONTRIBUTING.md](../CONTRIBUTING.md) — 贡献方式、开发与提交流程
+- [../SECURITY.md](../SECURITY.md) — 安全问题反馈方式
+- [known-issues.md](./known-issues.md) — 已知问题与待完善项
+- [incidents/README.md](./incidents/README.md) — 典型排障记录
+
 ## 阅读建议
 
 如果你正在处理飞书双账号、多 Agent 路由或工具权限收口，建议阅读顺序：
