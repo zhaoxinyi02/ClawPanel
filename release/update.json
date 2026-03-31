@@ -1,13 +1,13 @@
 {
-  "latest_version": "5.3.0",
-  "release_time": "2026-03-29T15:20:00+08:00",
-  "release_note": "## ClawPanel Pro v5.3.0\n\n- 统一登录页与主面板视觉风格，优化 Logo、品牌文案与回车登录体验\n- 修复插件通道安装链路，优先走官方包安装并在安装后自动重启 OpenClaw\n- 修复面板聊天运行时污染、最近活动吞消息/审批回调噪音与重复离线提示",
+  "latest_version": "5.3.2",
+  "release_time": "2026-03-31T23:00:00+08:00",
+  "release_note": "## ClawPanel Pro v5.3.2\n\n- 新增面板聊天能力，支持直接在面板内与本地 OpenClaw 对话，并复用工作区、技能和本地文件上下文\n- 修复 QQ 官方机器人、飞书、钉钉、企业微信等官方插件通道安装对远端仓库的强依赖，优先走 `openclaw plugins install`，失败再回退 npm 安装\n- 同步整理 README、更新日志与版本元数据，收口 Lite / Pro 最近版本展示与社区入口说明",
   "download_urls": {
-    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.0/clawpanel-v5.3.0-linux-amd64",
-    "linux_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.0/clawpanel-v5.3.0-linux-arm64",
-    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.0/clawpanel-v5.3.0-darwin-amd64",
-    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.0/clawpanel-v5.3.0-darwin-arm64",
-    "windows_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.0/clawpanel-v5.3.0-windows-amd64.exe"
+    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.2/clawpanel-v5.3.2-linux-amd64",
+    "linux_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.2/clawpanel-v5.3.2-linux-arm64",
+    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.2/clawpanel-v5.3.2-darwin-amd64",
+    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.2/clawpanel-v5.3.2-darwin-arm64",
+    "windows_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.2/clawpanel-v5.3.2-windows-amd64.exe"
   },
   "major_change": false,
   "change_warning": ""

@@ -9,11 +9,9 @@
 Go Single Binary · React 18 · TailwindCSS · SQLite · WebSocket Real-time · Cross-platform
 
 [![License](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-red?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.3.0-violet?style=flat-square)](https://github.com/zhaoxinyi02/ClawPanel/releases)
+[![Version](https://img.shields.io/badge/version-5.3.2-violet?style=flat-square)](https://github.com/zhaoxinyi02/ClawPanel/releases)
 [![Go](https://img.shields.io/badge/go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
 [![React](https://img.shields.io/badge/react-18-61DAFB?style=flat-square&logo=react&logoColor=white)](https://react.dev)
-[![CI](https://github.com/zhaoxinyi02/ClawPanel/actions/workflows/ci.yml/badge.svg)](https://github.com/zhaoxinyi02/ClawPanel/actions/workflows/ci.yml)
-[![Release Build](https://img.shields.io/badge/Release%20Build-tags%20passing-22c55e?style=flat-square)](https://github.com/zhaoxinyi02/ClawPanel/actions/workflows/release.yml)
 [![GitHub Stars](https://img.shields.io/github/stars/zhaoxinyi02/ClawPanel?style=flat-square&logo=github)](https://github.com/zhaoxinyi02/ClawPanel/stargazers)
 
 [Quick Start](#quick-start) · [Features](#features) · [Changelog](changelogs/) · [API Docs](docs/API.md) · [中文](README.md)
@@ -28,12 +26,17 @@ Go Single Binary · React 18 · TailwindCSS · SQLite · WebSocket Real-time · 
 > This project is for **learning and research purposes only**. **Commercial use is strictly prohibited.** Using third-party clients to log in to QQ/WeChat may violate Tencent's Terms of Service and **carries a risk of account suspension**. Please use test accounts. The author has **not performed any reverse engineering** and only integrates existing open-source projects. **No responsibility is assumed for any consequences.** By downloading and using this project, you agree to the [full disclaimer](DISCLAIMER.md).
 
 > [!NOTE]
-> **v5.3.0 Update** — unifies the login page with the main panel styling, hardens official plugin-channel installs, restores automatic OpenClaw restarts after plugin changes, and cleans up recent activity / runtime warning noise. See [changelogs/v5.3.0.md](changelogs/v5.3.0.md)
+> **v5.3.2 Update** — adds Panel Chat for direct local OpenClaw conversations, removes registry hard-dependency from official plugin-channel installs, and refreshes the latest release notes / community documentation. See [changelogs/v5.3.2.md](changelogs/v5.3.2.md)
 
 > [!NOTE]
 > **v5.0.4 New** — 🔧 NapCat one-click diagnose & repair, system diagnostic report, QR login auto-detect & auto-close, disabled auto-login, container auto-restart after install, PATH detection fix. [View changelog](changelogs/v5.0.4.md)
 
 ## Features
+
+### Panel Chat (v5.3.2)
+- Talk to local OpenClaw directly inside the panel while keeping workspace context, installed skills, and local file access
+- Supports single-agent chats and multi-agent sequential group chats with an optional summary agent
+- Includes session rename/delete, code-block copy, stop-in-progress, and draft restore after failed sends
 
 ### Smart Dashboard
 - OpenClaw process monitoring (start/stop/restart)
@@ -198,36 +201,6 @@ make installer    # Build Windows exe installer
 > npm config set registry https://registry.npmmirror.com
 > ```
 
-## GitHub Actions Automation
-
-The repository now includes two workflows for testing and release packaging:
-
-- `CI` (`.github/workflows/ci.yml`)
-  - Trigger: `push` / `pull_request` / manual dispatch
-  - Runs:
-    - `go vet ./...`
-    - `go test -count=1 -shuffle=on ./...` (`ubuntu/windows` matrix)
-    - `go test -race -covermode=atomic -coverprofile=coverage.out ./...`
-    - frontend `npm ci + npm run build`
-    - backend build with embedded frontend dist (`make backend-only`)
-  - Artifacts:
-    - `go-coverage` (`coverage.out` + `coverage.txt`)
-    - `frontend-dist`
-    - `clawpanel-linux-amd64-ci` for quick validation
-- `Release Build` (`.github/workflows/release.yml`)
-  - Trigger: `push` tag `v*` (for example `v5.2.1`) / manual dispatch
-  - Runs: automatic multi-platform binaries (`linux/darwin/windows`) + Windows installer `ClawPanel-Setup-v{version}.exe`
-  - Publish: for tag runs, assets are uploaded to GitHub Releases with `checksums.txt`
-
-Additionally, `Dependabot` (`.github/dependabot.yml`) checks GitHub Actions dependency updates weekly.
-
-Example:
-
-```bash
-git tag v5.2.1
-git push origin v5.2.1
-```
-
 ## Environment Variables
 
 | Variable | Default | Description |
@@ -272,6 +245,22 @@ sc query ClawPanel
 
 See [changelogs/](changelogs/) for full release notes.
 
+### Recent Pro releases
+
+#### [v5.3.2](changelogs/v5.3.2.md)
+- Panel Chat for direct local OpenClaw conversations inside the panel
+- Official plugin-channel installs now prefer `openclaw plugins install`, then fall back to npm
+
+#### [v5.3.1](changelogs/v5.3.1.md)
+- Update metadata sync fix and softer external runtime health checks
+- NapCat login-state tolerance and quieter workflow callbacks
+
+#### [v5.3.0](changelogs/v5.3.0.md)
+- Unified login-page visual language and official plugin-channel install hardening
+
+<details>
+<summary><b>Earlier releases</b></summary>
+
 ### v5.0.0 — Full Rewrite (2026-02-22)
 - **Full rewrite**: Backend Node.js → Go (Gin), Frontend React 18 + TailwindCSS
 - **Single-binary deploy**: Static compiled binary with embedded frontend, no Node.js/Docker needed
@@ -298,8 +287,12 @@ See [changelogs/](changelogs/) for full release notes.
 - **v2.0.0** (2026-02-09) — React + TailwindCSS admin panel
 - **v1.0.0** — Basic admin panel + NapCat Docker integration
 </details>
+</details>
 
 ## Acknowledgments
+
+- Core maintainer: [zhaoxinyi02](https://github.com/zhaoxinyi02)
+- Contributors graph: <https://github.com/zhaoxinyi02/ClawPanel/graphs/contributors>
 
 - [OpenClaw](https://openclaw.ai) — AI assistant engine
 - [Gin](https://github.com/gin-gonic/gin) — Go web framework

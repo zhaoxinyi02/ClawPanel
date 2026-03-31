@@ -59,6 +59,34 @@ func TestResolvePluginInstallStrategyUsesPreferredQQBotPackage(t *testing.T) {
 	}
 }
 
+func TestBuiltInOfficialChannelPluginProvidesQQBotFallback(t *testing.T) {
+	t.Parallel()
+
+	plugin := builtInOfficialChannelPlugin("qqbot")
+	if plugin == nil {
+		t.Fatal("expected qqbot fallback metadata")
+	}
+	if plugin.ID != "qqbot" {
+		t.Fatalf("unexpected plugin id: %q", plugin.ID)
+	}
+	if plugin.NpmPackage != "@sliverp/qqbot" {
+		t.Fatalf("unexpected qqbot npm package: %q", plugin.NpmPackage)
+	}
+
+	strategy := resolvePluginInstallStrategy(plugin, "")
+	if strategy.kind != "npm" || strategy.target != "@sliverp/qqbot@latest" {
+		t.Fatalf("expected qqbot fallback to use preferred npm spec, got %#v", strategy)
+	}
+}
+
+func TestBuiltInOfficialChannelPluginUnknownReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	if plugin := builtInOfficialChannelPlugin("unknown-plugin"); plugin != nil {
+		t.Fatalf("expected nil fallback metadata, got %#v", plugin)
+	}
+}
+
 func TestInstallRecognizesTgzAsArchive(t *testing.T) {
 	t.Parallel()
 

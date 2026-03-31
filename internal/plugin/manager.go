@@ -37,6 +37,75 @@ var preferredPluginPackageSpecs = map[string]string{
 	"wecom-app":     "@openclaw-china/wecom-app@latest",
 }
 
+var builtInOfficialChannelPlugins = map[string]RegistryPlugin{
+	"qqbot": {
+		PluginMeta: PluginMeta{
+			ID:          "qqbot",
+			Name:        "QQ 官方机器人通道",
+			Version:     "latest",
+			Author:      "ClawPanel Team",
+			Description: "QQ 官方机器人 API 通道插件",
+			Category:    "channel",
+		},
+		NpmPackage: "@sliverp/qqbot",
+	},
+	"feishu": {
+		PluginMeta: PluginMeta{
+			ID:          "feishu",
+			Name:        "飞书 / Lark",
+			Version:     "latest",
+			Author:      "ClawPanel Team",
+			Description: "飞书 / Lark 通道插件",
+			Category:    "channel",
+		},
+		NpmPackage: "@openclaw/feishu",
+	},
+	"openclaw-lark": {
+		PluginMeta: PluginMeta{
+			ID:          "openclaw-lark",
+			Name:        "飞书 / Lark（飞书官方版）",
+			Version:     "latest",
+			Author:      "Feishu Team",
+			Description: "飞书官方 OpenClaw 插件",
+			Category:    "channel",
+		},
+		NpmPackage: "@larksuite/openclaw-lark",
+	},
+	"dingtalk": {
+		PluginMeta: PluginMeta{
+			ID:          "dingtalk",
+			Name:        "钉钉通道插件",
+			Version:     "latest",
+			Author:      "BytePioneer-AI",
+			Description: "钉钉 (DingTalk) 通道插件",
+			Category:    "channel",
+		},
+		NpmPackage: "@largezhou/ddingtalk",
+	},
+	"wecom": {
+		PluginMeta: PluginMeta{
+			ID:          "wecom",
+			Name:        "企业微信（智能机器人）",
+			Version:     "latest",
+			Author:      "BytePioneer-AI",
+			Description: "企业微信 (WeCom) 智能机器人通道插件",
+			Category:    "channel",
+		},
+		NpmPackage: "@wecom/wecom-openclaw-plugin",
+	},
+	"wecom-app": {
+		PluginMeta: PluginMeta{
+			ID:          "wecom-app",
+			Name:        "企业微信（自建应用）",
+			Version:     "latest",
+			Author:      "BytePioneer-AI",
+			Description: "企业微信自建应用通道插件",
+			Category:    "channel",
+		},
+		NpmPackage: "@openclaw-china/wecom-app",
+	},
+}
+
 var (
 	gitLookPath    = exec.LookPath
 	gitCloneRunner = runGitClone
@@ -309,6 +378,18 @@ func preferredPluginDownloadURL(regPlugin *RegistryPlugin) string {
 	}
 }
 
+func builtInOfficialChannelPlugin(pluginID string) *RegistryPlugin {
+	plugin, ok := builtInOfficialChannelPlugins[pluginID]
+	if !ok {
+		return nil
+	}
+	cp := plugin
+	if preferred := preferredPluginPackageSpec(&cp); preferred != "" {
+		cp.NpmPackage = normalizeNpmPackageName(preferred)
+	}
+	return &cp
+}
+
 // Install installs a plugin from registry or URL
 func (m *Manager) Install(pluginID string, source string) error {
 	return m.InstallWithProgress(pluginID, source, nil)
@@ -318,6 +399,14 @@ func (m *Manager) InstallWithProgress(pluginID string, source string, logf func(
 	// Find plugin in registry
 	reg := m.GetRegistry()
 	var regPlugin *RegistryPlugin
+	if strings.TrimSpace(source) == "" {
+		if fallback := builtInOfficialChannelPlugin(pluginID); fallback != nil {
+			regPlugin = fallback
+			if logf != nil {
+				logf(fmt.Sprintf("📦 %s 使用内置官方安装信息，直接按官方包安装", pluginID))
+			}
+		}
+	}
 	for i := range reg.Plugins {
 		if reg.Plugins[i].ID == pluginID {
 			regPlugin = &reg.Plugins[i]
@@ -339,6 +428,15 @@ func (m *Manager) InstallWithProgress(pluginID string, source string, logf func(
 			}
 		} else if logf != nil && err != nil {
 			logf(fmt.Sprintf("⚠️ 刷新插件仓库失败，继续使用本地仓库信息: %v", err))
+		}
+	}
+
+	if regPlugin == nil {
+		if fallback := builtInOfficialChannelPlugin(pluginID); fallback != nil {
+			regPlugin = fallback
+			if logf != nil {
+				logf(fmt.Sprintf("📦 在线仓库未命中 %s，使用内置官方插件安装信息直接安装", pluginID))
+			}
 		}
 	}
 

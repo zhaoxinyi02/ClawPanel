@@ -1,13 +1,13 @@
 {
-  "latest_version": "5.3.1",
-  "release_time": "2026-03-30T21:30:00+08:00",
-  "release_note": "## ClawPanel Pro v5.3.1\n\n- 修复更新元数据未同步导致面板与命令行仍停留在旧版本号的问题\n- 修复 1Panel / Docker 外部托管 OpenClaw 时网关健康探测过严，导致面板误报离线的问题\n- 修复 NapCat 登录态判定过于严格，兼容字符串/数字字段，减少网页已登录但面板仍显示未登录的误判\n- 收敛 Workflow 原会话回写噪声，默认改为关键进展回写并补齐失败兜底里的“取消”操作",
+  "latest_version": "5.3.2",
+  "release_time": "2026-03-31T23:00:00+08:00",
+  "release_note": "## ClawPanel Pro v5.3.2\n\n- 新增面板聊天能力，支持直接在面板内与本地 OpenClaw 对话，并复用工作区、技能和本地文件上下文\n- 支持单 AI 与多 AI 顺序群聊，可为新会话选择参与 Agent 与总结 Agent，适合日常调试、代码协作与任务拆解\n- 修复 QQ 官方机器人、飞书、钉钉、企业微信等官方插件通道安装对远端仓库的强依赖，优先走 `openclaw plugins install`，失败再回退 npm 安装\n- 同步整理 README、更新日志与版本元数据，收口 Lite / Pro 最近版本展示与社区入口说明",
   "download_urls": {
-    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.1/clawpanel-v5.3.1-linux-amd64",
-    "linux_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.1/clawpanel-v5.3.1-linux-arm64",
-    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.1/clawpanel-v5.3.1-darwin-amd64",
-    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.1/clawpanel-v5.3.1-darwin-arm64",
-    "windows_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.1/clawpanel-v5.3.1-windows-amd64.exe"
+    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.2/clawpanel-v5.3.2-linux-amd64",
+    "linux_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.2/clawpanel-v5.3.2-linux-arm64",
+    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.2/clawpanel-v5.3.2-darwin-amd64",
+    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.2/clawpanel-v5.3.2-darwin-arm64",
+    "windows_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.3.2/clawpanel-v5.3.2-windows-amd64.exe"
   },
   "major_change": false,
   "change_warning": ""

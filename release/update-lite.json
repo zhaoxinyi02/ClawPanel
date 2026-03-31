@@ -1,11 +1,11 @@
 {
-  "latest_version": "0.2.1",
-  "release_time": "2026-03-30T21:30:00+08:00",
-  "release_note": "## ClawPanel Lite v0.2.1\n\n- 修复更新元数据未同步导致 Lite 更新源仍指向旧版本的问题\n- 修复 Lite 覆盖安装时把整个安装目录重新改成 root 所有，导致数据目录权限被意外覆盖的问题\n- 同步 Workflow 回写降噪与 NapCat 登录态判定容错，减少未登录误判和消息刷屏",
+  "latest_version": "0.2.2",
+  "release_time": "2026-03-31T23:00:00+08:00",
+  "release_note": "## ClawPanel Lite v0.2.2\n\n- 新增面板聊天能力，支持直接在 Lite 面板内调用内置 OpenClaw，与工作区、技能和本地文件上下文连续协作\n- 支持单 AI 与多 AI 顺序群聊，并可为群聊选择总结 Agent，方便在 Lite 场景下直接进行多角色讨论\n- 修复 QQ 官方机器人、飞书、钉钉、企业微信等官方插件通道安装对远端仓库的强依赖，优先走 `openclaw plugins install`，失败再回退 npm 安装\n- 同步整理 Lite README、更新日志与版本元数据，保持最近版本展示一致",
   "download_urls": {
-    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.2.1/clawpanel-lite-core-v0.2.1-linux-amd64.tar.gz",
-    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.2.1/clawpanel-lite-core-v0.2.1-darwin-amd64.tar.gz",
-    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.2.1/clawpanel-lite-core-v0.2.1-darwin-arm64.tar.gz"
+    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.2.2/clawpanel-lite-core-v0.2.2-linux-amd64.tar.gz",
+    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.2.2/clawpanel-lite-core-v0.2.2-darwin-amd64.tar.gz",
+    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.2.2/clawpanel-lite-core-v0.2.2-darwin-arm64.tar.gz"
   },
   "major_change": false,
   "change_warning": ""
