@@ -552,6 +552,13 @@ function isWecomBuiltinEnabled(ocConfig: any): boolean {
   const wecomEnabled = !!ocConfig?.channels?.wecom?.enabled || !!getEnabledPluginEntry(entries, WECOM_BOT_PLUGIN_IDS);
   return wecomEnabled && !isWecomAppEnabled(ocConfig);
 }
+
+function getPluginEntryConfig(entry: any): Record<string, any> {
+  if (!isPlainObject(entry)) return {};
+  if (isPlainObject(entry.config)) return entry.config as Record<string, any>;
+  return entry as Record<string, any>;
+}
+
 // Determine channel status: 'enabled' (green), 'configured' (red/orange), 'unconfigured' (gray)
 function getChannelStatus(
   ch: ChannelDef,
@@ -564,6 +571,9 @@ function getChannelStatus(
     ? getWecomAppVirtualConfig(ocConfig)
     : (ocConfig?.channels?.[ch.id] || {});
   const pluginConf = ocConfig?.plugins?.entries?.[ch.id] || {};
+  const mergedConf = ch.type === 'plugin'
+    ? { ...getPluginEntryConfig(pluginConf), ...chConf }
+    : chConf;
   const pluginInstalled = ch.id === 'qq'
     ? isQQActuallyInstalled(installedPlugins, qqChannelState)
     : ch.type === 'plugin'
@@ -588,13 +598,13 @@ function getChannelStatus(
   const isEnabled = configuredEnabled && pluginInstalled;
   // Check if any config field has a value
   const hasConfig = ch.configFields.some(f => {
-    const v = getNestedValue(chConf, f.key);
+    const v = getNestedValue(mergedConf, f.key);
     return v !== undefined && v !== null && v !== '';
   }) || (
     ch.id === 'feishu' && (
-      !!String(chConf?.appId || '').trim()
-      || !!String(chConf?.appSecret || '').trim()
-      || hasFeishuAdvancedAccounts(chConf)
+      !!String(mergedConf?.appId || '').trim()
+      || !!String(mergedConf?.appSecret || '').trim()
+      || hasFeishuAdvancedAccounts(mergedConf)
     )
   );
   if (isEnabled) return 'enabled';
@@ -965,22 +975,27 @@ export default function Channels() {
     if (channelId === 'wecom-app') {
       return getWecomAppVirtualConfig(ocConfig);
     }
-    if (channelId === 'qqbot' && isPlainObject(ocChannels[channelId])) {
-      const cfg = { ...ocChannels[channelId] } as any;
+    const pluginCfg = getPluginEntryConfig(ocPlugins[channelId]);
+    const baseCfg = {
+      ...(isPlainObject(pluginCfg) ? pluginCfg : {}),
+      ...(isPlainObject(ocChannels[channelId]) ? ocChannels[channelId] : {}),
+    } as any;
+    if (channelId === 'qqbot' && isPlainObject(baseCfg)) {
+      const cfg = { ...baseCfg } as any;
       if (!String(cfg.clientSecret || '').trim() && String(cfg.appSecret || '').trim()) {
         cfg.clientSecret = cfg.appSecret;
       }
       return cfg;
     }
-    if (channelId === 'wecom' && isPlainObject(ocChannels[channelId])) {
-      const cfg = { ...ocChannels[channelId] } as any;
+    if (channelId === 'wecom' && isPlainObject(baseCfg)) {
+      const cfg = { ...baseCfg } as any;
       if (cfg.encodingAESKey === undefined && cfg.encodingAesKey !== undefined) {
         cfg.encodingAESKey = cfg.encodingAesKey;
       }
       cfg.connectionMode = getWecomConnectionMode(cfg);
       return cfg;
     }
-    if (isPlainObject(ocChannels[channelId])) return ocChannels[channelId];
+    if (isPlainObject(baseCfg) && Object.keys(baseCfg).length > 0) return baseCfg;
     return {};
   };
   const currentFeishuConfig = getEffectiveChannelConfig('feishu');

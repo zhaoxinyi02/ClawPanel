@@ -126,6 +126,7 @@ func AIChat(cfg *config.Config) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "OpenClaw 配置未找到"})
 			return
 		}
+		normalizeOpenClawCompatConfig(ocConfig)
 
 		models, _ := ocConfig["models"].(map[string]interface{})
 		providers, _ := models["providers"].(map[string]interface{})
