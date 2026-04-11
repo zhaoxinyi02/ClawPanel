@@ -1,11 +1,11 @@
 {
-  "latest_version": "0.3.1",
-  "release_time": "2026-04-10T03:15:00+08:00",
-  "release_note": "## ClawPanel Lite v0.3.1\n\n- 工作流中心补齐可视化画布编辑，支持拖拽节点、自动整理与 `image_generate` 节点配置\n- 海报类图片步骤可直接在工作流中生成 PNG，并回传到 QQ / 微信原会话\n- 修复微信工作流接管、会话历史噪音与时间显示问题，减少用户在会话页和活动日志中的误解",
+  "latest_version": "0.3.2",
+  "release_time": "2026-04-11T22:30:00+08:00",
+  "release_note": "## ClawPanel Lite v0.3.2\n\n- QQ 官方机器人页面支持内置版 / 社区版一键切换，并自动同步启用状态\n- QQBot 配置分为主配置与高级配置，默认只暴露 App ID / App Secret，降低配置门槛\n- 修复最近活动漏消息、日志来源归一化与筛选异常，提升活动日志可读性与稳定性",
   "download_urls": {
-    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.1/clawpanel-lite-core-v0.3.1-linux-amd64.tar.gz",
-    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.1/clawpanel-lite-core-v0.3.1-darwin-amd64.tar.gz",
-    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.1/clawpanel-lite-core-v0.3.1-darwin-arm64.tar.gz"
+    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.2/clawpanel-lite-core-v0.3.2-linux-amd64.tar.gz",
+    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.2/clawpanel-lite-core-v0.3.2-darwin-amd64.tar.gz",
+    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.2/clawpanel-lite-core-v0.3.2-darwin-arm64.tar.gz"
   },
   "major_change": false,
   "change_warning": ""
