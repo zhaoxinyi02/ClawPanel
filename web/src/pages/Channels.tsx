@@ -2644,7 +2644,7 @@ export default function Channels() {
                   {!feishuAdvancedAccounts ? (
                     <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
                       <div>
-                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white">单账号凭证</h4>
+                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white">QQBot 通道版本</h4>
                         <p className="text-xs text-gray-500 mt-1 leading-relaxed">
                           {currentFeishuHasStoredAccounts
                             ? `当前仍保留 ${currentFeishuAccounts.length} 个账号；仅默认账号视图只会编辑默认账号 ${currentFeishuDefaultAccount || 'default'}，其他账号会继续保留，但保存时会自动标记为 enabled=false。`
@@ -3079,9 +3079,9 @@ export default function Channels() {
                 <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">微信登录状态</h4>
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">{'\u5fae\u4fe1\u767b\u5f55\u72b6\u6001'}</h4>
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                        面板会读取 OpenClaw 微信通道本地账号文件，展示当前已登录账号，并提供刷新二维码和退出登录操作。
+                        {'\u5728\u8fd9\u91cc\u5237\u65b0\u626b\u7801\u4e0e\u8d26\u53f7\u72b6\u6001\uff0c\u627e\u4e0d\u5230\u4e8c\u7ef4\u7801\u65f6\u53ef\u4ee5\u91cd\u65b0\u751f\u6210\u3002'}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -3393,10 +3393,8 @@ export default function Channels() {
                         <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4">
                           <div className="flex items-center justify-between gap-4 flex-wrap">
                             <div>
-                              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">QQBot é€šé“ç‰ˆæœ¬</h4>
-                              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                                å¯åœ¨å†…ç½®ç‰ˆä¸Žç¤¾åŒºç‰ˆä¹‹é—´åˆ‡æ¢ï¼Œä¼šè‡ªåŠ¨å¯ç”¨å½“å‰ç‰ˆæœ¬å¹¶å³é—­å¦ä¸€ä¸ªã€‚
-                              </p>
+                              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">{'QQBot \u901a\u9053\u7248\u672c'}</h4>
+                              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">{'\u53ef\u5728\u5185\u7f6e\u7248\u4e0e\u793e\u533a\u7248\u4e4b\u95f4\u5207\u6362\uff0c\u5207\u6362\u540e\u4f1a\u81ea\u52a8\u542f\u7528\u5f53\u524d\u7248\u672c\u5e76\u5173\u95ed\u53e6\u4e00\u4e2a\u3002'}</p>
                             </div>
                             <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-1">
                               <button
@@ -3407,7 +3405,7 @@ export default function Channels() {
                                   ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
                                   : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
                               >
-                                å†…ç½®ç‰ˆ
+                                {'\u5185\u7f6e\u7248'}
                               </button>
                               <button
                                 type="button"
@@ -3417,7 +3415,7 @@ export default function Channels() {
                                   ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
                                   : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
                               >
-                                ç¤¾åŒºç‰ˆ
+                                {'\u793e\u533a\u7248'}
                               </button>
                             </div>
                           </div>
@@ -3426,7 +3424,11 @@ export default function Channels() {
                           {qqbotPrimaryFields.map(field => renderConfigField(currentDef.id, field))}
                         </div>
                         <div className="rounded-xl border border-blue-100 dark:border-blue-900/40 bg-blue-50/60 dark:bg-blue-950/20 px-4 py-3 text-xs text-blue-700 dark:text-blue-300 leading-relaxed">
-                          官方 QQBot 日常只需要配置 <span className="font-mono">App ID</span> 和 <span className="font-mono">App Secret</span> 即可运行；其余兼容字段请按需在高级选项中开启。
+                          {'\u5b98\u65b9 QQBot \u65e5\u5e38\u53ea\u9700\u8981\u914d\u7f6e '}
+                          <span className="font-mono">App ID</span>
+                          {' \u548c '}
+                          <span className="font-mono">App Secret</span>
+                          {' \u5373\u53ef\u8fd0\u884c\uff1b\u5176\u4f59\u517c\u5bb9\u5b57\u6bb5\u8bf7\u6309\u9700\u5728\u9ad8\u7ea7\u9009\u9879\u4e2d\u5f00\u542f\u3002'}
                         </div>
                         {qqbotAdvancedFields.length > 0 && (
                           <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
