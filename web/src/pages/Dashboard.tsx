@@ -10,6 +10,13 @@ import type { LogEntry } from '../hooks/useWebSocket';
 import { useI18n } from '../i18n';
 import { resolveOpenClawRuntime } from '../lib/openclawRuntime';
 
+const DISPLAY_CHANNEL_IDS = new Set([
+  'qq', 'wechat', 'whatsapp', 'telegram', 'discord', 'irc', 'slack', 'signal', 'googlechat',
+  'bluebubbles', 'imessage', 'webchat', 'feishu', 'qqbot', 'dingtalk', 'wecom', 'wecom-app',
+  'msteams', 'mattermost', 'line', 'matrix', 'nextcloud-talk', 'nostr', 'qa-channel',
+  'synology-chat', 'tlon', 'twitch', 'voice-call', 'zalo', 'zalouser', 'openclaw-weixin',
+]);
+
 interface SessionActivityItem {
   agentId?: string;
   sessionId: string;
@@ -119,7 +126,12 @@ function DashboardPage({ logEntries, refreshLog }: DashboardProps) {
   const getExpandableContent = (entry: RecentFeedItem) => entry.detail?.trim() || entry.summary?.trim() || '';
 
   // Build connected channels dynamically from enabledChannels returned by /api/status
-  const enabledChannels: { id: string; label: string; type: string }[] = oc.enabledChannels || [];
+  const enabledChannels: { id: string; label: string; type: string }[] = (oc.enabledChannels || [])
+    .map((ch: { id: string; label: string; type: string }) => ({
+      ...ch,
+      id: ch.id === 'qqbot-community' ? 'qqbot' : ch.id,
+    }))
+    .filter((ch: { id: string }) => DISPLAY_CHANNEL_IDS.has(ch.id));
   const connectedChannels: { name: string; status: string; details: { label: string; value: string }[] }[] = [];
 
   for (const ch of enabledChannels) {

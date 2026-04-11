@@ -13,6 +13,13 @@ import { resolveOpenClawRuntime } from '../lib/openclawRuntime';
 
 interface Props { onLogout: () => void; napcatStatus: any; wechatStatus?: any; openclawStatus?: any; processStatus?: any; wsMessages?: any[]; }
 
+const DISPLAY_CHANNEL_IDS = new Set([
+  'qq', 'wechat', 'whatsapp', 'telegram', 'discord', 'irc', 'slack', 'signal', 'googlechat',
+  'bluebubbles', 'imessage', 'webchat', 'feishu', 'qqbot', 'dingtalk', 'wecom', 'wecom-app',
+  'msteams', 'mattermost', 'line', 'matrix', 'nextcloud-talk', 'nostr', 'qa-channel',
+  'synology-chat', 'tlon', 'twitch', 'voice-call', 'zalo', 'zalouser', 'openclaw-weixin',
+]);
+
 function mapWorkflowRunToTask(run: any): TaskInfo {
   let status: TaskInfo['status'] = 'pending';
   if (run?.status === 'completed') status = 'success';
@@ -236,7 +243,12 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
 
   // Build channel list from enabledChannels returned by /api/status
   const connectedChannels = useMemo(() => {
-    const enabledChannels: { id: string; label: string }[] = openclawStatus?.enabledChannels || [];
+    const enabledChannels: { id: string; label: string }[] = (openclawStatus?.enabledChannels || [])
+      .map((ch: { id: string; label: string }) => ({
+        ...ch,
+        id: ch.id === 'qqbot-community' ? 'qqbot' : ch.id,
+      }))
+      .filter((ch: { id: string }) => DISPLAY_CHANNEL_IDS.has(ch.id));
     const channels: { label: string; detail: string; connected: boolean }[] = [];
 
     for (const ch of enabledChannels) {

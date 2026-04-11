@@ -115,6 +115,7 @@ const _api = {
   cleanupQQChannel: () => post('/openclaw/qq-channel/cleanup'),
   deleteQQChannel: () => post('/openclaw/qq-channel/delete'),
   switchFeishuVariant: (variant: 'official' | 'clawteam') => post('/openclaw/feishu-variant', { variant }),
+  switchQQBotVariant: (variant: 'builtin' | 'community') => post('/openclaw/qqbot-variant', { variant }),
   getOpenClawWeixinStatus: () => get('/openclaw/weixin/status'),
   startOpenClawWeixinQRCode: (data?: { force?: boolean; sessionKey?: string; accountId?: string }) => post('/openclaw/weixin/qrcode', data || {}),
   waitOpenClawWeixinQRCode: (sessionKey: string, timeoutMs = 35000) => postLong('/openclaw/weixin/qrcode/wait', { sessionKey, timeoutMs }, timeoutMs + 5000),
@@ -146,6 +147,8 @@ const _api = {
   workspacePreview: (filePath: string) => get('/workspace/preview?path=' + encodeURIComponent(filePath)),
   workspaceNotes: () => get('/workspace/notes'),
   workspaceSetNote: (filePath: string, note: string) => put('/workspace/notes', { path: filePath, note }),
+  getWorkspacePath: () => get('/workspace/path'),
+  setWorkspacePath: (path: string) => put('/workspace/path', { path }),
   // System
   getSystemEnv: () => get('/system/env'),
   getSystemVersion: () => get('/system/version'),

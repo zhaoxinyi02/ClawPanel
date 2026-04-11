@@ -106,6 +106,8 @@ function WorkspacePage() {
   const [stats, setStats] = useState<WsStats | null>(null);
   const [config, setConfig] = useState<WsConfig | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [wsPath, setWsPath] = useState('');
+  const [wsPathSaving, setWsPathSaving] = useState(false);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [showCfg, setShowCfg] = useState(false);
@@ -132,8 +134,15 @@ function WorkspacePage() {
   const loadStats = useCallback(async () => { try { const r = await api.workspaceStats(); if (r.ok) setStats(r); } catch {} }, []);
   const loadCfg = useCallback(async () => { try { const r = await api.workspaceConfig(); if (r.ok) setConfig(r.config); } catch {} }, []);
   const loadNotes = useCallback(async () => { try { const r = await api.workspaceNotes(); if (r.ok) setNotes(r.notes || {}); } catch {} }, []);
+  const loadWsPath = useCallback(async () => { try { const r = await api.getWorkspacePath(); if (r.ok) setWsPath(r.path || ''); } catch {} }, []);
+  const saveWsPath = async () => {
+    setWsPathSaving(true);
+    try { const r = await api.setWorkspacePath(wsPath); if (r.ok) flash(t.common.success); else flash(t.common.failed, false); }
+    catch { flash(t.common.failed, false); }
+    finally { setWsPathSaving(false); }
+  };
 
-  useEffect(() => { load(); loadStats(); loadCfg(); loadNotes(); }, [load, loadStats, loadCfg, loadNotes]);
+  useEffect(() => { load(); loadStats(); loadCfg(); loadNotes(); loadWsPath(); }, [load, loadStats, loadCfg, loadNotes, loadWsPath]);
 
   const nav = (p: string) => { load(p); setPreview(null); };
 
@@ -249,7 +258,22 @@ function WorkspacePage() {
           <p className={`${modern ? 'page-modern-subtitle text-sm' : 'text-sm text-gray-500 mt-1'}`}>{t.workspace.subtitle}</p>
         </div>
         <button onClick={() => setShowCfg(!showCfg)} className={`${modern ? 'page-modern-control px-3.5 py-2 text-xs font-medium' : 'flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors shadow-sm'}`}>
-          <Settings2 size={14} /> {t.nav.systemConfig}
+          <Settings2 size={14} /> 工作区设置
+        </button>
+      </div>
+
+      {/* Workspace path quick bar */}
+      <div className={`${modern ? 'page-modern-panel px-4 py-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between shrink-0' : 'bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700/50 px-4 py-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between shrink-0'}`}>
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">当前工作区路径</p>
+          <p className="mt-1 font-mono text-xs text-gray-700 dark:text-gray-200 break-all">{wsPath || '(未设置，使用默认路径)'}</p>
+        </div>
+        <button
+          onClick={() => setShowCfg(true)}
+          className={`${modern ? 'page-modern-action px-3 py-2 text-xs font-medium' : 'inline-flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors'}`}
+        >
+          <Edit3 size={13} />
+          修改路径
         </button>
       </div>
 
@@ -287,9 +311,30 @@ function WorkspacePage() {
         <div className={`${modern ? 'page-modern-panel p-5 space-y-5 animate-in fade-in slide-in-from-top-4 duration-200' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-5 space-y-5 animate-in fade-in slide-in-from-top-4 duration-200'}`}>
           <div className="flex items-center gap-2 pb-2 border-b border-gray-100 dark:border-gray-800">
             <Settings2 size={16} className="text-violet-500" />
+            <h3 className="font-bold text-gray-900 dark:text-white">工作区路径</h3>
+          </div>
+          <p className="text-xs text-gray-500 -mt-2">这里修改后会立即影响文件上传、下载、清理和预览路径。</p>
+
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              value={wsPath}
+              onChange={e => setWsPath(e.target.value)}
+              placeholder="例如 ~/.openclaw/workspace"
+              className="flex-1 px-3.5 py-2.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 font-mono"
+            />
+            <button onClick={saveWsPath} disabled={wsPathSaving}
+              className={`${modern ? 'page-modern-accent px-4 py-2 text-xs' : 'px-4 py-2 text-xs font-medium rounded-lg bg-violet-600 text-white hover:bg-violet-700 shadow-sm'}`}>
+              {wsPathSaving ? <RefreshCw size={12} className="animate-spin" /> : null}
+              {wsPathSaving ? '保存中...' : '保存路径'}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 pb-2 border-b border-gray-100 dark:border-gray-800">
+            <Settings2 size={16} className="text-violet-500" />
             <h3 className="font-bold text-gray-900 dark:text-white">自动清理配置</h3>
           </div>
-          
+
           <div className="flex items-center gap-6">
             <label className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/30 cursor-pointer hover:border-violet-200 dark:hover:border-violet-800 transition-colors">
               <div className="relative flex items-center">

@@ -642,12 +642,17 @@ const FEISHU_OFFICIAL_IDS = ['openclaw-lark'] as const;
 // 所有当前有效的飞书插件 ID（含社区版）。
 const FEISHU_ALL_IDS = ['openclaw-lark', 'feishu'] as const;
 const WECOM_BOT_PLUGIN_IDS = ['wecom-openclaw-plugin', 'wecom'] as const;
+const QQBOT_PLUGIN_IDS = ['qqbot', 'qqbot-community'] as const;
 
 function getEnabledPluginEntry(entries: Record<string, any>, ids: readonly string[]): string | null {
   for (const id of ids) {
     if (entries[id]?.enabled) return id;
   }
   return null;
+}
+
+function isQQBotPluginInstalled(installedPlugins: any[]) {
+  return installedPlugins.some((p: any) => (QQBOT_PLUGIN_IDS as readonly string[]).includes(p.id));
 }
 
 function getWecomConnectionMode(cfg: any): 'callback' | 'long-polling' {
@@ -731,6 +736,8 @@ function getChannelStatus(
   const pluginConf = ocConfig?.plugins?.entries?.[ch.id] || {};
   const pluginInstalled = ch.id === 'qq'
     ? isQQActuallyInstalled(installedPlugins, qqChannelState)
+    : ch.id === 'qqbot'
+      ? isQQBotPluginInstalled(installedPlugins)
     : ch.type === 'plugin'
       ? (
           ch.id === 'feishu'
@@ -745,6 +752,8 @@ function getChannelStatus(
   // 飞书特殊处理：任一变体 enabled 即视为 enabled
   const configuredEnabled = ch.id === 'feishu'
     ? (pluginConf.enabled || !!getEnabledPluginEntry(ocConfig?.plugins?.entries || {}, FEISHU_OFFICIAL_IDS) || chConf.enabled)
+    : ch.id === 'qqbot'
+      ? (chConf.enabled || !!getEnabledPluginEntry(ocConfig?.plugins?.entries || {}, QQBOT_PLUGIN_IDS))
     : ch.id === 'wecom-app'
       ? isWecomAppEnabled(ocConfig)
       : ch.id === 'wecom'
@@ -977,7 +986,8 @@ export default function Channels() {
     api.getChannelCatalog()
       .then((r: any) => {
         if (!r.ok) return;
-        const items = Array.isArray(r.channels) ? (r.channels as ChannelCatalogItem[]) : [];
+        const items = (Array.isArray(r.channels) ? (r.channels as ChannelCatalogItem[]) : [])
+          .filter(item => item?.id !== 'qqbot-community' && item?.id !== 'openai' && item?.id !== 'minimax');
         setChannelDefs(mergeChannelDefs(DEFAULT_CHANNEL_DEFS, items));
       })
       .catch(() => {});
@@ -1001,6 +1011,9 @@ export default function Channels() {
     // 飞书特殊处理：任一版本已安装即视为已安装
     if (channelId === 'feishu') {
       return installedPlugins.some((p: any) => (FEISHU_ALL_IDS as readonly string[]).includes(p.id));
+    }
+    if (channelId === 'qqbot') {
+      return isQQBotPluginInstalled(installedPlugins);
     }
     if (channelId === 'wecom') {
       return installedPlugins.some((p: any) => (WECOM_BOT_PLUGIN_IDS as readonly string[]).includes(p.id));
@@ -1099,11 +1112,14 @@ export default function Channels() {
   // 自动选择第一个已启用的渠道（而非硬编码 QQ）
   useEffect(() => {
     if (selectedChannel) return; // 用户已手动选择
-    const firstEnabled = channelDefs.find(ch => {
+      const firstEnabled = channelDefs.find(ch => {
       const chConf = ocConfig?.channels?.[ch.id] || {};
       const pluginConf = ocConfig?.plugins?.entries?.[ch.id] || {};
       if (ch.id === 'feishu') {
         return chConf.enabled || pluginConf.enabled || !!getEnabledPluginEntry(ocConfig?.plugins?.entries || {}, FEISHU_OFFICIAL_IDS);
+      }
+      if (ch.id === 'qqbot') {
+        return chConf.enabled || pluginConf.enabled || !!getEnabledPluginEntry(ocConfig?.plugins?.entries || {}, QQBOT_PLUGIN_IDS);
       }
       if (ch.id === 'wecom-app') return isWecomAppEnabled(ocConfig);
       if (ch.id === 'wecom') return isWecomBuiltinEnabled(ocConfig);
@@ -1437,6 +1453,9 @@ export default function Channels() {
     if (channelId === 'feishu') {
       return ocPlugins[channelId]?.enabled || !!getEnabledPluginEntry(ocPlugins, FEISHU_OFFICIAL_IDS) || ocChannels[channelId]?.enabled || false;
     }
+    if (channelId === 'qqbot') {
+      return ocChannels[channelId]?.enabled || !!getEnabledPluginEntry(ocPlugins, QQBOT_PLUGIN_IDS) || false;
+    }
     if (channelId === 'wecom-app') return isWecomAppEnabled(ocConfig);
     if (channelId === 'wecom') return isWecomBuiltinEnabled(ocConfig);
     return ocChannels[channelId]?.enabled || ocPlugins[channelId]?.enabled || false;
@@ -1585,7 +1604,6 @@ export default function Channels() {
       setTimeout(() => setMsg(''), 5000);
     } catch (err) { setMsg('切换失败: ' + String(err)); setTimeout(() => setMsg(''), 3000); }
   };
-
   // === QQ Login handlers ===
   const handleQRLogin = async (channelId = currentDef?.id || selectedChannel) => {
     setLoginChannelId(channelId);
@@ -3291,8 +3309,16 @@ export default function Channels() {
                         </div>
                       </div>
                     )
+                  : currentDef.id === 'qqbot'
+                    ? (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+                          {currentDef.configFields.map(field => renderConfigField(currentDef.id, field))}
+                        </div>
+                      </div>
+                    )
                   : currentDef.configFields.map(field => renderConfigField(currentDef.id, field))}
-              </form>
+               </form>
 
               {currentDef.configFields.length === 0 && (
                 <div className="py-12 flex flex-col items-center justify-center text-gray-400 border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-xl">

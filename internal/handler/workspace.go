@@ -422,6 +422,26 @@ func WorkspacePreview(cfg *config.Config) gin.HandlerFunc {
 	}
 }
 
+func GetWorkspacePath(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.JSON(200, gin.H{"ok": true, "path": cfg.GetOpenClawWork()})
+	}
+}
+
+func SetWorkspacePath(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var body struct {
+			Path string `json:"path"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(400, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		cfg.SetOpenClawWork(body.Path)
+		c.JSON(200, gin.H{"ok": true})
+	}
+}
+
 // Unused imports suppressor
 var _ = io.EOF
 var _ = sort.Strings

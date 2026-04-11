@@ -33,6 +33,9 @@ var feishuAllPluginIDs = []string{canonicalFeishuOfficialPluginID, canonicalFeis
 // 企业微信机器人插件 ID（优先级从高到低：新 ID 优先）
 var wecomBotPluginIDs = []string{"wecom-openclaw-plugin", "wecom"}
 
+// QQ 官方机器人插件 ID（内置版和社区版）
+var qqBotAllPluginIDs = []string{"qqbot", "qqbot-community"}
+
 type openClawChannelCatalogItem struct {
 	ID           string                 `json:"id"`
 	Label        string                 `json:"label"`
@@ -2082,6 +2085,127 @@ func SwitchFeishuVariant(cfg *config.Config, procMgr *process.Manager, sysLog ..
 		if procMgr != nil && procMgr.GetStatus().Running {
 			if err := procMgr.Restart(); err != nil {
 				resp["message"] = "飞书通道已切换为" + label + "，但自动重启网关失败，请手动重启 OpenClaw 网关后生效"
+				resp["restartWarning"] = err.Error()
+			} else {
+				resp["restarted"] = true
+			}
+		}
+		c.JSON(http.StatusOK, resp)
+	}
+}
+// resolveQQBotPluginID 根据当前插件配置，返回实际启用的 qqbot 插件 ID
+func resolveQQBotPluginID(entries map[string]interface{}) string {
+	for _, id := range qqBotAllPluginIDs {
+		if entry, ok := entries[id].(map[string]interface{}); ok {
+			if enabled, ok := entry["enabled"].(bool); ok && enabled {
+				return id
+			}
+		}
+	}
+	// 默认返回内置版
+	return "qqbot"
+}
+
+// ensureQQBotPluginSelection 确保 qqbot 插件选择正确，启用目标 ID，禁用其他
+func ensureQQBotPluginSelection(plugins map[string]interface{}, enableID string, disableIDs []string) map[string]interface{} {
+	entries, _ := plugins["entries"].(map[string]interface{})
+	if entries == nil {
+		entries = map[string]interface{}{}
+	}
+
+	// 启用目标插件
+	entry, _ := entries[enableID].(map[string]interface{})
+	if entry == nil {
+		entry = map[string]interface{}{}
+	}
+	entry["enabled"] = true
+	entries[enableID] = entry
+
+	// 禁用其他插件
+	for _, id := range disableIDs {
+		if entry, ok := entries[id].(map[string]interface{}); ok {
+			entry["enabled"] = false
+			entries[id] = entry
+		}
+	}
+
+	plugins["entries"] = entries
+	return plugins
+}
+
+// SwitchQQBotVariant 切换 QQ 机器人插件版本（内置版 / 社区版）
+func SwitchQQBotVariant(cfg *config.Config, procMgr *process.Manager, sysLog ...*eventlog.SystemLogger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			Variant string `json:"variant"` // "builtin" 或 "community"
+		}
+		if err := c.ShouldBindJSON(&req); err != nil || (req.Variant != "builtin" && req.Variant != "community") {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "variant must be 'builtin' or 'community'"})
+			return
+		}
+
+		ocConfig, _ := cfg.ReadOpenClawJSON()
+		if ocConfig == nil {
+			ocConfig = map[string]interface{}{}
+		}
+
+		plugins, _ := ocConfig["plugins"].(map[string]interface{})
+		if plugins == nil {
+			plugins = map[string]interface{}{}
+		}
+		entries, _ := plugins["entries"].(map[string]interface{})
+		if entries == nil {
+			entries = map[string]interface{}{}
+		}
+
+		var enableID string
+		label := ""
+		if req.Variant == "builtin" {
+			enableID = "qqbot"
+			label = "内置版"
+		} else {
+			enableID = "qqbot-community"
+			label = "社区版"
+		}
+
+		disableIDs := make([]string, 0, len(qqBotAllPluginIDs)-1)
+		for _, pluginID := range qqBotAllPluginIDs {
+			if pluginID == enableID {
+				continue
+			}
+			disableIDs = append(disableIDs, pluginID)
+		}
+
+		plugins = ensureQQBotPluginSelection(plugins, enableID, disableIDs)
+		entries, _ = plugins["entries"].(map[string]interface{})
+
+		// 更新 plugins.allow（如果存在）
+		if allowList, ok := plugins["allow"].([]interface{}); ok {
+			newAllow := make([]interface{}, 0)
+			for _, item := range allowList {
+				if s, ok := item.(string); ok && s != "qqbot" && s != "qqbot-community" {
+					newAllow = append(newAllow, item)
+				}
+			}
+			newAllow = append(newAllow, enableID)
+			plugins["allow"] = newAllow
+		}
+
+		ocConfig["plugins"] = plugins
+
+		if err := cfg.WriteOpenClawJSON(ocConfig); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+
+		if len(sysLog) > 0 && sysLog[0] != nil {
+			sysLog[0].Log("system", "channel.variant_switched", "QQ机器人通道切换为"+label)
+		}
+
+		resp := gin.H{"ok": true, "message": "QQ机器人通道已切换为" + label}
+		if procMgr != nil && procMgr.GetStatus().Running {
+			if err := procMgr.Restart(); err != nil {
+				resp["message"] = "QQ机器人通道已切换为" + label + "，但自动重启网关失败，请手动重启 OpenClaw 网关后生效"
 				resp["restartWarning"] = err.Error()
 			} else {
 				resp["restarted"] = true

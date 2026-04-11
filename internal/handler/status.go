@@ -96,6 +96,7 @@ func GetStatus(db *sql.DB, cfg *config.Config, procMgr *process.Manager, napcatM
 					channelAliases := map[string]string{
 						canonicalFeishuOfficialPluginID: canonicalFeishuCommunityPluginID,
 						"wecom-openclaw-plugin":         "wecom",
+						"qqbot-community":               "qqbot",
 					}
 					for id, conf := range entries {
 						if id == "wecom-app" {
@@ -104,6 +105,9 @@ func GetStatus(db *sql.DB, cfg *config.Config, procMgr *process.Manager, napcatM
 						canonicalID := id
 						if alias, ok := channelAliases[id]; ok {
 							canonicalID = alias
+						}
+						if _, known := channelLabels[canonicalID]; !known {
+							continue
 						}
 						// 检查是否已在 channels 中（用规范 ID 检查）
 						found := false

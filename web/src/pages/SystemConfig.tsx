@@ -368,6 +368,9 @@ export default function SystemConfig() {
   const [showDiffPreview, setShowDiffPreview] = useState(false);
   const [expandedModel, setExpandedModel] = useState<string | null>(null);
   const [showAgentDefaultsModal, setShowAgentDefaultsModal] = useState(false);
+  const [workspacePath, setWorkspacePath] = useState('');
+  const [workspacePathLoading, setWorkspacePathLoading] = useState(false);
+  const [workspacePathSaving, setWorkspacePathSaving] = useState(false);
 
   useEffect(() => { loadConfig(); }, []);
   useEffect(() => {
@@ -389,6 +392,26 @@ export default function SystemConfig() {
     }
     catch {} finally { setLoading(false); }
   };
+
+  const loadWorkspacePathFn = async () => {
+    setWorkspacePathLoading(true);
+    try {
+      const r = await api.getWorkspacePath();
+      if (r.ok) setWorkspacePath(r.path || '');
+    } catch {} finally { setWorkspacePathLoading(false); }
+  };
+
+  const saveWorkspacePathFn = async () => {
+    setWorkspacePathSaving(true);
+    try {
+      const r = await api.setWorkspacePath(workspacePath);
+      if (r.ok) { setMsg(i18n.common.success); }
+      else { setMsg('保存失败'); }
+    } catch { setMsg('保存失败'); }
+    finally { setWorkspacePathSaving(false); setTimeout(() => setMsg(''), 3000); }
+  };
+
+  useEffect(() => { loadWorkspacePathFn(); }, []);
 
   const loadVersion = async () => {
     const [v, b] = await Promise.all([api.getSystemVersion(), api.getBackups()]);
@@ -1656,6 +1679,33 @@ export default function SystemConfig() {
               <p className="text-xs leading-relaxed text-gray-500 dark:text-gray-400">
                 Cron、Heartbeat、命令和调试预览单独放在后面，减少“基础配置”和“运行时维护”混在一起的感觉。
               </p>
+            </div>
+          </div>
+
+          <div className={`${modern ? 'page-modern-panel p-5' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-5'}`}>
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-1.5 rounded-xl bg-blue-100/80 dark:bg-blue-900/20 text-blue-600 border border-blue-100/70 dark:border-blue-800/30">
+                <HardDrive size={16} />
+              </div>
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white">工作区路径</h3>
+              <InfoTooltip content="ClawPanel 配置中的 OpenClaw 工作区路径（openClawWork），用于指定 Agent 工作目录和文件存储位置。修改后需重启网关生效。" />
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="text"
+                value={workspacePath}
+                onChange={e => setWorkspacePath(e.target.value)}
+                placeholder="例如 ~/.openclaw/workspace 或 /Users/xxx/.openclaw/workspace"
+                className="flex-1 px-3.5 py-2.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono"
+              />
+              <button
+                onClick={saveWorkspacePathFn}
+                disabled={workspacePathSaving || workspacePathLoading}
+                className={`${modern ? 'page-modern-action px-4 py-2 text-xs font-medium disabled:opacity-50' : 'flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 shadow-sm transition-all'}`}
+              >
+                {workspacePathSaving ? <RefreshCw size={12} className="animate-spin" /> : <Save size={12} />}
+                {workspacePathSaving ? '保存中...' : '保存'}
+              </button>
             </div>
           </div>
 
