@@ -235,9 +235,7 @@ func panelChatVirtualTarget(session panelChatSession) string {
 }
 
 func panelChatScopedAgentID(sessionID, agentID string) string {
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(sessionID + ":" + agentID))
-	return fmt.Sprintf("pc_%s_%x", strings.TrimSpace(agentID), h.Sum64())
+	return strings.TrimSpace(agentID)
 }
 
 func panelChatRuntimeRoot(cfg *config.Config, sessionID string) string {
@@ -438,6 +436,9 @@ func rewritePanelChatRuntimeConfig(cfg *config.Config, srcConfigPath, dstConfigP
 	}
 	agentsMap["list"] = newList
 	obj["agents"] = agentsMap
+
+	// Ensure panel chat uses the official session store to sync with OpenClaw
+	obj["sessionDir"] = filepath.ToSlash(filepath.Join(cfg.OpenClawDir, "sessions"))
 	delete(obj, "channels")
 	delete(obj, "plugins")
 	encoded, err := json.MarshalIndent(obj, "", "  ")
