@@ -694,7 +694,7 @@ func SaveChannel(cfg *config.Config, procMgr *process.Manager) gin.HandlerFunc {
 		if id == "qqbot" {
 			body = normalizeQQBotChannelConfig(body)
 		}
-		if id == "telegram" {
+		if strings.HasPrefix(id, "telegram") {
 			body = normalizeTelegramChannelConfig(body)
 		}
 		if id == "feishu" {
