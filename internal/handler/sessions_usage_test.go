@@ -13,6 +13,21 @@ import (
 	"github.com/zhaoxinyi02/ClawPanel/internal/config"
 )
 
+func writeUsageJSONL(t *testing.T, filePath string, lines []map[string]interface{}) {
+	t.Helper()
+	f, err := os.Create(filePath)
+	if err != nil {
+		t.Fatalf("create jsonl: %v", err)
+	}
+	defer f.Close()
+	for _, line := range lines {
+		raw, _ := json.Marshal(line)
+		if _, err := f.Write(append(raw, '\n')); err != nil {
+			t.Fatalf("write jsonl: %v", err)
+		}
+	}
+}
+
 func TestGetSessionUsageAggregatesUsageWindows(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
@@ -79,17 +94,7 @@ func TestGetSessionUsageAggregatesUsageWindows(t *testing.T) {
 		},
 	}
 
-	f, err := os.Create(filepath.Join(sessionsDir, "demo.jsonl"))
-	if err != nil {
-		t.Fatalf("create jsonl: %v", err)
-	}
-	defer f.Close()
-	for _, line := range lines {
-		raw, _ := json.Marshal(line)
-		if _, err := f.Write(append(raw, '\n')); err != nil {
-			t.Fatalf("write jsonl: %v", err)
-		}
-	}
+	writeUsageJSONL(t, filepath.Join(sessionsDir, "demo.jsonl"), lines)
 
 	r := gin.New()
 	r.GET("/sessions/usage", GetSessionUsage(cfg))
@@ -136,5 +141,86 @@ func TestGetSessionUsageAggregatesUsageWindows(t *testing.T) {
 	}
 	if resp.Summary.Last30d.Requests != 2 {
 		t.Fatalf("expected last30d requests=2, got %d", resp.Summary.Last30d.Requests)
+	}
+}
+
+func TestGetSessionUsageAllAgentDedupesSessionCount(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+
+	now := time.Now()
+	linesA := []map[string]interface{}{
+		{
+			"type":      "message",
+			"timestamp": now.Format(time.RFC3339Nano),
+			"message": map[string]interface{}{
+				"role": "assistant",
+				"usage": map[string]interface{}{
+					"input":       10,
+					"output":      5,
+					"totalTokens": 15,
+				},
+			},
+		},
+	}
+	linesB := []map[string]interface{}{
+		{
+			"type":      "message",
+			"timestamp": now.Format(time.RFC3339Nano),
+			"message": map[string]interface{}{
+				"role": "assistant",
+				"usage": map[string]interface{}{
+					"input":       8,
+					"output":      4,
+					"totalTokens": 12,
+				},
+			},
+		},
+	}
+
+	for _, agentID := range []string{"main", "work"} {
+		sessionsDir := resolveAgentSessionsDir(cfg, agentID)
+		if err := os.MkdirAll(sessionsDir, 0755); err != nil {
+			t.Fatalf("mkdir sessions dir: %v", err)
+		}
+	}
+	writeUsageJSONL(t, filepath.Join(resolveAgentSessionsDir(cfg, "main"), "shared-session.jsonl"), linesA)
+	writeUsageJSONL(t, filepath.Join(resolveAgentSessionsDir(cfg, "work"), "shared-session.jsonl"), linesB)
+
+	r := gin.New()
+	r.GET("/sessions/usage", GetSessionUsage(cfg))
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/usage?agent=all", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Summary struct {
+			Today struct {
+				Sessions int   `json:"sessions"`
+				Requests int   `json:"requests"`
+				Tokens   int64 `json:"totalTokens"`
+			} `json:"today"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if resp.Summary.Today.Requests != 2 {
+		t.Fatalf("expected today requests=2, got %d", resp.Summary.Today.Requests)
+	}
+	if resp.Summary.Today.Tokens != 27 {
+		t.Fatalf("expected today totalTokens=27, got %d", resp.Summary.Today.Tokens)
+	}
+	if resp.Summary.Today.Sessions != 1 {
+		t.Fatalf("expected deduped today sessions=1, got %d", resp.Summary.Today.Sessions)
 	}
 }

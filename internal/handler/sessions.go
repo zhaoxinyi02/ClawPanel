@@ -71,6 +71,13 @@ type AgentUsageSummary struct {
 	Last30d UsageTotals `json:"last30d"`
 }
 
+type agentUsageResult struct {
+	Summary    AgentUsageSummary
+	TodaySet   map[string]struct{}
+	Last7dSet  map[string]struct{}
+	Last30dSet map[string]struct{}
+}
+
 // MsgContent represents the message content
 type MsgContent struct {
 	Role      string      `json:"role"`
@@ -254,13 +261,22 @@ func GetSessionUsage(cfg *config.Config) gin.HandlerFunc {
 
 		summary := UsageSummary{}
 		agents := make([]AgentUsageSummary, 0, len(agentIDs))
+		todaySet := map[string]struct{}{}
+		last7dSet := map[string]struct{}{}
+		last30dSet := map[string]struct{}{}
 		for _, id := range agentIDs {
 			cur := collectAgentUsage(cfg, id)
-			agents = append(agents, cur)
-			mergeUsageTotals(&summary.Today, cur.Today)
-			mergeUsageTotals(&summary.Last7d, cur.Last7d)
-			mergeUsageTotals(&summary.Last30d, cur.Last30d)
+			agents = append(agents, cur.Summary)
+			mergeUsageTotals(&summary.Today, cur.Summary.Today)
+			mergeUsageTotals(&summary.Last7d, cur.Summary.Last7d)
+			mergeUsageTotals(&summary.Last30d, cur.Summary.Last30d)
+			mergeSessionSets(todaySet, cur.TodaySet)
+			mergeSessionSets(last7dSet, cur.Last7dSet)
+			mergeSessionSets(last30dSet, cur.Last30dSet)
 		}
+		summary.Today.Sessions = len(todaySet)
+		summary.Last7d.Sessions = len(last7dSet)
+		summary.Last30d.Sessions = len(last30dSet)
 
 		sort.Slice(agents, func(i, j int) bool {
 			if agents[i].AgentID == "main" {
@@ -634,8 +650,13 @@ type usageRecord struct {
 	TotalCost   float64
 }
 
-func collectAgentUsage(cfg *config.Config, agentID string) AgentUsageSummary {
-	result := AgentUsageSummary{AgentID: agentID}
+func collectAgentUsage(cfg *config.Config, agentID string) agentUsageResult {
+	result := agentUsageResult{
+		Summary:    AgentUsageSummary{AgentID: agentID},
+		TodaySet:   map[string]struct{}{},
+		Last7dSet:  map[string]struct{}{},
+		Last30dSet: map[string]struct{}{},
+	}
 	sessionsDir := resolveAgentSessionsDir(cfg, agentID)
 	entries, err := os.ReadDir(sessionsDir)
 	if err != nil {
@@ -659,9 +680,12 @@ func collectAgentUsage(cfg *config.Config, agentID string) AgentUsageSummary {
 		collectUsageFromFile(filepath.Join(sessionsDir, entry.Name()), sessionID, todayStart, last7dStart, last30dStart, &todayAcc, &last7dAcc, &last30dAcc)
 	}
 
-	result.Today = todayAcc.UsageTotals
-	result.Last7d = last7dAcc.UsageTotals
-	result.Last30d = last30dAcc.UsageTotals
+	result.Summary.Today = todayAcc.UsageTotals
+	result.Summary.Last7d = last7dAcc.UsageTotals
+	result.Summary.Last30d = last30dAcc.UsageTotals
+	result.TodaySet = cloneSessionSet(todayAcc.sessionSet)
+	result.Last7dSet = cloneSessionSet(last7dAcc.sessionSet)
+	result.Last30dSet = cloneSessionSet(last30dAcc.sessionSet)
 	return result
 }
 
@@ -737,6 +761,23 @@ func mergeUsageTotals(dst *UsageTotals, src UsageTotals) {
 	dst.TotalCost += src.TotalCost
 	dst.Requests += src.Requests
 	dst.Sessions += src.Sessions
+}
+
+func mergeSessionSets(dst map[string]struct{}, src map[string]struct{}) {
+	if len(src) == 0 {
+		return
+	}
+	for sessionID := range src {
+		dst[sessionID] = struct{}{}
+	}
+}
+
+func cloneSessionSet(src map[string]struct{}) map[string]struct{} {
+	dst := make(map[string]struct{}, len(src))
+	for sessionID := range src {
+		dst[sessionID] = struct{}{}
+	}
+	return dst
 }
 
 func parseUsageRecord(raw interface{}) (usageRecord, bool) {
