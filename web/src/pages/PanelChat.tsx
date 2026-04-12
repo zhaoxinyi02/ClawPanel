@@ -120,6 +120,7 @@ export default function PanelChat() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const abortMarkerHandledRef = useRef<Record<string, boolean>>({});
   const activeRequestIdRef = useRef(0);
+  const composingRef = useRef(false);
 
   const text = useMemo(() => {
     if (locale === 'en') {
@@ -338,8 +339,7 @@ export default function PanelChat() {
   useEffect(() => {
     const sessionId = processingSessionId || selectedId;
     if (!sessionId) return;
-    const session = sessions.find(item => item.id === sessionId);
-    const stillProcessing = sessionId === processingSessionId || !!session?.processing;
+    const stillProcessing = sessionId === processingSessionId || !!selectedSession?.processing;
     if (!stillProcessing) return;
 
     let cancelled = false;
@@ -380,7 +380,7 @@ export default function PanelChat() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [processingSessionId, selectedId, sessions]);
+  }, [processingSessionId, selectedId, selectedSession?.processing]);
 
   const toggleDraftAgent = useCallback((agentId: string) => {
     setSelectedAgentIds(current => {
@@ -881,7 +881,12 @@ export default function PanelChat() {
               <textarea
                 value={input}
                 onChange={event => setInput(event.target.value)}
+                onCompositionStart={() => { composingRef.current = true; }}
+                onCompositionEnd={() => { composingRef.current = false; }}
                 onKeyDown={event => {
+                  if (event.nativeEvent.isComposing || composingRef.current || (event as unknown as { keyCode?: number }).keyCode === 229) {
+                    return;
+                  }
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault();
                     void handleSend();
