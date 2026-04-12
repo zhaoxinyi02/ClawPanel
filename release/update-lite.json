@@ -1,11 +1,11 @@
 {
-  "latest_version": "0.3.3",
-  "release_time": "2026-04-12T23:10:00+08:00",
-  "release_note": "## ClawPanel Lite v0.3.3\n\n- 修复 Telegram 多实例通道（telegram:*）定义匹配异常\n- AI 助手补齐最小化/最大化窗口控制，优化关闭交互\n- 修复面板会话运行时与主会话目录间的消息读取回退，提升会话稳定性",
+  "latest_version": "0.3.4",
+  "release_time": "2026-04-13T00:10:00+08:00",
+  "release_note": "## ClawPanel Lite v0.3.4\n\n- 新增 AI Company 协同编排基础视图与任务入口，增强多角色协同体验\n- Panel Chat 增强多参与者知识注入与共享上下文一致性\n- 修复群聊执行路径在合并后出现的编译问题，保证 Lite 构建链路稳定",
   "download_urls": {
-    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.3/clawpanel-lite-core-v0.3.3-linux-amd64.tar.gz",
-    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.3/clawpanel-lite-core-v0.3.3-darwin-amd64.tar.gz",
-    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.3/clawpanel-lite-core-v0.3.3-darwin-arm64.tar.gz"
+    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.4/clawpanel-lite-core-v0.3.4-linux-amd64.tar.gz",
+    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.4/clawpanel-lite-core-v0.3.4-darwin-amd64.tar.gz",
+    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.4/clawpanel-lite-core-v0.3.4-darwin-arm64.tar.gz"
   },
   "major_change": false,
   "change_warning": ""
