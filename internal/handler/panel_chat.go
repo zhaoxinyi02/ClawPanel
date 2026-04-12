@@ -272,7 +272,7 @@ func ensurePanelChatRuntime(cfg *config.Config, session panelChatSession) (state
 	}
 	srcAgentDir := filepath.Join(cfg.OpenClawDir, "agents", session.AgentID)
 	scopedAgentID := panelChatScopedAgentID(session.ID, session.AgentID)
-	dstAgentDir := filepath.Join(stateDir, "agents", scopedAgentID)
+	dstAgentDir := filepath.Join(stateDir, "agents", session.AgentID)
 	if err = copyDirWithoutSessions(srcAgentDir, dstAgentDir); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", "", "", err
 	}
@@ -281,15 +281,16 @@ func ensurePanelChatRuntime(cfg *config.Config, session panelChatSession) (state
 		return "", "", "", err
 	}
 	srcWorkspace := resolveAgentWorkspacePath(cfg, session.AgentID)
+	runtimeWorkspace := filepath.ToSlash(filepath.Join("openclaw-work", scopedAgentID))
 	dstWorkspace := filepath.Join(workDir, "openclaw-work", scopedAgentID)
-	if strings.TrimSpace(srcWorkspace) != "" {
-		if err = syncDirPreferSource(srcWorkspace, dstWorkspace); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if strings.TrimSpace(srcWorkspace) == "" {
+		if err = os.MkdirAll(dstWorkspace, 0o755); err != nil {
 			return "", "", "", err
 		}
-	} else if err = os.MkdirAll(dstWorkspace, 0o755); err != nil {
-		return "", "", "", err
+	} else {
+		runtimeWorkspace = filepath.ToSlash(srcWorkspace)
 	}
-	if err = rewritePanelChatRuntimeConfig(cfg, sourceConfigPath, configPath, session, ""); err != nil {
+	if err = rewritePanelChatRuntimeConfig(cfg, sourceConfigPath, configPath, session, runtimeWorkspace); err != nil {
 		return "", "", "", err
 	}
 	return stateDir, configPath, workDir, nil
@@ -394,7 +395,7 @@ func copyDirWithoutSessions(src, dst string) error {
 	})
 }
 
-func rewritePanelChatRuntimeConfig(cfg *config.Config, srcConfigPath, dstConfigPath string, session panelChatSession, configuredWorkspace string) error {
+func rewritePanelChatRuntimeConfig(cfg *config.Config, srcConfigPath, dstConfigPath string, session panelChatSession, runtimeWorkspace string) error {
 	data, err := os.ReadFile(srcConfigPath)
 	if err != nil {
 		return err
@@ -414,26 +415,24 @@ func rewritePanelChatRuntimeConfig(cfg *config.Config, srcConfigPath, dstConfigP
 		for k, v := range agent {
 			cloned[k] = v
 		}
-		scopedID := panelChatScopedAgentID(session.ID, session.AgentID)
-		cloned["id"] = scopedID
-		workspace := strings.TrimSpace(configuredWorkspace)
-		if workspace == "" {
-			workspace = filepath.ToSlash(filepath.Join("openclaw-work", scopedID))
+		cloned["id"] = session.AgentID
+		if strings.TrimSpace(runtimeWorkspace) != "" {
+			cloned["workspace"] = filepath.ToSlash(runtimeWorkspace)
+		} else {
+			cloned["workspace"] = filepath.ToSlash(filepath.Join("openclaw-work", panelChatScopedAgentID(session.ID, session.AgentID)))
 		}
-		cloned["workspace"] = workspace
 		cloned["default"] = true
 		newList = append(newList, cloned)
 		break
 	}
 	if len(newList) == 0 && strings.TrimSpace(session.AgentID) != "" {
-		scopedID := panelChatScopedAgentID(session.ID, session.AgentID)
-		workspace := strings.TrimSpace(configuredWorkspace)
+		workspace := strings.TrimSpace(runtimeWorkspace)
 		if workspace == "" {
-			workspace = filepath.ToSlash(filepath.Join("openclaw-work", scopedID))
+			workspace = filepath.ToSlash(filepath.Join("openclaw-work", panelChatScopedAgentID(session.ID, session.AgentID)))
 		}
 		newList = append(newList, map[string]interface{}{
-			"id":        scopedID,
-			"workspace": workspace,
+			"id":        session.AgentID,
+			"workspace": filepath.ToSlash(workspace),
 			"default":   true,
 		})
 	}
@@ -610,15 +609,6 @@ func loadPanelChatParticipants(db *sql.DB, cfg *config.Config, session panelChat
 			OpenClawSessionID: item.OpenClawSessionID,
 		})
 	}
-	sort.SliceStable(views, func(i, j int) bool {
-		if views[i].IsSummary != views[j].IsSummary {
-			return !views[i].IsSummary
-		}
-		if views[i].OrderIndex != views[j].OrderIndex {
-			return views[i].OrderIndex < views[j].OrderIndex
-		}
-		return views[i].AgentID < views[j].AgentID
-	})
 	if len(views) == 0 && strings.TrimSpace(session.AgentID) != "" {
 		views = append(views, panelChatParticipantView{AgentID: session.AgentID, Name: nameMap[session.AgentID], RoleType: "assistant", OrderIndex: 0, AutoReply: true, Enabled: true})
 	}
@@ -652,7 +642,38 @@ func panelChatSessionFile(cfg *config.Config, agentID, openclawSessionID string)
 }
 
 func panelChatRuntimeSessionFile(cfg *config.Config, session panelChatSession) string {
-	return filepath.Join(panelChatRuntimeRoot(cfg, session.ID), "state", "agents", panelChatScopedAgentID(session.ID, session.AgentID), "sessions", session.OpenClawSessionID+".jsonl")
+	return filepath.Join(panelChatRuntimeRoot(cfg, session.ID), "state", "agents", session.AgentID, "sessions", session.OpenClawSessionID+".jsonl")
+}
+
+func panelChatSessionFileCandidates(cfg *config.Config, session panelChatSession) []string {
+	paths := make([]string, 0, 2)
+	addPath := func(p string) {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			return
+		}
+		for _, existing := range paths {
+			if existing == p {
+				return
+			}
+		}
+		paths = append(paths, p)
+	}
+	addPath(panelChatSessionFile(cfg, session.AgentID, session.OpenClawSessionID))
+	addPath(panelChatRuntimeSessionFile(cfg, session))
+	return paths
+}
+
+func readPanelChatSessionMessagesWithFallback(cfg *config.Config, session panelChatSession, limit int) ([]map[string]interface{}, error) {
+	var lastErr error
+	for _, filePath := range panelChatSessionFileCandidates(cfg, session) {
+		messages, err := readSessionMessages(filePath, limit)
+		if err == nil {
+			return messages, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
 }
 
 func sanitizePanelChatContent(content string) string {
@@ -730,10 +751,6 @@ func readPanelChatMessages(cfg *config.Config, session panelChatSession) ([]map[
 		return nil, err
 	}
 
-	return readPanelChatTranscript(filePath, session.AgentID)
-}
-
-func readPanelChatTranscript(filePath, agentID string) ([]map[string]interface{}, error) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
@@ -785,7 +802,7 @@ func readPanelChatTranscript(filePath, agentID string) ([]map[string]interface{}
 			"timestamp":  ts,
 		}
 		if role == "assistant" {
-			message["agentId"] = agentID
+			message["agentId"] = session.AgentID
 			message["messageType"] = "chat"
 		}
 		if len(images) > 0 {
@@ -857,7 +874,7 @@ func newPanelChatExecCommand(ctx context.Context, cfg *config.Config, session pa
 		return nil, err
 	}
 	args := append([]string{}, prefixArgs...)
-	args = append(args, "agent", "--agent", panelChatScopedAgentID(session.ID, session.AgentID), "--to", panelChatVirtualTarget(session), "--session-id", session.OpenClawSessionID, "--message", message, "--json")
+	args = append(args, "agent", "--agent", session.AgentID, "--to", panelChatVirtualTarget(session), "--session-id", session.OpenClawSessionID, "--message", message, "--json")
 	cmd := exec.CommandContext(ctx, bin, args...)
 	setPanelChatProcessGroup(cmd)
 	cmd.Dir = sessionStateDir
@@ -950,21 +967,6 @@ func runPanelChatMessage(ctx context.Context, cfg *config.Config, session panelC
 	return strings.Join(parts, "\n\n"), strings.TrimSpace(result.Result.Meta.AgentMeta.SessionID), nil
 }
 
-func runPanelChatMessageWithRecovery(ctx context.Context, cfg *config.Config, session panelChatSession, message string) (string, string, []map[string]interface{}, error) {
-	reply, actualSessionID, err := runPanelChatMessage(ctx, cfg, session, message)
-	transcript, historyErr := readPanelChatTranscript(panelChatRuntimeSessionFile(cfg, session), session.AgentID)
-	if historyErr == nil && (strings.TrimSpace(reply) == "" || err != nil) {
-		recovered := extractLatestAssistantReply(transcript, message)
-		if strings.TrimSpace(recovered) != "" {
-			reply = recovered
-			if errors.Is(err, errPanelChatTimeout) {
-				err = nil
-			}
-		}
-	}
-	return reply, actualSessionID, transcript, err
-}
-
 func buildGroupChatPrompt(agentName string, participant panelChatParticipantView, transcript []map[string]interface{}, latestUserMessage string) string {
 	lines := []string{
 		fmt.Sprintf("你正在参与一个多 AI 角色群聊。你的身份是：%s。", strings.TrimSpace(agentName)),
@@ -1023,7 +1025,6 @@ func executeGroupPanelChat(ctx context.Context, cfg *config.Config, session pane
 		"timestamp":   userTimestamp,
 	}
 	messages = append(messages, userEntry)
-	_ = savePanelChatMessages(cfg, session.ID, messages)
 	lastReply := ""
 	for _, participant := range participants {
 		if !participant.Enabled || !participant.AutoReply {
@@ -1046,7 +1047,18 @@ func executeGroupPanelChat(ctx context.Context, cfg *config.Config, session pane
 		if runtimeSession.OpenClawSessionID == "" {
 			runtimeSession.OpenClawSessionID = fmt.Sprintf("%s-%s", session.ID, participant.AgentID)
 		}
-		reply, actualSessionID, _, err := runPanelChatMessageWithRecovery(ctx, cfg, runtimeSession, prompt)
+		reply, actualSessionID, err := runPanelChatMessage(ctx, cfg, runtimeSession, prompt)
+		if strings.TrimSpace(reply) == "" || err != nil {
+			if rawMessages, historyErr := readPanelChatSessionMessagesWithFallback(cfg, runtimeSession, 200); historyErr == nil {
+				recovered := extractLatestAssistantReply(rawMessages, prompt)
+				if strings.TrimSpace(recovered) != "" {
+					reply = recovered
+					if errors.Is(err, errPanelChatTimeout) {
+						err = nil
+					}
+				}
+			}
+		}
 		if strings.TrimSpace(actualSessionID) != "" {
 			sessionIDs[participant.AgentID] = strings.TrimSpace(actualSessionID)
 		}
@@ -1071,12 +1083,6 @@ func executeGroupPanelChat(ctx context.Context, cfg *config.Config, session pane
 			"messageType": messageType,
 			"content":     reply,
 			"timestamp":   time.Now().UTC().Format(time.RFC3339),
-		})
-		_ = savePanelChatMessages(cfg, session.ID, messages)
-		_, _ = updatePanelChatSessionState(cfg, session.ID, func(item *panelChatSession) {
-			item.UpdatedAt = time.Now().UnixMilli()
-			item.MessageCount = len(messages)
-			item.LastMessage = strings.TrimSpace(userMessage)
 		})
 	}
 	return messages, lastReply, sessionIDs, nil
@@ -1425,16 +1431,9 @@ func SendPanelChatMessage(db *sql.DB, cfg *config.Config) gin.HandlerFunc {
 		if session.ChatType == "group" || len(participants) > 1 {
 			existingMessages, reply, participantSessionUpdates, runErr = executeGroupPanelChat(c.Request.Context(), cfg, *session, participants, existingMessages, strings.TrimSpace(req.Message))
 		} else {
-			var rawMessages []map[string]interface{}
-			reply, actualSessionID, rawMessages, runErr = runPanelChatMessageWithRecovery(c.Request.Context(), cfg, *session, strings.TrimSpace(req.Message))
+			reply, actualSessionID, runErr = runPanelChatMessage(c.Request.Context(), cfg, *session, strings.TrimSpace(req.Message))
 			if strings.TrimSpace(actualSessionID) != "" {
 				session.OpenClawSessionID = strings.TrimSpace(actualSessionID)
-			}
-			if len(rawMessages) > 0 {
-				latestExchange := extractLatestPanelChatExchange(rawMessages, strings.TrimSpace(req.Message))
-				if len(latestExchange) > 0 {
-					existingMessages = mergePanelChatTranscripts(existingMessages, latestExchange)
-				}
 			}
 		}
 		_, _ = updatePanelChatSessionState(cfg, session.ID, func(item *panelChatSession) {
@@ -1446,7 +1445,13 @@ func SendPanelChatMessage(db *sql.DB, cfg *config.Config) gin.HandlerFunc {
 			}
 		})
 		if session.ChatType != "group" && len(participants) <= 1 {
-			// transcript merge already handled in direct path via runPanelChatMessageWithRecovery
+			rawMessages, historyErr := readPanelChatSessionMessagesWithFallback(cfg, *session, 400)
+			if historyErr == nil {
+				latestExchange := extractLatestPanelChatExchange(rawMessages, strings.TrimSpace(req.Message))
+				if len(latestExchange) > 0 {
+					existingMessages = mergePanelChatTranscripts(existingMessages, latestExchange)
+				}
+			}
 		}
 		if len(existingMessages) == 0 && strings.TrimSpace(reply) != "" {
 			userTime := time.Now().UTC()

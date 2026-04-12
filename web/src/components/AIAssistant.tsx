@@ -122,6 +122,17 @@ export default function AIAssistant() {
     if (open && inputRef.current) setTimeout(() => inputRef.current?.focus(), 100);
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setShowSettings(false);
+      setOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open]);
+
   // Drag handlers
   const onDragStart = useCallback((e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('button, select, input, textarea, a')) return;
@@ -266,8 +277,11 @@ export default function AIAssistant() {
               }} className="rounded-xl border border-white/10 bg-white/10 p-1.5 transition-colors hover:bg-white/20" title={isMaximized ? '还原大小' : '最大化'}>
                 {isMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
               </button>}
-              <button onClick={() => setOpen(false)} className="rounded-xl border border-white/10 bg-white/10 p-1.5 transition-colors hover:bg-white/20" title="收起">
-                <ChevronDown size={14} />
+              <button onClick={() => {
+                setShowSettings(false);
+                setOpen(false);
+              }} className="rounded-xl border border-white/10 bg-white/10 p-1.5 transition-colors hover:bg-white/20" title="最小化（Esc）">
+                <Minimize2 size={14} />
               </button>
             </div>
           </div>

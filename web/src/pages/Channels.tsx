@@ -18,7 +18,7 @@ type ChannelConfigField = {
   defaultValue?: string | number | boolean;
   section?: ChannelFieldSection;
   rows?: number;
-  valueFormat?: 'stringArray';
+  valueFormat?: 'stringArray' | 'jsonObject';
 };
 
 type ChannelDef = {
@@ -512,6 +512,8 @@ const DEFAULT_CHANNEL_DEFS: ChannelDef[] = [
       { key: 'reactionNotifications', label: 'Reaction Notifications', type: 'select', options: ['off', 'own', 'all'], help: '控制哪些 Telegram reaction 会转成系统事件。' },
       { key: 'reactionLevel', label: 'Reaction Level', type: 'select', options: ['off', 'ack', 'minimal', 'extensive'], help: '控制 agent 在 Telegram 里使用 reaction 的范围。' },
       { key: 'ackReaction', label: 'Ack Reaction Emoji', type: 'text', placeholder: '👀', help: '处理消息时先发送的确认 emoji；留空可禁用。' },
+      { key: 'defaultAccount', label: '默认账号 ID', type: 'text', section: 'advanced', placeholder: 'bot-main', help: '多机器人模式下的默认账号标识；单机器人可留空。' },
+      { key: 'accounts', label: '多机器人账号（JSON）', type: 'textarea', rows: 6, section: 'advanced', valueFormat: 'jsonObject', placeholder: '{\"bot-main\":{\"botToken\":\"123:xxx\",\"enabled\":true},\"bot-backup\":{\"botToken\":\"456:yyy\",\"enabled\":true}}', help: '可选高级配置。用于同时接入多个 Telegram Bot；键名是账号 ID，值为该账号配置。' },
     ] },
   { id: 'discord', label: 'Discord', description: 'Discord Bot API + Gateway', type: 'builtin',
     configFields: [
@@ -1435,6 +1437,15 @@ export default function Channels() {
     if (fieldDef?.valueFormat === 'stringArray') {
       return formatCommaList(key.split('.').reduce((o: any, k: string) => o?.[k], chConf));
     }
+    if (fieldDef?.valueFormat === 'jsonObject') {
+      const value = key.split('.').reduce((o: any, k: string) => o?.[k], chConf);
+      if (!isPlainObject(value)) return '';
+      try {
+        return JSON.stringify(value, null, 2);
+      } catch {
+        return '';
+      }
+    }
     return key.split('.').reduce((o: any, k: string) => o?.[k], chConf);
   };
 
@@ -1479,6 +1490,18 @@ export default function Channels() {
 
       if (field.valueFormat === 'stringArray') {
         setNestedValue(draft, field.key, parseDelimitedList(rawValue));
+        return;
+      }
+
+      if (field.valueFormat === 'jsonObject') {
+        try {
+          const parsed = JSON.parse(rawValue);
+          if (isPlainObject(parsed)) {
+            setNestedValue(draft, field.key, parsed);
+          }
+        } catch {
+          // Keep text draft while user is typing invalid/incomplete JSON.
+        }
         return;
       }
 
@@ -1589,11 +1612,38 @@ export default function Channels() {
     } catch (err) { setMsg(t.common.operationFailed + ': ' + String(err)); setTimeout(() => setMsg(''), 3000); }
   };
 
+  const applyStructuredFieldDrafts = (channelId: string, channelData: any) => {
+    const def = channelDefs.find(ch => ch.id === channelId);
+    if (!def) return;
+    for (const field of def.configFields) {
+      const draftKey = `${channelId}:${field.key}`;
+      const raw = channelFieldTextDrafts[draftKey];
+      if (raw === undefined) continue;
+      if (field.valueFormat !== 'jsonObject') continue;
+      const trimmed = raw.trim();
+      if (!trimmed) {
+        deleteNestedValue(channelData, field.key);
+        continue;
+      }
+      let parsed: any;
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        throw new Error(`${field.label} 不是合法 JSON`);
+      }
+      if (!isPlainObject(parsed)) {
+        throw new Error(`${field.label} 需要是 JSON 对象`);
+      }
+      setNestedValue(channelData, field.key, parsed);
+    }
+  };
+
   const handleSave = async () => {
     if (!currentDef) return;
     setSaving(true); setMsg('');
     try {
       const chData: any = deepClone(getEffectiveChannelConfig(currentDef.id));
+      applyStructuredFieldDrafts(currentDef.id, chData);
       if (currentDef.id === 'feishu' && currentFeishuRequireMentionInvalid) {
         throw new Error(`requireMention 仅支持 true/false，当前值为 ${JSON.stringify(currentFeishuRequireMentionRaw)}`);
       }
