@@ -20,6 +20,11 @@ const Workflows = lazy(() => import('./pages/Workflows'));
 const Sessions = lazy(() => import('./pages/Sessions'));
 const Workspace = lazy(() => import('./pages/Workspace'));
 const Monitor = lazy(() => import('./pages/Monitor'));
+const CompanyOverview = lazy(() => import('./pages/CompanyOverview'));
+const CompanyTasks = lazy(() => import('./pages/CompanyTasks'));
+const CompanyTaskDetail = lazy(() => import('./pages/CompanyTaskDetail'));
+const CompanyTeams = lazy(() => import('./pages/CompanyTeams'));
+const CompanyChannels = lazy(() => import('./pages/CompanyChannels'));
 
 function RouteLoadingFallback() {
   return (
@@ -68,6 +73,11 @@ export default function App() {
           <Route path="/monitor" element={<OpenClawRequired openclawStatus={ws.openclawStatus} processStatus={ws.processStatus}><Suspense fallback={<RouteLoadingFallback />}><Monitor /></Suspense></OpenClawRequired>} />
         )}
         <Route path="/workflows" element={<OpenClawRequired openclawStatus={ws.openclawStatus} processStatus={ws.processStatus}><Suspense fallback={<RouteLoadingFallback />}><Workflows /></Suspense></OpenClawRequired>} />
+        <Route path="/company" element={<OpenClawRequired openclawStatus={ws.openclawStatus} processStatus={ws.processStatus}><Suspense fallback={<RouteLoadingFallback />}><CompanyOverview /></Suspense></OpenClawRequired>} />
+        <Route path="/company/tasks" element={<OpenClawRequired openclawStatus={ws.openclawStatus} processStatus={ws.processStatus}><Suspense fallback={<RouteLoadingFallback />}><CompanyTasks /></Suspense></OpenClawRequired>} />
+        <Route path="/company/tasks/:id" element={<OpenClawRequired openclawStatus={ws.openclawStatus} processStatus={ws.processStatus}><Suspense fallback={<RouteLoadingFallback />}><CompanyTaskDetail /></Suspense></OpenClawRequired>} />
+        <Route path="/company/teams" element={<OpenClawRequired openclawStatus={ws.openclawStatus} processStatus={ws.processStatus}><Suspense fallback={<RouteLoadingFallback />}><CompanyTeams /></Suspense></OpenClawRequired>} />
+        <Route path="/company/channels" element={<OpenClawRequired openclawStatus={ws.openclawStatus} processStatus={ws.processStatus}><Suspense fallback={<RouteLoadingFallback />}><CompanyChannels /></Suspense></OpenClawRequired>} />
         <Route path="/cron" element={<OpenClawRequired openclawStatus={ws.openclawStatus} processStatus={ws.processStatus}><Suspense fallback={<RouteLoadingFallback />}><CronJobs /></Suspense></OpenClawRequired>} />
         <Route path="/sessions" element={<OpenClawRequired openclawStatus={ws.openclawStatus} processStatus={ws.processStatus}><Suspense fallback={<RouteLoadingFallback />}><Sessions /></Suspense></OpenClawRequired>} />
         <Route path="/config" element={<Suspense fallback={<RouteLoadingFallback />}><SystemConfig /></Suspense>} />

@@ -604,6 +604,50 @@ func validateBindingForWrite(index int, binding map[string]interface{}, agentSet
 	return nil
 }
 
+func validateBindingsUniqueAccounts(bindings []map[string]interface{}) error {
+	type owner struct {
+		agentID string
+		index   int
+	}
+	owners := map[string][]owner{}
+	for i, binding := range bindings {
+		if binding == nil {
+			continue
+		}
+		if enabled, ok := binding["enabled"].(bool); ok && !enabled {
+			continue
+		}
+		if bindingType(binding) != "route" {
+			continue
+		}
+		match, _ := binding["match"].(map[string]interface{})
+		channel := trimScalarString(match["channel"])
+		accountID := trimScalarString(match["accountId"])
+		if channel == "" || accountID == "" || accountID == "*" {
+			continue
+		}
+		agentID := extractBindingAgentID(binding)
+		key := channel + "\x00" + accountID
+		owners[key] = append(owners[key], owner{agentID: agentID, index: i})
+	}
+	for key, items := range owners {
+		uniq := map[string]struct{}{}
+		labels := make([]string, 0, len(items))
+		for _, item := range items {
+			if _, ok := uniq[item.agentID]; ok {
+				continue
+			}
+			uniq[item.agentID] = struct{}{}
+			labels = append(labels, fmt.Sprintf("%s(bindings[%d])", item.agentID, item.index))
+		}
+		if len(labels) > 1 {
+			parts := strings.SplitN(key, "\x00", 2)
+			return fmt.Errorf("检测到重复账号路由：channel=%s accountId=%s 同时指向多个智能体：%s；请保证一账号只对应一个智能体", parts[0], parts[1], strings.Join(labels, ", "))
+		}
+	}
+	return nil
+}
+
 func normalizeBindingMatchForWrite(raw map[string]interface{}) map[string]interface{} {
 	match := map[string]interface{}{}
 	if raw == nil {

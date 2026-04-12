@@ -464,14 +464,155 @@ func SaveOpenClawBindings(cfg *config.Config) gin.HandlerFunc {
 			ocConfig = map[string]interface{}{}
 		}
 		agentsCfg := ensureAgentsConfig(ocConfig)
+		previousBindings := getBindingsFromConfig(ocConfig, agentsCfg)
+		if err := validateBindingsUniqueAccounts(req.Bindings); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
 		setBindingsToConfig(ocConfig, agentsCfg, req.Bindings)
 
 		if err := cfg.WriteOpenClawJSON(ocConfig); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 			return
 		}
+		_ = pruneRouteSessionsAfterBindingsChange(cfg, previousBindings, req.Bindings)
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	}
+}
+
+func pruneRouteSessionsAfterBindingsChange(cfg *config.Config, previousBindings, nextBindings []map[string]interface{}) error {
+	before := collectExactChannelAccountOwners(previousBindings)
+	after := collectExactChannelAccountOwners(nextBindings)
+	for routeKey, oldOwners := range before {
+		newOwners := after[routeKey]
+		if sameStringSet(oldOwners, newOwners) {
+			continue
+		}
+		parts := strings.SplitN(routeKey, "\x00", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		channelID, accountID := parts[0], parts[1]
+		newOwnerSet := make(map[string]struct{}, len(newOwners))
+		for _, agentID := range newOwners {
+			newOwnerSet[agentID] = struct{}{}
+		}
+		for _, agentID := range oldOwners {
+			if _, keep := newOwnerSet[agentID]; keep {
+				continue
+			}
+			if err := pruneAgentSessionsForRoute(cfg, agentID, channelID, accountID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func collectExactChannelAccountOwners(bindings []map[string]interface{}) map[string][]string {
+	owners := map[string][]string{}
+	for _, binding := range bindings {
+		if binding == nil {
+			continue
+		}
+		if enabled, ok := binding["enabled"].(bool); ok && !enabled {
+			continue
+		}
+		if bindingType(binding) != "route" {
+			continue
+		}
+		match, _ := binding["match"].(map[string]interface{})
+		channelID := trimScalarString(match["channel"])
+		accountID := trimScalarString(match["accountId"])
+		agentID := extractBindingAgentID(binding)
+		if channelID == "" || accountID == "" || accountID == "*" || agentID == "" {
+			continue
+		}
+		key := channelID + "\x00" + accountID
+		if !containsString(owners[key], agentID) {
+			owners[key] = append(owners[key], agentID)
+		}
+	}
+	return owners
+}
+
+func sameStringSet(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	seen := map[string]int{}
+	for _, item := range left {
+		seen[item]++
+	}
+	for _, item := range right {
+		seen[item]--
+	}
+	for _, count := range seen {
+		if count != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func pruneAgentSessionsForRoute(cfg *config.Config, agentID, channelID, accountID string) error {
+	sessionsDir := resolveAgentSessionsDir(cfg, agentID)
+	sessionsPath := filepath.Join(sessionsDir, "sessions.json")
+	data, err := os.ReadFile(sessionsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	raw := map[string]interface{}{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	changed := false
+	for key, value := range raw {
+		item, ok := value.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if !sessionMatchesRoute(item, channelID, accountID) {
+			continue
+		}
+		if sessionFile := strings.TrimSpace(toString(item["sessionFile"])); sessionFile != "" {
+			_ = os.Remove(sessionFile)
+		}
+		delete(raw, key)
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	updated, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return err
+	}
+	updated = append(updated, '\n')
+	return os.WriteFile(sessionsPath, updated, 0644)
+}
+
+func sessionMatchesRoute(item map[string]interface{}, channelID, accountID string) bool {
+	if strings.TrimSpace(toString(item["lastChannel"])) == channelID && strings.TrimSpace(toString(item["lastAccountId"])) == accountID {
+		return true
+	}
+	if ctx, ok := item["deliveryContext"].(map[string]interface{}); ok {
+		if strings.TrimSpace(toString(ctx["channel"])) == channelID && strings.TrimSpace(toString(ctx["accountId"])) == accountID {
+			return true
+		}
+	}
+	if origin, ok := item["origin"].(map[string]interface{}); ok {
+		if strings.TrimSpace(toString(origin["provider"])) == channelID && strings.TrimSpace(toString(origin["accountId"])) == accountID {
+			return true
+		}
+		if strings.TrimSpace(toString(origin["surface"])) == channelID && strings.TrimSpace(toString(origin["accountId"])) == accountID {
+			return true
+		}
+	}
+	return false
 }
 
 // PreviewOpenClawRoute 基于 bindings 规则预览路由结果。

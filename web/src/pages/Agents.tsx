@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Plus, RefreshCw, Save, Trash2, ArrowUp, ArrowDown, Route, Bot, Settings, Brain, Shield, ChevronDown, ChevronRight, Sparkles, FileText } from 'lucide-react';
 import InfoTooltip from '../components/InfoTooltip';
@@ -611,6 +611,26 @@ function validateBindingMatchClient(matchRaw: any, idx: number): string | null {
     }
   }
   return null;
+}
+
+function detectDuplicateAccountBindings(rows: BindingDraft[]) {
+  const owners = new Map<string, Set<string>>();
+  for (const row of rows) {
+    if (!row || row.enabled === false || row.type === 'acp') continue;
+    const match = compactMatch(row.match);
+    const channel = extractTextValue(match.channel).trim();
+    const accountId = extractTextValue(match.accountId).trim();
+    const agentId = String(row.agentId || '').trim();
+    if (!channel || !accountId || accountId === '*' || !agentId) continue;
+    const key = `${channel}\u0000${accountId}`;
+    if (!owners.has(key)) owners.set(key, new Set<string>());
+    owners.get(key)?.add(agentId);
+  }
+  return Array.from(owners.entries()).flatMap(([key, agentIds]) => {
+    if (agentIds.size <= 1) return [];
+    const [channel, accountId] = key.split('\u0000');
+    return [{ channel, accountId, agentIds: Array.from(agentIds).sort() }];
+  });
 }
 
 function extractTextValue(v: any): string {
@@ -1330,6 +1350,7 @@ function buildPreviewExplanation(result: PreviewResult | null, bindings: Binding
 function AgentsPage() {
   const { uiMode } = (useOutletContext() as { uiMode?: 'modern' }) || {};
   const modern = uiMode === 'modern';
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
@@ -1378,9 +1399,14 @@ function AgentsPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewResult, setPreviewResult] = useState<PreviewResult | null>(null);
 
+  const requestedAgentId = searchParams.get('agent')?.trim() || '';
+  const requestedView = searchParams.get('view')?.trim() || '';
+  const requestedTab = searchParams.get('tab')?.trim() || '';
+
   const agentOptions = useMemo(() => {
     return agents.map(a => a.id).filter(Boolean);
   }, [agents]);
+  const duplicateAccountBindings = useMemo(() => detectDuplicateAccountBindings(bindings), [bindings]);
 
   const explicitAgents = useMemo(() => {
     return agents.filter(agent => !isImplicitAgent(agent));
@@ -1867,6 +1893,23 @@ function AgentsPage() {
         if (seq === skillsLoadSeqRef.current) setSkillsLoading(false);
       });
   }, [selectedAgent]);
+
+  useEffect(() => {
+    if (requestedView !== 'routing' && requestedView !== 'directory') return;
+    setWorkbenchView(prev => (prev === requestedView ? prev : requestedView));
+  }, [requestedView]);
+
+  useEffect(() => {
+    const allowedTabs: AgentDetailTab[] = ['overview', 'model', 'tools', 'files', 'capabilities', 'context', 'advanced'];
+    if (!allowedTabs.includes(requestedTab as AgentDetailTab)) return;
+    setDetailTab(prev => (prev === requestedTab ? prev : requestedTab as AgentDetailTab));
+  }, [requestedTab]);
+
+  useEffect(() => {
+    if (!requestedAgentId || agents.length === 0) return;
+    if (!agents.some(agent => agent.id === requestedAgentId)) return;
+    if (requestedAgentId !== selectedAgentId) setSelectedAgentId(requestedAgentId);
+  }, [agents, requestedAgentId, selectedAgentId]);
 
   useEffect(() => {
     const fallback = agents.find(agent => agent.id === defaultAgent)?.id || agents[0]?.id || '';
@@ -3590,6 +3633,13 @@ function AgentsPage() {
                   当前优先级为 sender &gt; peer &gt; parent peer inheritance &gt; guild+roles &gt; guild &gt; team &gt; account &gt; account wildcard &gt; channel &gt; default；只有同一优先级才按列表顺序比较。未命中时会回落到默认 Agent「{defaultAgent}」。
                 </div>
             </div>
+            {duplicateAccountBindings.length > 0 && (
+              <div className="px-4 pt-4">
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                  检测到重复账号路由：{duplicateAccountBindings.map(item => `${humanizeChannelName(item.channel)}/${item.accountId} -> ${item.agentIds.join('、')}`).join('；')}。请保证一账号只对应一个智能体，否则会产生路由歧义与旧会话残留。
+                </div>
+              </div>
+            )}
             <div className="p-4 space-y-3">
               {bindings.length === 0 && (
                 <div className="rounded-lg border border-dashed border-gray-200 dark:border-gray-700 px-4 py-8 text-center text-sm text-gray-400">

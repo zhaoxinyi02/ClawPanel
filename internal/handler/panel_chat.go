@@ -70,6 +70,11 @@ type panelChatParticipantView struct {
 	OpenClawSessionID string `json:"openclawSessionId,omitempty"`
 }
 
+type panelChatSharedContextView struct {
+	Path  string `json:"path"`
+	Title string `json:"title,omitempty"`
+}
+
 type panelChatRunResult struct {
 	Payloads []struct {
 		Text string `json:"text"`
@@ -499,6 +504,18 @@ func decoratePanelChatSession(db *sql.DB, cfg *config.Config, session *panelChat
 	}
 }
 
+func loadPanelChatSharedContexts(db *sql.DB, sessionID string) ([]panelChatSharedContextView, error) {
+	items, err := model.ListPanelChatSessionSharedContexts(db, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]panelChatSharedContextView, 0, len(items))
+	for _, item := range items {
+		views = append(views, panelChatSharedContextView{Path: item.Path, Title: item.Title})
+	}
+	return views, nil
+}
+
 func panelChatSessionFile(cfg *config.Config, agentID, openclawSessionID string) string {
 	return filepath.Join(resolveAgentSessionsDir(cfg, agentID), openclawSessionID+".jsonl")
 }
@@ -868,7 +885,11 @@ func executeGroupPanelChat(ctx context.Context, db *sql.DB, cfg *config.Config, 
 			item.CurrentAgentName = agentName
 			item.UpdatedAt = time.Now().UnixMilli()
 		})
+		sources := retrievePanelChatKnowledge(db, cfg, participant.AgentID, session.ID, userMessage)
 		prompt := buildGroupChatPrompt(agentName, participant, messages, userMessage)
+		if len(sources) > 0 {
+			prompt = injectPanelChatKnowledge(prompt, sources)
+		}
 		runtimeSession := session
 		runtimeSession.AgentID = participant.AgentID
 		runtimeSession.OpenClawSessionID = strings.TrimSpace(participant.OpenClawSessionID)
@@ -902,7 +923,7 @@ func executeGroupPanelChat(ctx context.Context, db *sql.DB, cfg *config.Config, 
 		if participant.IsSummary {
 			messageType = "summary"
 		}
-		messages = append(messages, map[string]interface{}{
+		entry := map[string]interface{}{
 			"id":          fmt.Sprintf("agent-%s-%d", participant.AgentID, time.Now().UnixNano()),
 			"role":        "assistant",
 			"senderType":  "agent",
@@ -911,7 +932,11 @@ func executeGroupPanelChat(ctx context.Context, db *sql.DB, cfg *config.Config, 
 			"messageType": messageType,
 			"content":     reply,
 			"timestamp":   time.Now().UTC().Format(time.RFC3339),
-		})
+		}
+		if len(sources) > 0 {
+			entry["sources"] = sources
+		}
+		messages = append(messages, entry)
 	}
 	return messages, lastReply, nil
 }
@@ -1068,13 +1093,14 @@ func ListPanelChatSessions(db *sql.DB, cfg *config.Config) gin.HandlerFunc {
 func CreatePanelChatSession(db *sql.DB, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
-			Title          string   `json:"title"`
-			ChatType       string   `json:"chatType"`
-			AgentID        string   `json:"agentId"`
-			AgentIDs       []string `json:"agentIds"`
-			SummaryAgentID string   `json:"summaryAgentId"`
-			TargetID       string   `json:"targetId"`
-			TargetName     string   `json:"targetName"`
+			Title              string   `json:"title"`
+			ChatType           string   `json:"chatType"`
+			AgentID            string   `json:"agentId"`
+			AgentIDs           []string `json:"agentIds"`
+			SummaryAgentID     string   `json:"summaryAgentId"`
+			SharedContextPaths []string `json:"sharedContextPaths"`
+			TargetID           string   `json:"targetId"`
+			TargetName         string   `json:"targetName"`
 		}
 		_ = c.ShouldBindJSON(&req)
 
@@ -1125,6 +1151,18 @@ func CreatePanelChatSession(db *sql.DB, cfg *config.Config) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 			return
 		}
+		sharedContextItems := normalizeKnowledgeBindingPaths(req.SharedContextPaths)
+		if err := validateKnowledgeBindings(cfg, sharedContextItems); err != nil {
+			_ = model.DeletePanelChatParticipants(db, session.ID)
+			sessions = sessions[:len(sessions)-1]
+			_ = savePanelChatSessions(cfg, sessions)
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		if err := model.ReplacePanelChatSessionSharedContexts(db, session.ID, sharedContextItems); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
 		decoratePanelChatSession(db, cfg, &session)
 		c.JSON(http.StatusOK, gin.H{"ok": true, "session": session})
 	}
@@ -1152,8 +1190,13 @@ func GetPanelChatSessionDetail(db *sql.DB, cfg *config.Config) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 			return
 		}
+		sharedContexts, err := loadPanelChatSharedContexts(db, session.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
 		decoratePanelChatSession(db, cfg, session)
-		c.JSON(http.StatusOK, gin.H{"ok": true, "session": session, "messages": messages, "participants": participants})
+		c.JSON(http.StatusOK, gin.H{"ok": true, "session": session, "messages": messages, "participants": participants, "sharedContexts": sharedContexts})
 	}
 }
 
@@ -1226,11 +1269,18 @@ func SendPanelChatMessage(db *sql.DB, cfg *config.Config) gin.HandlerFunc {
 		}
 		reply := ""
 		actualSessionID := ""
+		singleSources := []panelChatKnowledgeSource(nil)
 		var runErr error
 		if session.ChatType == "group" || len(participants) > 1 {
 			existingMessages, reply, runErr = executeGroupPanelChat(c.Request.Context(), db, cfg, *session, participants, existingMessages, strings.TrimSpace(req.Message))
 		} else {
-			reply, actualSessionID, runErr = runPanelChatMessage(c.Request.Context(), cfg, *session, strings.TrimSpace(req.Message))
+			sources := retrievePanelChatKnowledge(db, cfg, session.AgentID, session.ID, strings.TrimSpace(req.Message))
+			prompt := strings.TrimSpace(req.Message)
+			if len(sources) > 0 {
+				prompt = injectPanelChatKnowledge(prompt, sources)
+			}
+			reply, actualSessionID, runErr = runPanelChatMessage(c.Request.Context(), cfg, *session, prompt)
+			singleSources = sources
 			if strings.TrimSpace(actualSessionID) != "" {
 				session.OpenClawSessionID = strings.TrimSpace(actualSessionID)
 			}
@@ -1263,12 +1313,27 @@ func SendPanelChatMessage(db *sql.DB, cfg *config.Config) gin.HandlerFunc {
 				}
 			}
 		}
+		if len(singleSources) > 0 {
+			for i := len(existingMessages) - 1; i >= 0; i-- {
+				if strings.TrimSpace(toString(existingMessages[i]["role"])) != "assistant" {
+					continue
+				}
+				if _, ok := existingMessages[i]["sources"]; !ok {
+					existingMessages[i]["sources"] = singleSources
+				}
+				break
+			}
+		}
 		if len(existingMessages) == 0 && strings.TrimSpace(reply) != "" {
 			userTime := time.Now().UTC()
 			assistantTime := userTime.Add(1200 * time.Millisecond)
+			assistant := map[string]interface{}{"id": fmt.Sprintf("assistant-%d", time.Now().UnixNano()+1), "role": "assistant", "senderType": "agent", "agentId": session.AgentID, "messageType": "chat", "content": strings.TrimSpace(reply), "timestamp": assistantTime.Format(time.RFC3339)}
+			if len(singleSources) > 0 {
+				assistant["sources"] = singleSources
+			}
 			existingMessages = append(existingMessages,
 				map[string]interface{}{"id": fmt.Sprintf("user-%d", time.Now().UnixNano()), "role": "user", "senderType": "user", "messageType": "chat", "content": strings.TrimSpace(req.Message), "timestamp": userTime.Format(time.RFC3339)},
-				map[string]interface{}{"id": fmt.Sprintf("assistant-%d", time.Now().UnixNano()+1), "role": "assistant", "senderType": "agent", "agentId": session.AgentID, "messageType": "chat", "content": strings.TrimSpace(reply), "timestamp": assistantTime.Format(time.RFC3339)},
+				assistant,
 			)
 		}
 		if err := savePanelChatMessages(cfg, session.ID, existingMessages); err != nil {
@@ -1322,6 +1387,7 @@ func DeletePanelChatSession(db *sql.DB, cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 		_ = model.DeletePanelChatParticipants(db, session.ID)
+		_ = model.DeletePanelChatSessionSharedContexts(db, session.ID)
 		_ = os.Remove(panelChatMessagesPath(cfg, session.ID))
 		_ = os.Remove(panelChatSessionFile(cfg, session.AgentID, session.OpenClawSessionID))
 		_ = os.RemoveAll(panelChatRuntimeRoot(cfg, session.ID))

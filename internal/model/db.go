@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -131,9 +132,161 @@ func migrate(db *sql.DB) error {
 		UNIQUE(session_id, agent_id)
 	);
 	CREATE INDEX IF NOT EXISTS idx_panel_chat_participants_session ON panel_chat_participants(session_id, order_index ASC);
+
+	CREATE TABLE IF NOT EXISTS panel_chat_agent_knowledge_bindings (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		agent_id TEXT NOT NULL,
+		path TEXT NOT NULL,
+		title TEXT NOT NULL DEFAULT '',
+		sort_order INTEGER NOT NULL DEFAULT 0,
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL,
+		UNIQUE(agent_id, path)
+	);
+	CREATE INDEX IF NOT EXISTS idx_panel_chat_agent_knowledge_bindings_agent ON panel_chat_agent_knowledge_bindings(agent_id, sort_order ASC);
+
+	CREATE TABLE IF NOT EXISTS panel_chat_session_shared_contexts (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		session_id TEXT NOT NULL,
+		path TEXT NOT NULL,
+		title TEXT NOT NULL DEFAULT '',
+		sort_order INTEGER NOT NULL DEFAULT 0,
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL,
+		UNIQUE(session_id, path)
+	);
+	CREATE INDEX IF NOT EXISTS idx_panel_chat_session_shared_contexts_session ON panel_chat_session_shared_contexts(session_id, sort_order ASC);
+
+	CREATE TABLE IF NOT EXISTS company_teams (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		description TEXT NOT NULL DEFAULT '',
+		manager_agent_id TEXT NOT NULL DEFAULT '',
+		default_summary_agent_id TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'active',
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS company_team_agents (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		team_id TEXT NOT NULL,
+		agent_id TEXT NOT NULL,
+		role_type TEXT NOT NULL DEFAULT 'worker',
+		duty_label TEXT NOT NULL DEFAULT '',
+		sort_order INTEGER NOT NULL DEFAULT 0,
+		enabled INTEGER NOT NULL DEFAULT 1,
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL,
+		UNIQUE(team_id, agent_id)
+	);
+	CREATE INDEX IF NOT EXISTS idx_company_team_agents_team ON company_team_agents(team_id, sort_order ASC);
+
+	CREATE TABLE IF NOT EXISTS company_tasks (
+		id TEXT PRIMARY KEY,
+		team_id TEXT NOT NULL DEFAULT '',
+		title TEXT NOT NULL,
+		goal TEXT NOT NULL,
+		status TEXT NOT NULL,
+		manager_agent_id TEXT NOT NULL DEFAULT '',
+		summary_agent_id TEXT NOT NULL DEFAULT '',
+		source_type TEXT NOT NULL DEFAULT 'panel_manual',
+		source_channel_type TEXT NOT NULL DEFAULT '',
+		source_channel_id TEXT NOT NULL DEFAULT '',
+		source_thread_id TEXT NOT NULL DEFAULT '',
+		source_message_id TEXT NOT NULL DEFAULT '',
+		source_ref_id TEXT NOT NULL DEFAULT '',
+		delivery_type TEXT NOT NULL DEFAULT 'notify_only',
+		delivery_channel_type TEXT NOT NULL DEFAULT '',
+		delivery_channel_id TEXT NOT NULL DEFAULT '',
+		delivery_thread_id TEXT NOT NULL DEFAULT '',
+		delivery_target_id TEXT NOT NULL DEFAULT '',
+		panel_session_id TEXT NOT NULL DEFAULT '',
+		result_text TEXT NOT NULL DEFAULT '',
+		review_result TEXT NOT NULL DEFAULT '',
+		review_comment TEXT NOT NULL DEFAULT '',
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_company_tasks_updated ON company_tasks(updated_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_company_tasks_session ON company_tasks(panel_session_id, updated_at DESC);
+
+	CREATE TABLE IF NOT EXISTS company_task_steps (
+		id TEXT PRIMARY KEY,
+		task_id TEXT NOT NULL,
+		step_key TEXT NOT NULL,
+		title TEXT NOT NULL,
+		instruction TEXT NOT NULL DEFAULT '',
+		worker_agent_id TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'pending',
+		order_index INTEGER NOT NULL DEFAULT 0,
+		input_json TEXT NOT NULL DEFAULT '{}',
+		output_text TEXT NOT NULL DEFAULT '',
+		error_text TEXT NOT NULL DEFAULT '',
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_company_task_steps_task ON company_task_steps(task_id, order_index ASC);
+
+	CREATE TABLE IF NOT EXISTS company_execution_events (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		task_id TEXT NOT NULL,
+		step_id TEXT NOT NULL DEFAULT '',
+		event_type TEXT NOT NULL,
+		message TEXT NOT NULL,
+		payload_json TEXT NOT NULL DEFAULT '{}',
+		created_at INTEGER NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_company_execution_events_task ON company_execution_events(task_id, created_at ASC);
+
 	`
 	_, err := db.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+	return migrateCompanySchema(db)
+}
+
+func migrateCompanySchema(db *sql.DB) error {
+	stmts := []string{
+		`ALTER TABLE company_tasks ADD COLUMN team_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE company_tasks ADD COLUMN source_type TEXT NOT NULL DEFAULT 'panel_manual'`,
+		`ALTER TABLE company_tasks ADD COLUMN source_channel_type TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE company_tasks ADD COLUMN source_channel_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE company_tasks ADD COLUMN source_thread_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE company_tasks ADD COLUMN source_message_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE company_tasks ADD COLUMN source_ref_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE company_tasks ADD COLUMN delivery_type TEXT NOT NULL DEFAULT 'notify_only'`,
+		`ALTER TABLE company_tasks ADD COLUMN delivery_channel_type TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE company_tasks ADD COLUMN delivery_channel_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE company_tasks ADD COLUMN delivery_thread_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE company_tasks ADD COLUMN delivery_target_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE company_tasks ADD COLUMN panel_session_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE company_task_steps ADD COLUMN input_json TEXT NOT NULL DEFAULT '{}'`,
+		`CREATE INDEX IF NOT EXISTS idx_company_tasks_updated ON company_tasks(updated_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_company_tasks_session ON company_tasks(panel_session_id, updated_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS company_execution_events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			task_id TEXT NOT NULL,
+			step_id TEXT NOT NULL DEFAULT '',
+			event_type TEXT NOT NULL,
+			message TEXT NOT NULL,
+			payload_json TEXT NOT NULL DEFAULT '{}',
+			created_at INTEGER NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_company_execution_events_task ON company_execution_events(task_id, created_at ASC)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+			if strings.Contains(strings.ToLower(stmt), "company_tasks") || strings.Contains(strings.ToLower(stmt), "company_task_steps") || strings.Contains(strings.ToLower(stmt), "company_execution_events") {
+				if strings.Contains(strings.ToLower(err.Error()), "no such table") {
+					continue
+				}
+			}
+			return err
+		}
+	}
+	return nil
 }
 
 // Event 事件日志

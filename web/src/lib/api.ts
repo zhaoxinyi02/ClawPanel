@@ -203,12 +203,30 @@ const _api = {
   aiChat: (messages: { role: string; content: string }[], providerId?: string, modelId?: string) => postLong('/system/ai-chat', { messages, providerId, modelId }, 120000),
   // Panel chat
   getPanelChatSessions: () => get('/panel-chat/sessions'),
-  createPanelChatSession: (data?: { title?: string; chatType?: 'direct' | 'group'; agentId?: string; agentIds?: string[]; summaryAgentId?: string; targetId?: string; targetName?: string }) => post('/panel-chat/sessions', data || {}),
+  createPanelChatSession: (data?: { title?: string; chatType?: 'direct' | 'group'; agentId?: string; agentIds?: string[]; summaryAgentId?: string; sharedContextPaths?: string[]; targetId?: string; targetName?: string }) => post('/panel-chat/sessions', data || {}),
   getPanelChatSessionDetail: (id: string) => get(`/panel-chat/sessions/${id}`),
+  getPanelChatSessionSharedContext: (id: string) => get(`/panel-chat/sessions/${id}/shared-context`),
+  updatePanelChatSessionSharedContext: (id: string, paths: string[]) => put(`/panel-chat/sessions/${id}/shared-context`, { paths }),
   renamePanelChatSession: (id: string, title: string) => put(`/panel-chat/sessions/${id}`, { title }),
   sendPanelChatMessage: (id: string, message: string) => postLong(`/panel-chat/sessions/${id}/messages`, { message }, 300000),
   cancelPanelChatMessage: (id: string) => post(`/panel-chat/sessions/${id}/cancel`),
   deletePanelChatSession: (id: string) => del(`/panel-chat/sessions/${id}`),
+  getPanelChatAgentKnowledgeBindings: (agentId: string) => get(`/panel-chat/agents/${agentId}/knowledge`),
+  updatePanelChatAgentKnowledgeBindings: (agentId: string, paths: string[]) => put(`/panel-chat/agents/${agentId}/knowledge`, { paths }),
+  // Company
+  getCompanyOverview: () => get('/company/overview'),
+  getCompanyChannels: () => get('/company/channels'),
+  getCompanyCapabilities: () => get('/company/capabilities'),
+  getCompanyTeams: () => get('/company/teams'),
+  getCompanyTeamDetail: (id: string) => get(`/company/teams/${id}`),
+  createCompanyTeam: (data: { name: string; description?: string; managerAgentId?: string; workerAgentIds?: string[] }) => post('/company/teams', data),
+  updateCompanyTeam: (id: string, data: { name: string; description?: string; managerAgentId?: string; workerAgentIds?: string[] }) => put(`/company/teams/${id}`, data),
+  getCompanyTasks: () => get('/company/tasks'),
+  createCompanyTask: (data: { teamId?: string; title?: string; goal: string; managerAgentId?: string; workerAgentIds?: string[]; summaryAgentId?: string; sourceType?: string; sourceRefId?: string; deliveryType?: string; deliveryTargetId?: string; panelSessionId?: string }) => post('/company/tasks', data),
+  getCompanyTaskDetail: (id: string) => get(`/company/tasks/${id}`),
+  getCompanyTaskSteps: (id: string) => get(`/company/tasks/${id}/steps`),
+  getCompanyTaskEvents: (id: string) => get(`/company/tasks/${id}/events`),
+  getCompanyTaskResult: (id: string) => get(`/company/tasks/${id}/result`),
   // Event Log
   getEvents: (opts?: { limit?: number; offset?: number; source?: string; search?: string }) => {
     const params = new URLSearchParams();

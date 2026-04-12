@@ -472,6 +472,23 @@ let fakePanelChatMessages: Record<string, FakeSessionMessage[]> = {
   ],
 };
 
+let fakeCompanyTasks: any[] = [];
+let fakeCompanyTeams = [
+  {
+    id: 'default',
+    name: '默认团队',
+    description: '基于当前智能体自动生成',
+    managerAgentId: 'main',
+    defaultSummaryAgentId: 'main',
+    status: 'active',
+    agents: [
+      { agentId: 'main', agentName: 'AI公司主管', roleType: 'manager', dutyLabel: '统筹', enabled: true },
+      { agentId: 'coding', agentName: 'Coding工程师', roleType: 'worker', dutyLabel: '实现', enabled: true },
+      { agentId: 'reviewer', agentName: '质量审校', roleType: 'worker', dutyLabel: '检查', enabled: true },
+    ],
+  },
+];
+
 function findFakeSessionsById(sessionId: string, agentId?: string) {
   return fakeSessions.filter(item => item.sessionId === sessionId && (!agentId || agentId === 'all' || item.agentId === agentId));
 }
@@ -858,7 +875,7 @@ export const mockApi = {
   checkModelHealth: async (_baseUrl: string, _apiKey: string, _apiType: string, _modelId?: string) => { await delay(1500); return { ok: true, healthy: true, latencyMs: 320, model: _modelId || 'default' }; },
   aiChat: async (_messages: any[], _providerId?: string, _modelId?: string) => { await delay(1000); return { ok: true, reply: { role: 'assistant', content: '这是 Demo 模式的 AI 回复。在前端开发模式下，AI 聊天功能返回模拟数据。' } }; },
   getPanelChatSessions: async () => { await delay(120); return { ok: true, sessions: JSON.parse(JSON.stringify(fakePanelChatSessions)) }; },
-  createPanelChatSession: async (data?: { title?: string; chatType?: 'direct' | 'group'; agentId?: string; agentIds?: string[]; summaryAgentId?: string }) => {
+  createPanelChatSession: async (data?: { title?: string; chatType?: 'direct' | 'group'; agentId?: string; agentIds?: string[]; summaryAgentId?: string; sharedContextPaths?: string[] }) => {
     await delay(180);
     const now = Date.now();
     const participantAgentIds = Array.from(new Set((data?.agentIds?.length ? data.agentIds : [data?.agentId || 'main']).filter(Boolean)));
@@ -876,6 +893,7 @@ export const mockApi = {
       participantCount: participants.length,
       participants,
       summaryAgentId: data?.summaryAgentId || '',
+      sharedContexts: (data?.sharedContextPaths || []).map(path => ({ path, title: path.split('/').pop() || path })),
     };
     fakePanelChatSessions = [session, ...fakePanelChatSessions];
     fakePanelChatMessages[session.id] = [];
@@ -885,7 +903,7 @@ export const mockApi = {
     await delay(120);
     const session = fakePanelChatSessions.find(item => item.id === id);
     if (!session) return { ok: false, error: 'not found' };
-    return { ok: true, session, participants: JSON.parse(JSON.stringify(session.participants || [])), messages: JSON.parse(JSON.stringify(fakePanelChatMessages[id] || [])) };
+    return { ok: true, session, participants: JSON.parse(JSON.stringify(session.participants || [])), sharedContexts: JSON.parse(JSON.stringify(session.sharedContexts || [])), messages: JSON.parse(JSON.stringify(fakePanelChatMessages[id] || [])) };
   },
   renamePanelChatSession: async (id: string, title: string) => {
     await delay(120);
@@ -917,6 +935,153 @@ export const mockApi = {
     fakePanelChatSessions = fakePanelChatSessions.filter(item => item.id !== id);
     delete fakePanelChatMessages[id];
     return { ok: true };
+  },
+  getPanelChatSessionSharedContext: async (id: string) => {
+    await delay(120);
+    const session = fakePanelChatSessions.find(item => item.id === id);
+    if (!session) return { ok: false, error: 'not found' };
+    return { ok: true, sharedContexts: JSON.parse(JSON.stringify(session.sharedContexts || [])) };
+  },
+  updatePanelChatSessionSharedContext: async (id: string, paths: string[]) => {
+    await delay(120);
+    const session = fakePanelChatSessions.find(item => item.id === id);
+    if (!session) return { ok: false, error: 'not found' };
+    session.sharedContexts = (paths || []).map(path => ({ path, title: path.split('/').pop() || path }));
+    return { ok: true, sharedContexts: JSON.parse(JSON.stringify(session.sharedContexts || [])) };
+  },
+  getPanelChatAgentKnowledgeBindings: async (_agentId: string) => {
+    await delay(120);
+    return { ok: true, bindings: [] };
+  },
+  updatePanelChatAgentKnowledgeBindings: async (_agentId: string, paths: string[]) => {
+    await delay(120);
+    return { ok: true, bindings: (paths || []).map(path => ({ path, title: path.split('/').pop() || path })) };
+  },
+  getCompanyOverview: async () => {
+    await delay(120);
+    return { ok: true, overview: { teamCount: fakeCompanyTeams.length, taskCount: fakeCompanyTasks.length, runningCount: fakeCompanyTasks.filter(item => item.status === 'running').length, completedCount: fakeCompanyTasks.filter(item => item.status === 'completed').length, recentTasks: JSON.parse(JSON.stringify(fakeCompanyTasks.slice(0, 8))) } };
+  },
+  getCompanyChannels: async () => {
+    await delay(120);
+    return { ok: true, channels: [
+      { channelType: 'panel_chat', label: '面板聊天', sourceReady: true, deliveryReady: true, status: 'active' },
+      { channelType: 'panel_manual', label: '面板手工创建', sourceReady: true, deliveryReady: false, status: 'active' },
+      { channelType: 'qq', label: 'QQ (NapCat)', sourceReady: false, deliveryReady: false, status: 'reserved' },
+      { channelType: 'qqbot', label: 'QQ 官方机器人', sourceReady: false, deliveryReady: false, status: 'reserved' },
+      { channelType: 'wechat', label: '微信', sourceReady: false, deliveryReady: false, status: 'reserved' },
+      { channelType: 'feishu', label: '飞书 / Lark', sourceReady: false, deliveryReady: false, status: 'reserved' },
+      { channelType: 'wecom', label: '企业微信（机器人）', sourceReady: false, deliveryReady: false, status: 'reserved' },
+      { channelType: 'wecom-app', label: '企业微信（自建应用）', sourceReady: false, deliveryReady: false, status: 'reserved' },
+      { channelType: 'api', label: 'API', sourceReady: false, deliveryReady: false, status: 'reserved' },
+      { channelType: 'webhook', label: 'Webhook', sourceReady: false, deliveryReady: false, status: 'reserved' },
+    ] };
+  },
+  getCompanyCapabilities: async () => {
+    await delay(120);
+    return { ok: true, sourceTypes: ['panel_chat', 'panel_manual', 'qq', 'qqbot', 'wechat', 'feishu', 'wecom', 'wecom-app', 'api', 'webhook'], deliveryTypes: ['write_back_panel_session', 'notify_only', 'send_to_qq', 'send_to_qqbot', 'send_to_wechat', 'send_to_feishu', 'send_to_wecom', 'send_to_wecom_app', 'api_response', 'webhook_callback'] };
+  },
+  getCompanyTeams: async () => {
+    await delay(120);
+    return { ok: true, teams: JSON.parse(JSON.stringify(fakeCompanyTeams)) };
+  },
+  getCompanyTeamDetail: async (id: string) => {
+    await delay(120);
+    const team = fakeCompanyTeams.find(item => item.id === id) || fakeCompanyTeams[0];
+    return { ok: true, team: JSON.parse(JSON.stringify(team)) };
+  },
+  createCompanyTeam: async (data: any) => {
+    await delay(260);
+    const now = Date.now();
+    const managerAgentId = String(data?.managerAgentId || 'company_manager').trim() || 'company_manager';
+    const workerAgentIds: string[] = Array.from(new Set((Array.isArray(data?.workerAgentIds) ? data.workerAgentIds : []).map((item: unknown) => String(item || '').trim()).filter((item: string) => Boolean(item)).filter((item: string) => item !== managerAgentId)));
+    const team = {
+      id: `company-team-${now}`,
+      name: String(data?.name || '').trim() || '新执行团队',
+      description: String(data?.description || '').trim(),
+      managerAgentId,
+      defaultSummaryAgentId: managerAgentId,
+      status: 'active',
+      agents: [
+        { agentId: managerAgentId, agentName: managerAgentId === 'company_manager' ? 'AI Company Manager' : managerAgentId, roleType: 'manager', dutyLabel: '调度 / 汇总', enabled: true },
+        ...workerAgentIds.map((agentId: string, index: number) => ({ agentId, agentName: agentId, roleType: 'worker', dutyLabel: `执行 ${index + 1}`, enabled: true, sortOrder: index })),
+      ],
+    };
+    fakeCompanyTeams = [team, ...fakeCompanyTeams];
+    return { ok: true, team: JSON.parse(JSON.stringify(team)) };
+  },
+  updateCompanyTeam: async (id: string, data: any) => {
+    await delay(260);
+    const target = fakeCompanyTeams.find(item => item.id === id);
+    if (!target) return { ok: false, error: 'not found' };
+    const managerAgentId = String(data?.managerAgentId || target.managerAgentId || 'company_manager').trim() || 'company_manager';
+    const workerAgentIds: string[] = Array.from(new Set((Array.isArray(data?.workerAgentIds) ? data.workerAgentIds : []).map((item: unknown) => String(item || '').trim()).filter((item: string) => Boolean(item)).filter((item: string) => item !== managerAgentId)));
+    target.name = String(data?.name || '').trim() || target.name;
+    target.description = String(data?.description || '').trim();
+    target.managerAgentId = managerAgentId;
+    target.defaultSummaryAgentId = managerAgentId;
+    target.agents = [
+      { agentId: managerAgentId, agentName: managerAgentId === 'company_manager' ? 'AI Company Manager' : managerAgentId, roleType: 'manager', dutyLabel: '调度 / 汇总', enabled: true },
+      ...workerAgentIds.map((agentId: string, index: number) => ({ agentId, agentName: agentId, roleType: 'worker', dutyLabel: `执行 ${index + 1}`, enabled: true, sortOrder: index })),
+    ];
+    fakeCompanyTeams = [...fakeCompanyTeams];
+    return { ok: true, team: JSON.parse(JSON.stringify(target)) };
+  },
+  getCompanyTasks: async () => {
+    await delay(120);
+    return { ok: true, tasks: JSON.parse(JSON.stringify(fakeCompanyTasks)) };
+  },
+  createCompanyTask: async (data: any) => {
+    await delay(900);
+    const now = Date.now();
+    const team = fakeCompanyTeams.find(item => item.id === (data?.teamId || 'default')) || fakeCompanyTeams[0];
+    const workers = (Array.isArray(data?.workerAgentIds) && data.workerAgentIds.length > 0) ? data.workerAgentIds : team.agents.filter((item: any) => item.roleType !== 'manager').map((item: any) => item.agentId);
+    const taskId = `company-task-${now}`;
+    const steps = workers.map((worker: string, index: number) => ({ id: `${taskId}-step-${index + 1}`, taskId, stepKey: `step-${index + 1}`, title: `子任务 ${index + 1}`, instruction: `围绕目标执行：${data.goal}`, workerAgentId: worker, status: 'completed', orderIndex: index, outputText: `${worker} 已完成执行建议输出。`, createdAt: now, updatedAt: now + 600 + index * 120 }));
+    const events = [
+      { id: now + 1, taskId, eventType: 'task_created', message: '任务已创建', createdAt: now },
+      { id: now + 2, taskId, eventType: 'task_planned', message: `Manager 已拆解 ${steps.length} 个步骤`, createdAt: now + 160 },
+      ...steps.map((step: any, index: number) => ({ id: now + 10 + index, taskId, stepId: step.id, eventType: 'step_completed', message: `${step.workerAgentId} 已完成：${step.title}`, createdAt: now + 350 + index * 130 })),
+      { id: now + 99, taskId, eventType: 'task_reviewed', message: 'Manager 已完成审核', createdAt: now + 1000 },
+    ];
+    const task = { id: taskId, teamId: team.id, title: data?.title || '新任务', goal: data.goal, status: 'completed', managerAgentId: data?.managerAgentId || team.managerAgentId, summaryAgentId: data?.summaryAgentId || team.defaultSummaryAgentId, sourceType: data?.sourceType || 'panel_manual', sourceRefId: data?.sourceRefId || '', deliveryType: data?.deliveryType || 'notify_only', deliveryTargetId: data?.deliveryTargetId || '', panelSessionId: data?.panelSessionId || '', resultText: `Manager 最终汇总：\n\n${data.goal}`, reviewResult: 'approved', reviewComment: 'Demo review', createdAt: now, updatedAt: now + 1000, steps, events };
+    fakeCompanyTasks = [task, ...fakeCompanyTasks.filter(item => item.id !== taskId)];
+    let messages: any[] = [];
+    if ((data?.deliveryType || '') === 'write_back_panel_session' && data?.panelSessionId) {
+      const additions = [
+        { id: `system-${taskId}-1`, role: 'system', senderType: 'system', messageType: 'task_created', content: `已创建协作任务：${task.title}`, timestamp: new Date(now).toISOString(), taskId },
+        { id: `system-${taskId}-2`, role: 'system', senderType: 'system', messageType: 'task_reviewed', content: 'Manager 已完成审核', timestamp: new Date(now + 800).toISOString(), taskId },
+        { id: `assistant-${taskId}-1`, role: 'assistant', senderType: 'agent', messageType: 'task_summary', agentId: task.summaryAgentId, agentName: task.summaryAgentId, content: task.resultText, timestamp: new Date(now + 1000).toISOString(), taskId },
+      ];
+      fakePanelChatMessages[data.panelSessionId] = [...(fakePanelChatMessages[data.panelSessionId] || []), ...additions];
+      messages = JSON.parse(JSON.stringify(fakePanelChatMessages[data.panelSessionId] || []));
+      const session = fakePanelChatSessions.find(item => item.id === data.panelSessionId);
+      if (session) {
+        session.updatedAt = now + 1000;
+        session.messageCount = fakePanelChatMessages[data.panelSessionId].length;
+        session.lastMessage = data.goal;
+      }
+    }
+    return { ok: true, task: JSON.parse(JSON.stringify(task)), messages, result: task.resultText };
+  },
+  getCompanyTaskDetail: async (id: string) => {
+    await delay(120);
+    const task = fakeCompanyTasks.find(item => item.id === id);
+    return task ? { ok: true, task: JSON.parse(JSON.stringify(task)) } : { ok: false, error: 'not found' };
+  },
+  getCompanyTaskSteps: async (id: string) => {
+    await delay(120);
+    const task = fakeCompanyTasks.find(item => item.id === id);
+    return { ok: true, steps: JSON.parse(JSON.stringify(task?.steps || [])) };
+  },
+  getCompanyTaskEvents: async (id: string) => {
+    await delay(120);
+    const task = fakeCompanyTasks.find(item => item.id === id);
+    return { ok: true, events: JSON.parse(JSON.stringify(task?.events || [])) };
+  },
+  getCompanyTaskResult: async (id: string) => {
+    await delay(120);
+    const task = fakeCompanyTasks.find(item => item.id === id);
+    return task ? { ok: true, result: task.resultText, reviewResult: task.reviewResult, reviewComment: task.reviewComment } : { ok: false, error: 'not found' };
   },
   restartProcess: async () => { await delay(500); return { ok: true }; },
   restartPanel: async () => { await delay(500); return { ok: true }; },
