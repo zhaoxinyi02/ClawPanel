@@ -1521,7 +1521,7 @@ export default function Channels() {
     return ocChannels[channelId]?.enabled || ocPlugins[channelId]?.enabled || false;
   };
 
-  const currentDef = selectedChannel === CHANNEL_UNSELECTED_ID ? undefined : channelDefs.find(c => c.id === selectedChannel);
+  const currentDef = selectedChannel === CHANNEL_UNSELECTED_ID ? undefined : channelDefs.find(c => selectedChannel === c.id || selectedChannel.startsWith(c.id + ":"));
   const qqbotPrimaryFields = currentDef?.id === 'qqbot'
     ? currentDef.configFields.filter(field => field.key === 'appId' || field.key === 'clientSecret')
     : [];
