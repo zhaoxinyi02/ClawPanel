@@ -2,6 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  select {
+    @apply text-gray-900 dark:text-gray-100;
+  }
+
+  .dark select,
+  .dark option,
+  .dark optgroup {
+    background-color: rgb(17 24 39);
+    color: rgb(243 244 246);
+  }
+
+  .dark option:disabled {
+    color: rgb(156 163 175);
+  }
+}
+
 :root {
   --ui-surface: #f5f7fb;
   --ui-panel: rgba(255, 255, 255, 0.88);

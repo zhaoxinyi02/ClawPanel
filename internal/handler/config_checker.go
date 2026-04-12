@@ -409,6 +409,7 @@ func checkOpenClawConfig(cfg *config.Config) ([]ConfigIssue, int) {
 		}
 		return issues, 1
 	}
+	normalizeOpenClawCompatConfig(ocConfig)
 
 	// Check models configuration
 	checked++

@@ -337,6 +337,18 @@ const INITIAL_FAKE_SESSION_MESSAGES: Record<string, FakeSessionMessage[]> = {
   ],
 };
 
+const FAKE_SESSION_USAGE = {
+  summary: {
+    today: { input: 18200, output: 6400, cacheRead: 2100, cacheWrite: 0, totalTokens: 26700, totalCost: 0.1432, requests: 18, sessions: 5 },
+    last7d: { input: 142800, output: 52100, cacheRead: 18400, cacheWrite: 0, totalTokens: 213300, totalCost: 1.0248, requests: 136, sessions: 19 },
+    last30d: { input: 596300, output: 214900, cacheRead: 73300, cacheWrite: 0, totalTokens: 884500, totalCost: 4.3891, requests: 562, sessions: 41 },
+  },
+  agents: [
+    { agentId: 'main', today: { input: 14100, output: 5100, cacheRead: 1600, cacheWrite: 0, totalTokens: 20800, totalCost: 0.1085, requests: 13, sessions: 3 }, last7d: { input: 101400, output: 36600, cacheRead: 12800, cacheWrite: 0, totalTokens: 150800, totalCost: 0.7212, requests: 92, sessions: 11 }, last30d: { input: 438200, output: 157300, cacheRead: 51100, cacheWrite: 0, totalTokens: 646600, totalCost: 3.1842, requests: 397, sessions: 24 } },
+    { agentId: 'work', today: { input: 4100, output: 1300, cacheRead: 500, cacheWrite: 0, totalTokens: 5900, totalCost: 0.0347, requests: 5, sessions: 2 }, last7d: { input: 41400, output: 15500, cacheRead: 5600, cacheWrite: 0, totalTokens: 62500, totalCost: 0.3036, requests: 44, sessions: 8 }, last30d: { input: 158100, output: 57600, cacheRead: 22200, cacheWrite: 0, totalTokens: 237900, totalCost: 1.2049, requests: 165, sessions: 17 } },
+  ],
+};
+
 const LEGACY_DEMO_SESSIONS_STORAGE_KEY = 'clawpanel-demo-sessions-v1';
 const LEGACY_DEMO_SESSION_MESSAGES_STORAGE_KEY = 'clawpanel-demo-session-messages-v1';
 const DEMO_SESSIONS_STORAGE_KEY = 'clawpanel-demo-sessions-v2';
@@ -884,6 +896,18 @@ export const mockApi = {
     saveDemoState(DEMO_SESSIONS_STORAGE_KEY, fakeSessions);
     saveDemoState(DEMO_SESSION_MESSAGES_STORAGE_KEY, fakeSessionMessages);
     return { ok: true };
+  },
+  getSessionUsage: async (_agent?: string) => {
+    await delay(160);
+    if (!_agent || _agent === 'all') {
+      return { ok: true, ...JSON.parse(JSON.stringify(FAKE_SESSION_USAGE)) };
+    }
+    const agents = FAKE_SESSION_USAGE.agents.filter(item => item.agentId === _agent);
+    const empty = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, totalCost: 0, requests: 0, sessions: 0 };
+    const summary = agents[0]
+      ? { today: agents[0].today, last7d: agents[0].last7d, last30d: agents[0].last30d }
+      : { today: empty, last7d: empty, last30d: empty };
+    return { ok: true, summary: JSON.parse(JSON.stringify(summary)), agents: JSON.parse(JSON.stringify(agents)) };
   },
 
   // --- Software & OpenClaw Instances ---

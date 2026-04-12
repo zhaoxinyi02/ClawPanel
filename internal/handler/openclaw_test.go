@@ -79,6 +79,97 @@ func TestSaveOpenClawConfigPreservesCriticalFields(t *testing.T) {
 	}
 }
 
+func TestSaveOpenClawConfigMirrorsPrimaryModelToLegacyField(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+
+	r := gin.New()
+	r.PUT("/openclaw/config", SaveOpenClawConfig(cfg))
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"config": map[string]interface{}{
+			"agents": map[string]interface{}{
+				"defaults": map[string]interface{}{
+					"model": map[string]interface{}{
+						"primary": "deepseek/deepseek-chat",
+					},
+				},
+			},
+			"models": map[string]interface{}{
+				"providers": map[string]interface{}{},
+			},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPut, "/openclaw/config", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	saved, err := cfg.ReadOpenClawJSON()
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+
+	model, ok := saved["model"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected legacy model field to be written")
+	}
+	if got, _ := model["primary"].(string); got != "deepseek/deepseek-chat" {
+		t.Fatalf("unexpected legacy primary model: %q", got)
+	}
+}
+
+func TestGetOpenClawConfigBackfillsAgentDefaultsModelFromLegacyField(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+
+	initial := map[string]interface{}{
+		"model": map[string]interface{}{
+			"primary": "openai/gpt-4o-mini",
+		},
+	}
+	raw, _ := json.Marshal(initial)
+	if err := os.WriteFile(filepath.Join(dir, "openclaw.json"), raw, 0644); err != nil {
+		t.Fatalf("write openclaw.json: %v", err)
+	}
+
+	r := gin.New()
+	r.GET("/openclaw/config", GetOpenClawConfig(cfg))
+
+	req := httptest.NewRequest(http.MethodGet, "/openclaw/config", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		OK     bool                   `json:"ok"`
+		Config map[string]interface{} `json:"config"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	agents, _ := resp.Config["agents"].(map[string]interface{})
+	defaults, _ := agents["defaults"].(map[string]interface{})
+	model, _ := defaults["model"].(map[string]interface{})
+	if got, _ := model["primary"].(string); got != "openai/gpt-4o-mini" {
+		t.Fatalf("expected backfilled primary model, got %q", got)
+	}
+}
+
 func TestSaveOpenClawConfigRejectsInvalidNumericFields(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)

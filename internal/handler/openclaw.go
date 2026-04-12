@@ -438,6 +438,43 @@ func GetChannelCatalog() gin.HandlerFunc {
 	}
 }
 
+func normalizeOpenClawCompatConfig(ocConfig map[string]interface{}) {
+	if ocConfig == nil {
+		return
+	}
+
+	legacyModel, _ := ocConfig["model"].(map[string]interface{})
+	agents, _ := ocConfig["agents"].(map[string]interface{})
+	defaults := map[string]interface{}(nil)
+	if agents != nil {
+		defaults, _ = agents["defaults"].(map[string]interface{})
+	}
+
+	currentModel := map[string]interface{}(nil)
+	if defaults != nil {
+		currentModel, _ = defaults["model"].(map[string]interface{})
+	}
+	if currentModel == nil && legacyModel == nil {
+		return
+	}
+
+	if agents == nil {
+		agents = map[string]interface{}{}
+		ocConfig["agents"] = agents
+	}
+	if defaults == nil {
+		defaults = map[string]interface{}{}
+		agents["defaults"] = defaults
+	}
+	if currentModel == nil && legacyModel != nil {
+		currentModel = deepCloneMap(legacyModel)
+		defaults["model"] = currentModel
+	}
+	if currentModel != nil {
+		ocConfig["model"] = deepCloneMap(currentModel)
+	}
+}
+
 // GetOpenClawConfig 获取 OpenClaw 配置
 func GetOpenClawConfig(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -446,6 +483,7 @@ func GetOpenClawConfig(cfg *config.Config) gin.HandlerFunc {
 			c.JSON(http.StatusOK, gin.H{"ok": true, "config": gin.H{}})
 			return
 		}
+		normalizeOpenClawCompatConfig(ocConfig)
 		injectWecomVirtualChannel(cfg, ocConfig)
 		c.JSON(http.StatusOK, gin.H{"ok": true, "config": ocConfig})
 	}
@@ -471,6 +509,7 @@ func SaveOpenClawConfig(cfg *config.Config) gin.HandlerFunc {
 		// 自动为非 OpenAI 提供商注入 compat.supportsDeveloperRole=false
 		injectCompatFlags(ocCfg)
 		normalizeOpenClawModelAPIs(ocCfg)
+		normalizeOpenClawCompatConfig(ocCfg)
 		syncAllowedModels(ocCfg)
 		preserveHiddenOpenClawFields(ocCfg, existingCfg)
 		if err := validateOpenClawNumericConfig(ocCfg); err != nil {
@@ -498,6 +537,7 @@ func GetModels(cfg *config.Config) gin.HandlerFunc {
 			c.JSON(http.StatusOK, gin.H{"ok": true, "providers": gin.H{}, "defaults": gin.H{}})
 			return
 		}
+		normalizeOpenClawCompatConfig(ocConfig)
 		models, _ := ocConfig["models"].(map[string]interface{})
 		if models == nil {
 			models = map[string]interface{}{}

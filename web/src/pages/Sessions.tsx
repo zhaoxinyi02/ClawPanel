@@ -25,6 +25,30 @@ interface ChatMessage {
   timestamp: string;
 }
 
+interface UsageTotals {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalTokens: number;
+  totalCost: number;
+  requests: number;
+  sessions: number;
+}
+
+interface UsageSummary {
+  today: UsageTotals;
+  last7d: UsageTotals;
+  last30d: UsageTotals;
+}
+
+interface AgentUsageSummary {
+  agentId: string;
+  today: UsageTotals;
+  last7d: UsageTotals;
+  last30d: UsageTotals;
+}
+
 type MessageSide = 'user' | 'assistant';
 
 function getMessageSide(role?: string): MessageSide {
@@ -44,7 +68,7 @@ function SessionsPage() {
   const modern = uiMode === 'modern';
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [agentOptions, setAgentOptions] = useState<string[]>([]);
-  const [selectedAgent, setSelectedAgent] = useState('');
+  const [selectedAgent, setSelectedAgent] = useState('all');
   const [defaultAgent, setDefaultAgent] = useState('main');
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState('');
@@ -54,6 +78,9 @@ function SessionsPage() {
   const [messageError, setMessageError] = useState('');
   const [deleteError, setDeleteError] = useState('');
   const [search, setSearch] = useState('');
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
+  const [agentUsage, setAgentUsage] = useState<AgentUsageSummary[]>([]);
+  const [usageLoading, setUsageLoading] = useState(true);
   const sessionsRequestRef = useRef(0);
   const messageRequestRef = useRef(0);
   const selectedRef = useRef<SessionInfo | null>(null);
@@ -124,6 +151,28 @@ function SessionsPage() {
     }
   };
 
+  const loadUsage = async () => {
+    if (!selectedAgent) {
+      setUsage(null);
+      setAgentUsage([]);
+      setUsageLoading(false);
+      return;
+    }
+    setUsageLoading(true);
+    try {
+      const r = await api.getSessionUsage(selectedAgent);
+      if (r.ok) {
+        setUsage(r.summary || null);
+        setAgentUsage(r.agents || []);
+      }
+    } catch {
+      setUsage(null);
+      setAgentUsage([]);
+    } finally {
+      setUsageLoading(false);
+    }
+  };
+
   const loadAgents = async () => {
     try {
       const r = await api.getAgentsConfig();
@@ -158,9 +207,15 @@ function SessionsPage() {
 
   useEffect(() => {
     loadSessions();
+    loadUsage();
     clearSelectedSession();
     setDeleteError('');
   }, [selectedAgent]);
+
+  const handleRefresh = () => {
+    loadSessions();
+    loadUsage();
+  };
 
   const loadMessages = async (s: SessionInfo) => {
     const requestId = messageRequestRef.current + 1;
@@ -200,6 +255,7 @@ function SessionsPage() {
         if (selectedRef.current && getSessionIdentity(selectedRef.current) === targetIdentity) {
           clearSelectedSession();
         }
+        loadUsage();
       } else {
         setDeleteError(formatSessionRequestError(r.error, '删除会话失败，请稍后重试。'));
       }
@@ -218,6 +274,18 @@ function SessionsPage() {
     if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
     if (d.toDateString() === new Date(now.getTime() - 86400000).toDateString()) return '昨天';
     return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+
+  const formatTokens = (value: number) => {
+    if (!value) return '0';
+    if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
+    if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
+    return String(value);
+  };
+
+  const formatCost = (value: number) => {
+    if (!value) return '$0';
+    return `$${value.toFixed(value >= 1 ? 2 : 4)}`;
   };
 
   const channelBadge = (ch: string) => {
@@ -254,7 +322,7 @@ function SessionsPage() {
               <option key={id} value={id}>{id}</option>
             ))}
           </select>
-          <button onClick={loadSessions} className={`${modern ? 'page-modern-accent px-3.5 py-2 text-xs font-medium' : 'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors'}`}>
+          <button onClick={handleRefresh} className={`${modern ? 'page-modern-accent px-3.5 py-2 text-xs font-medium' : 'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors'}`}>
             <RefreshCw size={14} /> 刷新
           </button>
         </MobileActionTray>
@@ -264,6 +332,66 @@ function SessionsPage() {
         <div className={`${modern ? 'page-modern-panel border border-red-100/80 dark:border-red-900/40 text-red-600 dark:text-red-300 px-4 py-3 text-xs flex items-start gap-2' : 'rounded-xl border border-red-100 dark:border-red-900/40 bg-red-50/80 dark:bg-red-900/10 text-red-600 dark:text-red-300 px-4 py-3 text-xs flex items-start gap-2'}`}>
           <CircleAlert size={14} className="mt-0.5 shrink-0" />
           <span>{deleteError}</span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {([
+          { key: 'today' as const, label: '今日用量' },
+          { key: 'last7d' as const, label: '近 7 日' },
+          { key: 'last30d' as const, label: '近 30 日' },
+        ]).map(({ key, label }) => {
+          const data = usage?.[key];
+          return (
+            <div key={key} className={`${modern ? 'page-modern-card' : 'bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700/50'} rounded-xl p-4 shadow-sm`}>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-gray-500">{label}</span>
+                {usageLoading && <Loader2 size={14} className="animate-spin text-gray-400" />}
+              </div>
+              <div className="mt-3 text-2xl font-bold text-gray-900 dark:text-white">
+                {usageLoading || !data ? '--' : formatTokens(data.totalTokens)}
+              </div>
+              <div className="mt-1 text-[11px] text-gray-500">
+                {usageLoading || !data ? '统计中...' : `请求 ${data.requests} · 会话 ${data.sessions} · Cost ${formatCost(data.totalCost)}`}
+              </div>
+              <div className="mt-2 text-[11px] text-gray-500">
+                {usageLoading || !data ? '--' : `输入 ${formatTokens(data.input)} / 输出 ${formatTokens(data.output)} / 缓存 ${formatTokens(data.cacheRead + data.cacheWrite)}`}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {agentUsage.length > 1 && (
+        <div className={`${modern ? 'page-modern-panel' : 'bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700/50'} rounded-xl shadow-sm overflow-hidden`}>
+          <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700/50 flex items-center justify-between">
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Agent 用量分布</h3>
+            <span className="text-[10px] text-gray-400 font-medium">{agentUsage.length} 个 agent</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-50 dark:bg-gray-900/40 text-gray-500">
+                <tr>
+                  <th className="px-4 py-2 text-left">Agent</th>
+                  <th className="px-4 py-2 text-right">今日</th>
+                  <th className="px-4 py-2 text-right">近 7 日</th>
+                  <th className="px-4 py-2 text-right">近 30 日</th>
+                  <th className="px-4 py-2 text-right">近 30 日请求</th>
+                </tr>
+              </thead>
+              <tbody>
+                {agentUsage.map(item => (
+                  <tr key={item.agentId} className="border-t border-gray-100 dark:border-gray-700/40">
+                    <td className="px-4 py-2.5 font-mono text-gray-900 dark:text-gray-100">{item.agentId}</td>
+                    <td className="px-4 py-2.5 text-right text-gray-700 dark:text-gray-300">{formatTokens(item.today.totalTokens)}</td>
+                    <td className="px-4 py-2.5 text-right text-gray-700 dark:text-gray-300">{formatTokens(item.last7d.totalTokens)}</td>
+                    <td className="px-4 py-2.5 text-right text-gray-700 dark:text-gray-300">{formatTokens(item.last30d.totalTokens)}</td>
+                    <td className="px-4 py-2.5 text-right text-gray-500">{item.last30d.requests}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

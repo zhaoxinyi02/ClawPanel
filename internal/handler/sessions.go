@@ -47,6 +47,37 @@ type SessionMessage struct {
 	Data       interface{} `json:"data,omitempty"`
 }
 
+type UsageTotals struct {
+	Input       int64   `json:"input"`
+	Output      int64   `json:"output"`
+	CacheRead   int64   `json:"cacheRead"`
+	CacheWrite  int64   `json:"cacheWrite"`
+	TotalTokens int64   `json:"totalTokens"`
+	TotalCost   float64 `json:"totalCost"`
+	Requests    int     `json:"requests"`
+	Sessions    int     `json:"sessions"`
+}
+
+type UsageSummary struct {
+	Today   UsageTotals `json:"today"`
+	Last7d  UsageTotals `json:"last7d"`
+	Last30d UsageTotals `json:"last30d"`
+}
+
+type AgentUsageSummary struct {
+	AgentID string      `json:"agentId"`
+	Today   UsageTotals `json:"today"`
+	Last7d  UsageTotals `json:"last7d"`
+	Last30d UsageTotals `json:"last30d"`
+}
+
+type agentUsageResult struct {
+	Summary    AgentUsageSummary
+	TodaySet   map[string]struct{}
+	Last7dSet  map[string]struct{}
+	Last30dSet map[string]struct{}
+}
+
 // MsgContent represents the message content
 type MsgContent struct {
 	Role      string      `json:"role"`
@@ -204,6 +235,67 @@ func DeleteSession(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{"ok": true, "message": "会话已删除"})
+	}
+}
+
+func GetSessionUsage(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		agentID := strings.TrimSpace(c.Query("agent"))
+		if agentID == "" {
+			agentID = "all"
+		}
+		if isLegacySingleAgentMode() {
+			agentID = "main"
+		}
+
+		var agentIDs []string
+		if agentID == "all" {
+			agentIDs, _ = loadAgentIDs(cfg)
+		} else {
+			if err := validateAgentQuery(cfg, agentID); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+				return
+			}
+			agentIDs = []string{agentID}
+		}
+
+		summary := UsageSummary{}
+		agents := make([]AgentUsageSummary, 0, len(agentIDs))
+		todaySet := map[string]struct{}{}
+		last7dSet := map[string]struct{}{}
+		last30dSet := map[string]struct{}{}
+		for _, id := range agentIDs {
+			cur := collectAgentUsage(cfg, id)
+			agents = append(agents, cur.Summary)
+			mergeUsageTotals(&summary.Today, cur.Summary.Today)
+			mergeUsageTotals(&summary.Last7d, cur.Summary.Last7d)
+			mergeUsageTotals(&summary.Last30d, cur.Summary.Last30d)
+			mergeSessionSets(todaySet, cur.TodaySet)
+			mergeSessionSets(last7dSet, cur.Last7dSet)
+			mergeSessionSets(last30dSet, cur.Last30dSet)
+		}
+		summary.Today.Sessions = len(todaySet)
+		summary.Last7d.Sessions = len(last7dSet)
+		summary.Last30d.Sessions = len(last30dSet)
+
+		sort.Slice(agents, func(i, j int) bool {
+			if agents[i].AgentID == "main" {
+				return true
+			}
+			if agents[j].AgentID == "main" {
+				return false
+			}
+			if agents[i].Last30d.TotalTokens == agents[j].Last30d.TotalTokens {
+				return agents[i].AgentID < agents[j].AgentID
+			}
+			return agents[i].Last30d.TotalTokens > agents[j].Last30d.TotalTokens
+		})
+
+		c.JSON(http.StatusOK, gin.H{
+			"ok":      true,
+			"summary": summary,
+			"agents":  agents,
+		})
 	}
 }
 
@@ -612,6 +704,223 @@ func loadSessionsByAgent(cfg *config.Config, agentID string) []SessionInfo {
 		sessions = append(sessions, si)
 	}
 	return sessions
+}
+
+type usageAccumulator struct {
+	UsageTotals
+	sessionSet map[string]struct{}
+}
+
+type usageRecord struct {
+	Input       int64
+	Output      int64
+	CacheRead   int64
+	CacheWrite  int64
+	TotalTokens int64
+	TotalCost   float64
+}
+
+func collectAgentUsage(cfg *config.Config, agentID string) agentUsageResult {
+	result := agentUsageResult{
+		Summary:    AgentUsageSummary{AgentID: agentID},
+		TodaySet:   map[string]struct{}{},
+		Last7dSet:  map[string]struct{}{},
+		Last30dSet: map[string]struct{}{},
+	}
+	sessionsDir := resolveAgentSessionsDir(cfg, agentID)
+	entries, err := os.ReadDir(sessionsDir)
+	if err != nil {
+		return result
+	}
+
+	now := time.Now()
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	last7dStart := todayStart.AddDate(0, 0, -6)
+	last30dStart := todayStart.AddDate(0, 0, -29)
+
+	todayAcc := usageAccumulator{sessionSet: map[string]struct{}{}}
+	last7dAcc := usageAccumulator{sessionSet: map[string]struct{}{}}
+	last30dAcc := usageAccumulator{sessionSet: map[string]struct{}{}}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
+			continue
+		}
+		sessionID := strings.TrimSuffix(entry.Name(), ".jsonl")
+		collectUsageFromFile(filepath.Join(sessionsDir, entry.Name()), sessionID, todayStart, last7dStart, last30dStart, &todayAcc, &last7dAcc, &last30dAcc)
+	}
+
+	result.Summary.Today = todayAcc.UsageTotals
+	result.Summary.Last7d = last7dAcc.UsageTotals
+	result.Summary.Last30d = last30dAcc.UsageTotals
+	result.TodaySet = cloneSessionSet(todayAcc.sessionSet)
+	result.Last7dSet = cloneSessionSet(last7dAcc.sessionSet)
+	result.Last30dSet = cloneSessionSet(last30dAcc.sessionSet)
+	return result
+}
+
+func collectUsageFromFile(filePath, sessionID string, todayStart, last7dStart, last30dStart time.Time, todayAcc, last7dAcc, last30dAcc *usageAccumulator) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 1024*1024), sessionScannerMaxTokenSize)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		var entry map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+		if t, _ := entry["type"].(string); t != "message" {
+			continue
+		}
+
+		msg, ok := entry["message"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if role, _ := msg["role"].(string); role != "assistant" {
+			continue
+		}
+
+		usage, ok := parseUsageRecord(msg["usage"])
+		if !ok {
+			continue
+		}
+		ts := extractUsageTimestamp(entry, msg)
+		if ts.IsZero() || ts.Before(last30dStart) {
+			continue
+		}
+
+		addUsage(todayAcc, sessionID, usage, !ts.Before(todayStart))
+		addUsage(last7dAcc, sessionID, usage, !ts.Before(last7dStart))
+		addUsage(last30dAcc, sessionID, usage, true)
+	}
+}
+
+func addUsage(acc *usageAccumulator, sessionID string, usage usageRecord, enabled bool) {
+	if !enabled {
+		return
+	}
+	acc.Input += usage.Input
+	acc.Output += usage.Output
+	acc.CacheRead += usage.CacheRead
+	acc.CacheWrite += usage.CacheWrite
+	acc.TotalTokens += usage.TotalTokens
+	acc.TotalCost += usage.TotalCost
+	acc.Requests++
+	if sessionID != "" {
+		acc.sessionSet[sessionID] = struct{}{}
+		acc.Sessions = len(acc.sessionSet)
+	}
+}
+
+func mergeUsageTotals(dst *UsageTotals, src UsageTotals) {
+	dst.Input += src.Input
+	dst.Output += src.Output
+	dst.CacheRead += src.CacheRead
+	dst.CacheWrite += src.CacheWrite
+	dst.TotalTokens += src.TotalTokens
+	dst.TotalCost += src.TotalCost
+	dst.Requests += src.Requests
+	dst.Sessions += src.Sessions
+}
+
+func mergeSessionSets(dst map[string]struct{}, src map[string]struct{}) {
+	if len(src) == 0 {
+		return
+	}
+	for sessionID := range src {
+		dst[sessionID] = struct{}{}
+	}
+}
+
+func cloneSessionSet(src map[string]struct{}) map[string]struct{} {
+	dst := make(map[string]struct{}, len(src))
+	for sessionID := range src {
+		dst[sessionID] = struct{}{}
+	}
+	return dst
+}
+
+func parseUsageRecord(raw interface{}) (usageRecord, bool) {
+	usage, ok := raw.(map[string]interface{})
+	if !ok {
+		return usageRecord{}, false
+	}
+
+	result := usageRecord{
+		Input:       toInt64Value(usage["input"]),
+		Output:      toInt64Value(usage["output"]),
+		CacheRead:   toInt64Value(usage["cacheRead"]),
+		CacheWrite:  toInt64Value(usage["cacheWrite"]),
+		TotalTokens: toInt64Value(usage["totalTokens"]),
+	}
+	if cost, ok := usage["cost"].(map[string]interface{}); ok {
+		result.TotalCost = toFloat64Value(cost["total"])
+	}
+	if result.TotalTokens <= 0 && result.Input <= 0 && result.Output <= 0 && result.CacheRead <= 0 && result.CacheWrite <= 0 && result.TotalCost <= 0 {
+		return usageRecord{}, false
+	}
+	return result, true
+}
+
+func extractUsageTimestamp(entry, msg map[string]interface{}) time.Time {
+	if ts, _ := entry["timestamp"].(string); ts != "" {
+		if parsed, err := time.Parse(time.RFC3339Nano, ts); err == nil {
+			return parsed
+		}
+	}
+	ms := toInt64Value(msg["timestamp"])
+	if ms > 0 {
+		return time.UnixMilli(ms)
+	}
+	return time.Time{}
+}
+
+func toInt64Value(raw interface{}) int64 {
+	switch v := raw.(type) {
+	case float64:
+		return int64(v)
+	case float32:
+		return int64(v)
+	case int:
+		return int64(v)
+	case int64:
+		return v
+	case int32:
+		return int64(v)
+	case json.Number:
+		n, _ := v.Int64()
+		return n
+	}
+	return 0
+}
+
+func toFloat64Value(raw interface{}) float64 {
+	switch v := raw.(type) {
+	case float64:
+		return v
+	case float32:
+		return float64(v)
+	case int:
+		return float64(v)
+	case int64:
+		return float64(v)
+	case int32:
+		return float64(v)
+	case json.Number:
+		n, _ := v.Float64()
+		return n
+	}
+	return 0
 }
 
 func validateAgentQuery(cfg *config.Config, agentID string) error {

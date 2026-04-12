@@ -26,6 +26,7 @@ var startTime = time.Now()
 func GetStatus(db *sql.DB, cfg *config.Config, procMgr *process.Manager, napcatMon *monitor.NapCatMonitor) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ocConfig, _ := cfg.ReadOpenClawJSON()
+		normalizeOpenClawCompatConfig(ocConfig)
 		injectWecomVirtualChannel(cfg, ocConfig)
 		gatewayPort := cfg.DefaultGatewayPort()
 		if p := procMgr.GatewayPortInt(); p > 0 {

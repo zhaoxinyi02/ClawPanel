@@ -371,8 +371,34 @@ export default function SystemConfig() {
   const [workspacePath, setWorkspacePath] = useState('');
   const [workspacePathLoading, setWorkspacePathLoading] = useState(false);
   const [workspacePathSaving, setWorkspacePathSaving] = useState(false);
+  const [providerIdDrafts, setProviderIdDrafts] = useState<Record<string, string>>({});
+
+  const providers = config?.models?.providers || {};
+  const providerIds = Object.keys(providers);
+  const primaryModelRaw = config?.agents?.defaults?.model;
+  const primaryModel = typeof primaryModelRaw === 'string' ? primaryModelRaw : (primaryModelRaw?.primary || '');
 
   useEffect(() => { loadConfig(); }, []);
+  useEffect(() => {
+    setProviderIdDrafts((prev) => {
+      const next: Record<string, string> = {};
+      const prevKeys = Object.keys(prev);
+      let changed = prevKeys.length !== providerIds.length;
+      for (const pid of providerIds) {
+        next[pid] = prev[pid] ?? pid;
+        if (!(pid in prev)) changed = true;
+      }
+      if (!changed) {
+        for (const key of prevKeys) {
+          if (!(key in next)) {
+            changed = true;
+            break;
+          }
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [providerIds.join('\u0000')]);
   useEffect(() => {
     const nextTab = searchParams.get('tab');
     if (nextTab && ['models', 'identity', 'general', 'version', 'env', 'health'].includes(nextTab)) {
@@ -388,6 +414,7 @@ export default function SystemConfig() {
         const next = r.config || {};
         setConfig(next);
         setOriginConfig(cloneConfig(next));
+        setProviderIdDrafts({});
       }
     }
     catch {} finally { setLoading(false); }
@@ -598,6 +625,42 @@ export default function SystemConfig() {
 
   const normalizeConfigForSave = (input: any) => {
     const clone = cloneConfig(input || {});
+    const currentProviders = clone?.models?.providers;
+    if (currentProviders && typeof currentProviders === 'object' && !Array.isArray(currentProviders)) {
+      const currentIds = Object.keys(currentProviders);
+      if (currentIds.length > 0) {
+        const renamedProviders: Record<string, any> = {};
+        let primaryRenameFrom = '';
+        let primaryRenameTo = '';
+        const currentPrimaryRaw = clone?.agents?.defaults?.model;
+        const currentPrimary = typeof currentPrimaryRaw === 'string'
+          ? currentPrimaryRaw
+          : (currentPrimaryRaw?.primary || '');
+        for (const pid of currentIds) {
+          const nextId = (providerIdDrafts[pid] ?? pid).trim();
+          if (!nextId) throw new Error('服务商 ID 不能为空');
+          if (renamedProviders[nextId]) throw new Error(`服务商 ID "${nextId}" 重复`);
+          renamedProviders[nextId] = currentProviders[pid];
+          if (!primaryRenameFrom && nextId !== pid && currentPrimary.startsWith(pid + '/')) {
+            primaryRenameFrom = pid;
+            primaryRenameTo = nextId;
+          }
+        }
+        clone.models.providers = renamedProviders;
+        if (primaryRenameFrom && primaryRenameTo) {
+          if (!clone.agents) clone.agents = {};
+          if (!clone.agents.defaults || typeof clone.agents.defaults !== 'object') clone.agents.defaults = {};
+          const defaults = clone.agents.defaults;
+          const model = defaults.model;
+          if (typeof model === 'string') {
+            defaults.model = primaryRenameTo + model.slice(primaryRenameFrom.length);
+          } else if (model && typeof model === 'object' && !Array.isArray(model)) {
+            defaults.model = { ...model, primary: primaryRenameTo + currentPrimary.slice(primaryRenameFrom.length) };
+          }
+        }
+      }
+    }
+
     const defaults = clone?.agents?.defaults;
     if (defaults && typeof defaults === 'object') {
       const model = defaults.model;
@@ -792,6 +855,7 @@ export default function SystemConfig() {
       const normalized = normalizeConfigForSave(config);
       await api.updateOpenClawConfig(normalized);
       setConfig(normalized);
+      setProviderIdDrafts({});
       setMsg(i18n.sysConfig.saveSuccess);
       setOriginConfig(cloneConfig(normalized));
       setShowDiffPreview(false);
@@ -806,7 +870,18 @@ export default function SystemConfig() {
   };
 
   const handleSave = async () => {
-    const diff = buildConfigDiff(originConfig || {}, config || {});
+    let normalized: any;
+    try {
+      normalized = normalizeConfigForSave(config);
+    } catch (err) {
+      setMsg(i18n.sysConfig.saveFailed + ': ' + String(err));
+      setTimeout(() => setMsg(''), 4000);
+      return;
+    }
+    if (JSON.stringify(normalized) !== JSON.stringify(config)) {
+      setConfig(normalized);
+    }
+    const diff = buildConfigDiff(originConfig || {}, normalized || {});
     if (diff.length === 0) {
       setMsg('未检测到配置变更');
       setTimeout(() => setMsg(''), 3000);
@@ -841,10 +916,6 @@ export default function SystemConfig() {
   };
 
   if (loading) return <div className="text-center py-12 text-gray-400 text-xs">{i18n.common.loading}</div>;
-
-  const providers = config?.models?.providers || {};
-  const primaryModelRaw = config?.agents?.defaults?.model;
-  const primaryModel = typeof primaryModelRaw === 'string' ? primaryModelRaw : (primaryModelRaw?.primary || '');
 
   return (
     <div className={`space-y-6 ${modern ? 'page-modern' : ''}`}>
@@ -1010,24 +1081,14 @@ export default function SystemConfig() {
                           <Brain size={18} />
                         </div>
                       <div className="flex items-baseline gap-2">
-                        <input value={pid} onChange={e => {
-                          const newId = e.target.value;
-                          if (!newId || newId === pid) return;
-                          updateConfig((clone: any) => {
-                          clone.models.providers[newId] = clone.models.providers[pid];
-                          delete clone.models.providers[pid];
-                          const modelCfg = clone.agents?.defaults?.model;
-                          const primary = typeof modelCfg === 'string' ? modelCfg : (modelCfg?.primary || '');
-                          if (primary.startsWith(pid + '/')) {
-                            if (!clone.agents) clone.agents = {};
-                            if (!clone.agents.defaults || typeof clone.agents.defaults !== 'object') clone.agents.defaults = {};
-                            if (!clone.agents.defaults.model || typeof clone.agents.defaults.model !== 'object' || Array.isArray(clone.agents.defaults.model)) {
-                              clone.agents.defaults.model = {};
-                            }
-                            clone.agents.defaults.model.primary = newId + primary.slice(pid.length);
+                        <input value={providerIdDrafts[pid] ?? pid} onChange={e => {
+                          setProviderIdDrafts(prev => ({ ...prev, [pid]: e.target.value }));
+                        }} onKeyDown={e => {
+                          if (e.key === 'Escape') {
+                            setProviderIdDrafts(prev => ({ ...prev, [pid]: pid }));
+                            e.currentTarget.blur();
                           }
-                          });
-                        }} className="text-base font-bold bg-transparent border-b border-dashed border-gray-300 dark:border-gray-600 focus:border-blue-500 outline-none px-1 py-0.5 min-w-[120px] transition-colors text-gray-900 dark:text-white" title="点击编辑 Provider ID" />
+                        }} className="text-base font-bold bg-transparent border-b border-dashed border-gray-300 dark:border-gray-600 focus:border-blue-500 outline-none px-1 py-0.5 min-w-[120px] transition-colors text-gray-900 dark:text-white" title="输入后在保存时生效，按 Esc 可撤销当前修改" />
                         {prov.models?.length > 0 && <span className="text-xs text-gray-400 font-medium px-2 py-0.5 bg-gray-50 dark:bg-gray-800 rounded-full">{prov.models.length} 模型</span>}
                       </div>
                     </div>

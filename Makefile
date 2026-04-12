@@ -6,6 +6,7 @@ APP_NAME ?= $(BINARY)
 VERSION ?= $(if $(filter lite,$(EDITION)),$(LITE_VERSION),$(PRO_VERSION))
 MODULE := github.com/zhaoxinyi02/ClawPanel
 LDFLAGS := -s -w -X github.com/zhaoxinyi02/ClawPanel/internal/buildinfo.Version=$(VERSION) -X github.com/zhaoxinyi02/ClawPanel/internal/buildinfo.Edition=$(EDITION)
+WINDOWS_LDFLAGS := -X github.com/zhaoxinyi02/ClawPanel/internal/buildinfo.Version=$(VERSION) -X github.com/zhaoxinyi02/ClawPanel/internal/buildinfo.Edition=$(EDITION)
 GOFLAGS := -trimpath
 EMBED_DIR := cmd/clawpanel/frontend/dist
 
@@ -76,7 +77,7 @@ cross: frontend
 	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/$(BINARY)-v$(VERSION)-linux-arm64 ./cmd/clawpanel/
 	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/$(BINARY)-v$(VERSION)-darwin-amd64 ./cmd/clawpanel/
 	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/$(BINARY)-v$(VERSION)-darwin-arm64 ./cmd/clawpanel/
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/$(BINARY)-v$(VERSION)-windows-amd64.exe ./cmd/clawpanel/
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) -ldflags "$(WINDOWS_LDFLAGS)" -o bin/$(BINARY)-v$(VERSION)-windows-amd64.exe ./cmd/clawpanel/
 	@echo "==> 交叉编译完成"
 	@ls -lh bin/
 
@@ -85,7 +86,7 @@ installer: cross
 	@echo "==> 构建 Windows 安装包..."
 	@mkdir -p installer/payload
 	cp bin/$(BINARY)-v$(VERSION)-windows-amd64.exe installer/payload/clawpanel.exe
-	cd installer && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) -ldflags "-s -w" -o ../bin/ClawPanel-Setup-v$(VERSION).exe .
+	cd installer && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) -o ../bin/ClawPanel-Setup-v$(VERSION).exe .
 	rm -f installer/payload/clawpanel.exe
 	@echo "==> Windows 安装包构建完成"
 	@ls -lh bin/ClawPanel-Setup-v$(VERSION).exe

@@ -406,6 +406,7 @@ func runServer(stopCh chan struct{}) {
 
 			// 会话管理
 			auth.GET("/sessions", handler.GetSessions(cfg))
+			auth.GET("/sessions/usage", handler.GetSessionUsage(cfg))
 			auth.GET("/sessions/:id", handler.GetSessionDetail(cfg))
 			auth.DELETE("/sessions/:id", handler.DeleteSession(cfg))
 

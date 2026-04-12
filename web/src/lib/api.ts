@@ -233,6 +233,7 @@ const _api = {
   },
   clearEvents: () => post('/events/clear'),
   // Sessions
+  getSessionUsage: (agent?: string) => get(`/sessions/usage${agent ? '?agent=' + agent : ''}`),
   getSessions: (agent?: string) => get(`/sessions${agent ? '?agent=' + agent : ''}`),
   getSessionDetail: (id: string, agent?: string) => get(`/sessions/${id}${agent ? '?agent=' + agent : ''}`),
   deleteSession: (id: string, agent?: string) => del(`/sessions/${id}${agent ? '?agent=' + agent : ''}`),
