@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/zhaoxinyi02/ClawPanel/internal/updatemirror"
 )
 
 const (
@@ -29,6 +31,7 @@ type UpdateInfo struct {
 	ReleaseNote   string            `json:"release_note"`
 	DownloadURLs  map[string]string `json:"download_urls"`
 	SHA256        map[string]string `json:"sha256"`
+	LocalPaths    map[string]string `json:"-"`
 }
 
 // UpdatePopup represents the popup info saved after a successful update
@@ -94,12 +97,9 @@ func getPlatformKey() string {
 
 // CheckUpdate checks for available updates
 func (u *Updater) CheckUpdate() (*UpdateInfo, bool, error) {
-	info, err := u.fetchFromGitHub()
+	info, err := u.resolveLocalUpdate(false, false)
 	if err != nil {
-		info, err = u.fetchFromAccel()
-		if err != nil {
-			return nil, false, fmt.Errorf("请求更新信息失败: %v", err)
-		}
+		return nil, false, fmt.Errorf("请求更新信息失败: %v", err)
 	}
 
 	hasUpdate := info.LatestVersion != "" && info.LatestVersion != u.currentVersion && isNewerVersion(info.LatestVersion, u.currentVersion)
@@ -154,17 +154,43 @@ func (u *Updater) doUpdateAsync(info *UpdateInfo) {
 	u.log("🔍 检测平台: %s/%s", runtime.GOOS, runtime.GOARCH)
 
 	platformKey := getPlatformKey()
-	downloadURL, ok := info.DownloadURLs[platformKey]
-	if !ok {
+	localAssetPath := strings.TrimSpace(info.LocalPaths[platformKey])
+	if localAssetPath == "" {
+		refreshed, err := u.resolveLocalUpdate(true, true)
+		if err != nil {
+			u.setError("刷新本机更新镜像失败: %v", err)
+			return
+		}
+		info = refreshed
+		localAssetPath = strings.TrimSpace(info.LocalPaths[platformKey])
+	}
+	if localAssetPath != "" {
+		if _, err := os.Stat(localAssetPath); err != nil {
+			localAssetPath = ""
+		}
+	}
+	if localAssetPath == "" {
+		refreshed, err := u.resolveLocalUpdate(true, true)
+		if err != nil {
+			u.setError("刷新本机更新镜像失败: %v", err)
+			return
+		}
+		info = refreshed
+		localAssetPath = strings.TrimSpace(info.LocalPaths[platformKey])
+	}
+	if localAssetPath == "" {
 		u.setError("不支持的平台: %s", platformKey)
 		return
 	}
 	expectedSHA, _ := info.SHA256[platformKey]
+	if strings.TrimSpace(expectedSHA) == "" {
+		u.setError("当前平台缺少 SHA256 校验值，已拒绝更新")
+		return
+	}
 
-	u.log("📥 下载更新: %s → %s", info.LatestVersion, downloadURL)
-	u.setStatus("downloading", 10, "正在下载更新包...")
+	u.log("📥 同步本机更新缓存: %s → %s", info.LatestVersion, localAssetPath)
+	u.setStatus("downloading", 10, "正在准备本机更新包...")
 
-	// Download to temp file
 	tmpDir := filepath.Join(u.dataDir, "update-tmp")
 	os.MkdirAll(tmpDir, 0755)
 	tmpFile := filepath.Join(tmpDir, "clawpanel-new")
@@ -172,11 +198,11 @@ func (u *Updater) doUpdateAsync(info *UpdateInfo) {
 		tmpFile += ".exe"
 	}
 
-	if err := u.downloadFile(downloadURL, tmpFile); err != nil {
-		u.setError("下载失败: %v", err)
+	if err := copyFile(localAssetPath, tmpFile); err != nil {
+		u.setError("复制本机更新包失败: %v", err)
 		return
 	}
-	u.log("✅ 下载完成")
+	u.log("✅ 本机更新包已就绪")
 
 	// SHA256 verify
 	u.setStatus("verifying", 60, "正在校验文件完整性...")
@@ -340,6 +366,35 @@ rm -rf "%s"
 		log.Printf("[Updater] Windows service restart failed, exiting...")
 		os.Exit(0)
 	}()
+}
+
+func (u *Updater) resolveLocalUpdate(force bool, ensureAsset bool) (*UpdateInfo, error) {
+	manifest, err := updatemirror.ResolveLatest(u.dataDir, updatemirror.EditionSpec{
+		Edition:           u.cfg.Edition,
+		GitHubReleasesAPI: u.cfg.GitHubReleasesAPI,
+		GitHubTagPrefix:   u.cfg.GitHubTagPrefix,
+	}, "/api/panel/update-mirror", force)
+	if err != nil {
+		return nil, err
+	}
+	if ensureAsset {
+		platformKey := getPlatformKey()
+		if _, err := updatemirror.EnsureAsset(u.dataDir, updatemirror.EditionSpec{
+			Edition:           u.cfg.Edition,
+			GitHubReleasesAPI: u.cfg.GitHubReleasesAPI,
+			GitHubTagPrefix:   u.cfg.GitHubTagPrefix,
+		}, manifest, platformKey); err != nil {
+			return nil, err
+		}
+	}
+	return &UpdateInfo{
+		LatestVersion: manifest.LatestVersion,
+		ReleaseTime:   manifest.ReleaseTime,
+		ReleaseNote:   manifest.ReleaseNote,
+		DownloadURLs:  manifest.DownloadURLs,
+		SHA256:        manifest.SHA256,
+		LocalPaths:    manifest.LocalPaths,
+	}, nil
 }
 
 func (u *Updater) fetchFromAccel() (*UpdateInfo, error) {

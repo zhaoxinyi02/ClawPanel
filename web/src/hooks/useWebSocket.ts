@@ -30,6 +30,7 @@ export function useWebSocket() {
   // Fetch initial status and event log from API
   useEffect(() => {
     const fetchStatus = () => {
+      if (document.hidden) return;
       api.getStatus().then(r => {
         if (r.ok && r.napcat) setNapcatStatus(r.napcat);
         if (r.ok && r.wechat) setWechatStatus(r.wechat);
@@ -39,7 +40,9 @@ export function useWebSocket() {
     };
     fetchStatus();
     const t = setInterval(fetchStatus, 8000);
-    return () => clearInterval(t);
+    const onVisible = () => { if (!document.hidden) fetchStatus(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVisible); };
   }, []);
 
   // Load persisted event log on mount (or demo data)
@@ -58,6 +61,7 @@ export function useWebSocket() {
     if (IS_DEMO) return;
 
     const poll = () => {
+      if (document.hidden) return;
       api.getEvents({ limit: 80 }).then(r => {
         if (!r.ok || !(r.events || r.entries)) return;
         const incoming: LogEntry[] = (r.events || r.entries) as LogEntry[];

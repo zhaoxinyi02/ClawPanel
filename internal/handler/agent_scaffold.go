@@ -30,7 +30,7 @@ func scaffoldAgentFiles(cfg *config.Config, agent map[string]interface{}) error 
 		name = id
 	}
 	identity, soul, agents := renderAgentScaffold(id, name)
-	if err := writeScaffoldFile(loc.Safe, "IDENTITY.md", identity, true); err != nil {
+	if err := writeScaffoldFile(loc.Safe, "IDENTITY.md", identity, false); err != nil {
 		return err
 	}
 	if err := writeScaffoldFile(loc.Safe, "SOUL.md", soul, false); err != nil {
@@ -42,7 +42,7 @@ func scaffoldAgentFiles(cfg *config.Config, agent map[string]interface{}) error 
 	if cfg.IsLiteEdition() {
 		mirror := filepath.Join(cfg.BundledOpenClawAppDir(), workspace)
 		_ = os.MkdirAll(mirror, 0o755)
-		_ = writeScaffoldFile(mirror, "IDENTITY.md", identity, true)
+		_ = writeScaffoldFile(mirror, "IDENTITY.md", identity, false)
 		_ = writeScaffoldFile(mirror, "SOUL.md", soul, false)
 		_ = writeScaffoldFile(mirror, "AGENTS.md", agents, false)
 	}

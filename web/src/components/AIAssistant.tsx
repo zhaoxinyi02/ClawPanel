@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { MessageCircle, Send, Loader2, Bot, Settings, ChevronDown, Minimize2, Trash2, GripHorizontal, Maximize2 } from 'lucide-react';
+import { MessageCircle, Send, Loader2, Bot, Settings, ChevronDown, X, Minimize2, Trash2, GripHorizontal, Maximize2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from '../lib/api';
@@ -120,6 +120,17 @@ export default function AIAssistant() {
   // Focus input when opened
   useEffect(() => {
     if (open && inputRef.current) setTimeout(() => inputRef.current?.focus(), 100);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setShowSettings(false);
+      setOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, [open]);
 
   // Drag handlers
@@ -264,10 +275,13 @@ export default function AIAssistant() {
                   setIsMaximized(true);
                 }
               }} className="rounded-xl border border-white/10 bg-white/10 p-1.5 transition-colors hover:bg-white/20" title={isMaximized ? '还原大小' : '最大化'}>
-                {isMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                {isMaximized ? <X size={14} /> : <Maximize2 size={14} />}
               </button>}
-              <button onClick={() => setOpen(false)} className="rounded-xl border border-white/10 bg-white/10 p-1.5 transition-colors hover:bg-white/20" title="收起">
-                <ChevronDown size={14} />
+              <button onClick={() => {
+                setShowSettings(false);
+                setOpen(false);
+              }} className="rounded-xl border border-white/10 bg-white/10 p-1.5 transition-colors hover:bg-white/20" title="关闭（Esc）">
+                <X size={14} />
               </button>
             </div>
           </div>

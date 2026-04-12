@@ -15,6 +15,7 @@ interface CronDelivery {
   to?: string;
   accountId?: string;
   bestEffort?: boolean;
+  // Legacy webhook field kept for read compatibility; canonical field is "to".
   url?: string;
 }
 
@@ -29,7 +30,18 @@ interface CronJob {
   /** sessionTarget: 'main' | 'isolated' — which session scope to use (new semantic); legacy jobs store the agentId here */
   sessionTarget: string;
   wakeMode: string;
-  payload: { kind: string; text?: string; message?: string; deliver?: boolean; channel?: string; to?: string };
+  payload: {
+    kind: string;
+    text?: string;
+    message?: string;
+    deliver?: boolean;
+    channel?: string;
+    to?: string;
+    model?: string;
+    thinking?: string;
+    lightContext?: boolean;
+    toolsAllow?: string[];
+  };
   /** Top-level delivery config (canonical format, replaces legacy payload.deliver) */
   delivery?: CronDelivery;
   state: {
@@ -58,7 +70,13 @@ function resolveSessionMode(job: CronJob): string {
 
 /** Resolve the effective delivery mode from a job (handles legacy payload.deliver) */
 function resolveDelivery(job: CronJob): CronDelivery {
-  if (job.delivery?.mode) return job.delivery;
+  if (job.delivery?.mode) {
+    if (job.delivery.mode === 'webhook') {
+      const target = (job.delivery.to || job.delivery.url || '').trim();
+      return target ? { ...job.delivery, mode: 'webhook', to: target } : { ...job.delivery, mode: 'webhook' };
+    }
+    return job.delivery;
+  }
   // Legacy fallback: payload.deliver boolean → announce/none
   if (job.payload.deliver === true) {
     return {
@@ -72,7 +90,8 @@ function resolveDelivery(job: CronJob): CronDelivery {
 
 /** Resolve the effective delivery status label */
 function resolveDeliveryStatus(job: CronJob): string | undefined {
-  return job.state.lastDeliveryStatus || (job.delivery?.mode === 'none' ? 'not-requested' : undefined);
+  const delivery = resolveDelivery(job);
+  return job.state.lastDeliveryStatus || (delivery.mode === 'none' ? 'not-requested' : undefined);
 }
 
 // T7: Parse well-known error codes from error strings
@@ -117,6 +136,10 @@ function CronJobsPage() {
   // New job form — agent + session target (separated)
   const [newAgentId, setNewAgentId] = useState('');
   const [newSessionMode, setNewSessionMode] = useState<'main' | 'isolated'>('isolated');
+  const [newModelOverride, setNewModelOverride] = useState('');
+  const [newThinkingLevel, setNewThinkingLevel] = useState('');
+  const [newLightContext, setNewLightContext] = useState(false);
+  const [newToolsAllow, setNewToolsAllow] = useState('');
 
   // T4: Feishu account options for delivery accountId dropdown
   const [feishuAccounts, setFeishuAccounts] = useState<string[]>([]);
@@ -233,8 +256,13 @@ function CronJobsPage() {
       setTimeout(() => setMsg(''), 2000);
       return;
     }
+    if (newSessionMode === 'main' && newDeliveryMode === 'announce') {
+      setMsg(locale === 'zh-CN' ? '主会话不支持发送到通道，请改为 Webhook 或不投递' : 'Main session does not support channel announce; use Webhook or None');
+      setTimeout(() => setMsg(''), 2000);
+      return;
+    }
     if (newDeliveryMode === 'webhook' && !newWebhookUrl.trim()) {
-      setMsg(locale === 'zh-CN' ? 'Webhook 模式必须填写 URL' : 'Webhook mode requires a URL');
+      setMsg(locale === 'zh-CN' ? 'Webhook 模式必须填写目标 URL' : 'Webhook mode requires a target URL');
       setTimeout(() => setMsg(''), 2000);
       return;
     }
@@ -242,13 +270,28 @@ function CronJobsPage() {
     // T6: payload.kind is determined by sessionTarget
     const payloadKind = newSessionMode === 'main' ? 'systemEvent' : 'agentTurn';
     const payload: CronJob['payload'] = payloadKind === 'agentTurn'
-      ? { kind: 'agentTurn', message: newMessage.trim() }
+      ? {
+          kind: 'agentTurn',
+          message: newMessage.trim(),
+          ...(newModelOverride.trim() ? { model: newModelOverride.trim() } : {}),
+          ...(newThinkingLevel.trim() ? { thinking: newThinkingLevel.trim() } : {}),
+          ...(newLightContext ? { lightContext: true } : {}),
+          ...(newToolsAllow.trim()
+            ? {
+                toolsAllow: newToolsAllow
+                  .split(/[\n,，]+/)
+                  .map(item => item.trim())
+                  .filter(Boolean)
+                  .filter((item, index, arr) => arr.indexOf(item) === index),
+              }
+            : {}),
+        }
       : { kind: 'systemEvent', text: newMessage.trim() };
     // T5: canonical delivery at top level
     const delivery: CronDelivery = newDeliveryMode === 'announce'
       ? { mode: 'announce', ...(newDeliveryAccountId ? { accountId: newDeliveryAccountId } : {}) }
       : newDeliveryMode === 'webhook'
-        ? { mode: 'webhook', ...(newWebhookUrl ? { url: newWebhookUrl } : {}) }
+        ? { mode: 'webhook', ...(newWebhookUrl ? { to: newWebhookUrl.trim() } : {}) }
         : { mode: 'none' };
     const job: CronJob = {
       id: 'cron_' + Date.now(),
@@ -273,6 +316,10 @@ function CronJobsPage() {
       setNewMessage('');
       setNewAgentId(defaultAgent || 'main');
       setNewSessionMode('isolated');
+      setNewModelOverride('');
+      setNewThinkingLevel('');
+      setNewLightContext(false);
+      setNewToolsAllow('');
       setNewDeliveryMode('announce');
       setNewDeliveryAccountId('');
       setNewWebhookUrl('');
@@ -385,7 +432,12 @@ function CronJobsPage() {
                   return (
                     <button key={mode} type="button"
                       disabled={disabled}
-                      onClick={() => setNewSessionMode(mode)}
+                      onClick={() => {
+                        setNewSessionMode(mode);
+                        if (mode === 'main' && newDeliveryMode === 'announce') {
+                          setNewDeliveryMode('none');
+                        }
+                      }}
                       className={`flex-1 py-2.5 text-xs font-semibold rounded-lg border transition-all ${
                         disabled ? 'opacity-40 cursor-not-allowed bg-gray-100 dark:bg-gray-900 text-gray-400 border-gray-200 dark:border-gray-700' :
                         newSessionMode === mode
@@ -477,6 +529,73 @@ function CronJobsPage() {
               rows={3} className={inputCls + ' resize-none'} />
           </div>
 
+          {newSessionMode === 'isolated' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
+                  {locale === 'zh-CN' ? '模型覆盖' : 'Model Override'}
+                </label>
+                <input
+                  value={newModelOverride}
+                  onChange={e => setNewModelOverride(e.target.value)}
+                  placeholder="openai/gpt-5.4 或 opus"
+                  className={inputCls + ' font-mono'}
+                />
+                <p className="text-[10px] text-gray-400">
+                  {locale === 'zh-CN' ? '对应 OpenClaw cron add --model；若模型不在允许列表，运行时会回退。' : 'Maps to openclaw cron add --model; runtime falls back if the model is not allowed.'}
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
+                  {locale === 'zh-CN' ? 'Thinking 等级' : 'Thinking Level'}
+                </label>
+                <select value={newThinkingLevel} onChange={e => setNewThinkingLevel(e.target.value)} className={inputCls}>
+                  <option value="">{locale === 'zh-CN' ? '跟随默认' : 'Use default'}</option>
+                  {['off', 'minimal', 'low', 'medium', 'high', 'xhigh'].map(level => (
+                    <option key={level} value={level}>{level}</option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-gray-400">
+                  {locale === 'zh-CN' ? '对应 OpenClaw cron add --thinking。' : 'Maps to openclaw cron add --thinking.'}
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
+                  {locale === 'zh-CN' ? '工具白名单' : 'Tool Allow-List'}
+                </label>
+                <input
+                  value={newToolsAllow}
+                  onChange={e => setNewToolsAllow(e.target.value)}
+                  placeholder="exec, read, write"
+                  className={inputCls + ' font-mono'}
+                />
+                <p className="text-[10px] text-gray-400">
+                  {locale === 'zh-CN' ? '对应 payload.toolsAllow / CLI 的 --tools；支持逗号分隔。' : 'Maps to payload.toolsAllow / CLI --tools; comma-separated.'}
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
+                  {locale === 'zh-CN' ? '轻量上下文' : 'Light Context'}
+                </label>
+                <div className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50/30 dark:bg-gray-900/30">
+                  <button
+                    type="button"
+                    onClick={() => setNewLightContext(prev => !prev)}
+                    className={`relative w-9 h-5 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 ${newLightContext ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${newLightContext ? 'translate-x-4' : ''}`} />
+                  </button>
+                  <span className={`text-xs font-medium ${newLightContext ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500'}`}>
+                    {newLightContext ? (locale === 'zh-CN' ? '已启用' : 'Enabled') : (locale === 'zh-CN' ? '已禁用' : 'Disabled')}
+                  </span>
+                </div>
+                <p className="text-[10px] text-gray-400">
+                  {locale === 'zh-CN' ? '对应 OpenClaw cron add --light-context；跳过 workspace bootstrap 文件注入。' : 'Maps to openclaw cron add --light-context; skips workspace bootstrap file injection.'}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Row 5: delivery mode + account + actions */}
           <div className="space-y-3 pt-2">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -485,20 +604,35 @@ function CronJobsPage() {
                   {locale === 'zh-CN' ? '投递方式' : 'Delivery Mode'}
                 </label>
                 <div className="flex gap-2">
-                  {(['announce', 'webhook', 'none'] as const).map(mode => (
+                  {(['announce', 'webhook', 'none'] as const).map(mode => {
+                    // OpenClaw constraint: sessionTarget=main only supports webhook/none delivery.
+                    // Keep announce visible for clarity, but prevent invalid selection.
+                    const disabled = mode === 'announce' && newSessionMode === 'main';
+                    return (
                     <button key={mode} type="button"
+                      disabled={disabled}
                       onClick={() => setNewDeliveryMode(mode)}
                       className={`flex-1 py-2 text-xs font-semibold rounded-lg border transition-all ${
-                        newDeliveryMode === mode
+                        disabled
+                          ? 'opacity-40 cursor-not-allowed bg-gray-100 dark:bg-gray-900 text-gray-400 border-gray-200 dark:border-gray-700'
+                          : newDeliveryMode === mode
                           ? modern ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-violet-600 text-white border-violet-600 shadow-sm'
                           : 'bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                       }`}>
                       {mode === 'announce' ? (locale === 'zh-CN' ? '发送到通道' : 'Announce') : mode === 'webhook' ? 'Webhook' : (locale === 'zh-CN' ? '不投递' : 'None')}
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
+                {newSessionMode === 'main' && (
+                  <p className="text-[10px] text-amber-500">
+                    {locale === 'zh-CN'
+                      ? '⚠️ 主会话只支持 Webhook 或不投递，发送到通道仅限独立会话'
+                      : '⚠️ Main session supports only Webhook or None; Announce is isolated-session only'}
+                  </p>
+                )}
               </div>
-              {newDeliveryMode === 'announce' && (
+              {newDeliveryMode === 'announce' && newSessionMode !== 'main' && (
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
                     {locale === 'zh-CN' ? '飞书账号 (accountId)' : 'Feishu Account (accountId)'}
@@ -604,6 +738,23 @@ function CronJobsPage() {
                           [{resolveDelivery(job).accountId}]
                         </span>
                       )}
+                      {(() => {
+                        const d = resolveDelivery(job);
+                        if (d.mode !== 'webhook') return null;
+                        const target = (d.to || d.url || '').trim();
+                        if (!target) {
+                          return (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded border font-mono bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-100 dark:border-blue-800/30">
+                              webhook
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded border font-mono bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-100 dark:border-blue-800/30 max-w-[360px] truncate">
+                            webhook: {target}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -646,6 +797,38 @@ function CronJobsPage() {
                           </span>
                         </div>
                       </div>
+                      {job.payload.model && (
+                        <div className="space-y-1">
+                          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                            {locale === 'zh-CN' ? '模型覆盖' : 'Model Override'}
+                          </span>
+                          <div className="font-mono text-gray-700 dark:text-gray-300 break-all">{job.payload.model}</div>
+                        </div>
+                      )}
+                      {job.payload.thinking && (
+                        <div className="space-y-1">
+                          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                            {locale === 'zh-CN' ? 'Thinking' : 'Thinking'}
+                          </span>
+                          <div className="font-mono text-gray-700 dark:text-gray-300">{job.payload.thinking}</div>
+                        </div>
+                      )}
+                      {typeof job.payload.lightContext === 'boolean' && (
+                        <div className="space-y-1">
+                          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                            {locale === 'zh-CN' ? '轻量上下文' : 'Light Context'}
+                          </span>
+                          <div className="font-mono text-gray-700 dark:text-gray-300">{job.payload.lightContext ? 'true' : 'false'}</div>
+                        </div>
+                      )}
+                      {Array.isArray(job.payload.toolsAllow) && job.payload.toolsAllow.length > 0 && (
+                        <div className="md:col-span-2 space-y-1">
+                          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                            {locale === 'zh-CN' ? '工具白名单' : 'Tool Allow-List'}
+                          </span>
+                          <div className="font-mono text-gray-700 dark:text-gray-300 break-all">{job.payload.toolsAllow.join(', ')}</div>
+                        </div>
+                      )}
 
                       {/* T2: Delivery info (canonical + legacy fallback) */}
                       {(() => {
@@ -657,10 +840,24 @@ function CronJobsPage() {
                               <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                                 {locale === 'zh-CN' ? '\u6295\u9012\u65b9\u5f0f' : 'Delivery Mode'}
                               </span>
-                              <div className={`font-medium ${d.mode === 'announce' ? 'text-emerald-600' : 'text-gray-500'}`}>
-                                {d.mode === 'announce' ? (locale === 'zh-CN' ? '\u53d1\u9001\u5230\u901a\u9053' : 'Announce') : (locale === 'zh-CN' ? '\u4e0d\u6295\u9012' : 'None')}
+                              <div className={`font-medium ${d.mode === 'announce' ? 'text-emerald-600' : d.mode === 'webhook' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500'}`}>
+                                {d.mode === 'announce'
+                                  ? (locale === 'zh-CN' ? '\u53d1\u9001\u5230\u901a\u9053' : 'Announce')
+                                  : d.mode === 'webhook'
+                                    ? 'Webhook'
+                                    : (locale === 'zh-CN' ? '\u4e0d\u6295\u9012' : 'None')}
                               </div>
                             </div>
+                            {d.mode === 'webhook' && (d.to || d.url) && (
+                              <div className="md:col-span-2 space-y-1">
+                                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                                  {locale === 'zh-CN' ? 'Webhook 目标' : 'Webhook Target'}
+                                </span>
+                                <div className="font-mono text-blue-600 dark:text-blue-400 break-all">
+                                  {(d.to || d.url) as string}
+                                </div>
+                              </div>
+                            )}
                             {d.accountId && (
                               <div className="space-y-1">
                                 <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">

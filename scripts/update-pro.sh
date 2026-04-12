@@ -3,20 +3,22 @@
 # ClawPanel Pro 手动更新脚本
 # 适用于面板内自动更新失败（如旧加速服务器失效）的用户
 # 用法:
-#   curl -fsSL https://gitee.com/zxy000006/ClawPanel/raw/main/scripts/update-pro.sh | sudo bash
+#   curl -fsSL http://43.248.142.249:19527/scripts/update-pro.sh | sudo bash
 # 或:
-#   wget -qO- https://gitee.com/zxy000006/ClawPanel/raw/main/scripts/update-pro.sh | sudo bash
+#   wget -qO- http://43.248.142.249:19527/scripts/update-pro.sh | sudo bash
 # ============================================================
 
 set -e
 
+CLAWPANEL_PUBLIC_BASE="${CLAWPANEL_PUBLIC_BASE:-http://43.248.142.249:19527}"
+CLAWPANEL_PUBLIC_BASE="${CLAWPANEL_PUBLIC_BASE%/}"
 INSTALL_DIR="/opt/clawpanel"
 SERVICE_NAME="clawpanel"
 BINARY_NAME="clawpanel"
 REPO="zhaoxinyi02/ClawPanel"
 TAG_PREFIX="pro-v"
-ACCEL_BASE="http://47.76.58.84:16198/clawpanel"
-ACCEL_META_URL="${ACCEL_BASE}/update-pro.json"
+ACCEL_BASE="${ACCEL_BASE:-${CLAWPANEL_PUBLIC_BASE}/api/panel/update-mirror}"
+ACCEL_META_URL="${ACCEL_META_URL:-${ACCEL_BASE}/pro}"
 GITHUB_RELEASES_API="https://api.github.com/repos/${REPO}/releases?per_page=20"
 
 RED='\033[31m'
@@ -111,7 +113,7 @@ if [ "$CURRENT_VERSION" = "$TARGET_VERSION" ]; then
 fi
 
 BINARY_FILE="${BINARY_NAME}-v${TARGET_VERSION}-${SYS_OS}-${SYS_ARCH}"
-ACCEL_URL="${ACCEL_BASE}/releases/${BINARY_FILE}"
+ACCEL_URL="${ACCEL_BASE}/pro/files/${BINARY_FILE}"
 GITHUB_URL="https://github.com/${REPO}/releases/download/${TAG_PREFIX}${TARGET_VERSION}/${BINARY_FILE}"
 
 TMP_DIR=$(mktemp -d)

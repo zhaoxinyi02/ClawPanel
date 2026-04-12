@@ -3,13 +3,15 @@
 # ClawPanel 一键安装脚本 (Linux/macOS)
 # 自动获取最新 Release 版本，无需手动更新脚本
 # 用法:
-#   curl -fsSL http://47.76.58.84:16198/clawpanel/scripts/install.sh | sudo bash
+#   curl -fsSL http://43.248.142.249:19527/scripts/install.sh | sudo bash
 # 或:
-#   wget -qO- http://47.76.58.84:16198/clawpanel/scripts/install.sh | sudo bash
+#   wget -qO- http://43.248.142.249:19527/scripts/install.sh | sudo bash
 # ============================================================
 
 set -e
 
+CLAWPANEL_PUBLIC_BASE="${CLAWPANEL_PUBLIC_BASE:-http://43.248.142.249:19527}"
+CLAWPANEL_PUBLIC_BASE="${CLAWPANEL_PUBLIC_BASE%/}"
 INSTALL_DIR="/opt/clawpanel"
 SERVICE_NAME="clawpanel"
 BINARY_NAME="clawpanel"
@@ -17,20 +19,20 @@ REPO="zhaoxinyi02/ClawPanel"
 TAG_PREFIX="pro-v"
 GITHUB_RELEASES_API="https://api.github.com/repos/${REPO}/releases?per_page=20"
 PORT="19527"
-ACCEL_BASE="http://47.76.58.84:16198/clawpanel"
-DEFAULT_VERSION="5.2.10"
-UPDATE_META="${UPDATE_META:-update-pro.json}"
+ACCEL_BASE="${ACCEL_BASE:-${CLAWPANEL_PUBLIC_BASE}/api/panel/update-mirror}"
+DEFAULT_VERSION="5.2.15"
+UPDATE_META_URL="${UPDATE_META_URL:-${ACCEL_BASE}/pro}"
 
 # ==================== 自动获取最新版本 ====================
 get_latest_version() {
     local ver=""
     local tag=""
     if command -v curl &>/dev/null; then
-        tag=$(curl -fsSL "${ACCEL_BASE}/${UPDATE_META}" 2>/dev/null | awk -F'"' '/"latest_version"/ {print $4; exit}')
+        tag=$(curl -fsSL "${UPDATE_META_URL}" 2>/dev/null | awk -F'"' '/"latest_version"/ {print $4; exit}')
         if [ -n "$tag" ]; then echo "${tag:-$DEFAULT_VERSION}"; return; fi
         tag=$(curl -fsSL "${GITHUB_RELEASES_API}" 2>/dev/null | awk -v prefix="$TAG_PREFIX" -F'"' '$2=="tag_name" && index($4,prefix)==1 {print $4; exit}')
     elif command -v wget &>/dev/null; then
-        tag=$(wget -qO- "${ACCEL_BASE}/${UPDATE_META}" 2>/dev/null | awk -F'"' '/"latest_version"/ {print $4; exit}')
+        tag=$(wget -qO- "${UPDATE_META_URL}" 2>/dev/null | awk -F'"' '/"latest_version"/ {print $4; exit}')
         if [ -n "$tag" ]; then echo "${tag:-$DEFAULT_VERSION}"; return; fi
         tag=$(wget -qO- "${GITHUB_RELEASES_API}" 2>/dev/null | awk -v prefix="$TAG_PREFIX" -F'"' '$2=="tag_name" && index($4,prefix)==1 {print $4; exit}')
     fi
@@ -100,9 +102,9 @@ download_with_selected_source() {
   secondary=$(other_source "$primary")
   if [ "$primary" = "github" ]; then
     primary_url="https://github.com/${REPO}/releases/download/${TAG_PREFIX}${VERSION}/${binary_file}"
-    secondary_url="${ACCEL_BASE}/releases/${binary_file}"
+    secondary_url="${ACCEL_BASE}/pro/files/${binary_file}"
   else
-    primary_url="${ACCEL_BASE}/releases/${binary_file}"
+    primary_url="${ACCEL_BASE}/pro/files/${binary_file}"
     secondary_url="https://github.com/${REPO}/releases/download/${TAG_PREFIX}${VERSION}/${binary_file}"
   fi
   if download_file "$primary_url" "$dest"; then

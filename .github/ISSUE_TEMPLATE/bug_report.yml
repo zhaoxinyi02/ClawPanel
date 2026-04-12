@@ -1,0 +1,82 @@
+name: Bug 反馈
+description: 提交可复现的缺陷、异常或兼容性问题
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈问题。请尽量提供完整环境与复现步骤，便于快速定位。
+  - type: input
+    id: version
+    attributes:
+      label: ClawPanel 版本
+      placeholder: 例如 Pro v5.3.3 / Lite v0.2.3
+    validations:
+      required: true
+  - type: input
+    id: openclaw-version
+    attributes:
+      label: OpenClaw 版本
+      placeholder: 例如 2026.2.26
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: 部署方式
+      options:
+        - Linux 宿主机
+        - Windows
+        - Windows + WSL
+        - Docker
+        - 1Panel
+        - macOS
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境说明
+      description: 请填写操作系统、架构、是否反向代理、是否使用外部 OpenClaw 等信息
+      placeholder: |
+        Ubuntu 22.04 x64
+        ClawPanel Pro
+        OpenClaw 运行在 Docker / WSL / 宿主机
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开 ...
+        2. 点击 ...
+        3. 出现 ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志 / 截图
+      description: 请粘贴关键日志、报错信息或截图，不要直接提交敏感密钥
+      render: shell
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已阅读文档和 FAQ，并确认这不是单纯的使用咨询
+          required: true
+        - label: 我已尽量去除密钥、Token、Cookie 等敏感信息
+          required: true

@@ -82,7 +82,7 @@ func GetWorkflowSettings(db *sql.DB) (*WorkflowSettings, error) {
 	value, err := GetSetting(db, "workflow.settings")
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return &WorkflowSettings{Enabled: false, ApprovalMode: 2, ProgressMode: "detailed", Tone: "professional", AutoCreateRuns: true, PushProgress: true, ComplexityGuard: "balanced"}, nil
+			return &WorkflowSettings{Enabled: false, ApprovalMode: 2, ProgressMode: "concise", Tone: "professional", AutoCreateRuns: true, PushProgress: false, ComplexityGuard: "balanced"}, nil
 		}
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func GetWorkflowSettings(db *sql.DB) (*WorkflowSettings, error) {
 		return nil, err
 	}
 	if settings.ProgressMode == "" {
-		settings.ProgressMode = "detailed"
+		settings.ProgressMode = "concise"
 	}
 	if settings.Tone == "" {
 		settings.Tone = "professional"

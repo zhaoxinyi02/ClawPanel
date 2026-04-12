@@ -79,6 +79,97 @@ func TestSaveOpenClawConfigPreservesCriticalFields(t *testing.T) {
 	}
 }
 
+func TestSaveOpenClawConfigMirrorsPrimaryModelToLegacyField(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+
+	r := gin.New()
+	r.PUT("/openclaw/config", SaveOpenClawConfig(cfg))
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"config": map[string]interface{}{
+			"agents": map[string]interface{}{
+				"defaults": map[string]interface{}{
+					"model": map[string]interface{}{
+						"primary": "deepseek/deepseek-chat",
+					},
+				},
+			},
+			"models": map[string]interface{}{
+				"providers": map[string]interface{}{},
+			},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPut, "/openclaw/config", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	saved, err := cfg.ReadOpenClawJSON()
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+
+	model, ok := saved["model"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected legacy model field to be written")
+	}
+	if got, _ := model["primary"].(string); got != "deepseek/deepseek-chat" {
+		t.Fatalf("unexpected legacy primary model: %q", got)
+	}
+}
+
+func TestGetOpenClawConfigBackfillsAgentDefaultsModelFromLegacyField(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+
+	initial := map[string]interface{}{
+		"model": map[string]interface{}{
+			"primary": "openai/gpt-4o-mini",
+		},
+	}
+	raw, _ := json.Marshal(initial)
+	if err := os.WriteFile(filepath.Join(dir, "openclaw.json"), raw, 0644); err != nil {
+		t.Fatalf("write openclaw.json: %v", err)
+	}
+
+	r := gin.New()
+	r.GET("/openclaw/config", GetOpenClawConfig(cfg))
+
+	req := httptest.NewRequest(http.MethodGet, "/openclaw/config", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		OK     bool                   `json:"ok"`
+		Config map[string]interface{} `json:"config"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	agents, _ := resp.Config["agents"].(map[string]interface{})
+	defaults, _ := agents["defaults"].(map[string]interface{})
+	model, _ := defaults["model"].(map[string]interface{})
+	if got, _ := model["primary"].(string); got != "openai/gpt-4o-mini" {
+		t.Fatalf("expected backfilled primary model, got %q", got)
+	}
+}
+
 func TestSaveOpenClawConfigRejectsInvalidNumericFields(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
@@ -1017,6 +1108,51 @@ func TestNormalizeFeishuChannelConfigToleratesLegacyRequireMentionOpen(t *testin
 	}
 }
 
+func TestNormalizeWeComChannelConfigCallbackMode(t *testing.T) {
+	t.Parallel()
+
+	body := map[string]interface{}{
+		"token":          "  token-123  ",
+		"encodingAesKey": "  abcdef  ",
+		"webhookPath":    " /wecom/callback ",
+	}
+
+	got := normalizeWeComChannelConfig(body)
+	if got["connectionMode"] != "callback" {
+		t.Fatalf("expected callback mode, got %#v", got["connectionMode"])
+	}
+	if got["encodingAESKey"] != "abcdef" {
+		t.Fatalf("expected normalized encodingAESKey, got %#v", got["encodingAESKey"])
+	}
+	if _, exists := got["encodingAesKey"]; exists {
+		t.Fatalf("expected legacy encodingAesKey to be removed, got %#v", got)
+	}
+	if got["webhookPath"] != "/wecom/callback" {
+		t.Fatalf("expected trimmed webhookPath, got %#v", got["webhookPath"])
+	}
+}
+
+func TestNormalizeWeComChannelConfigLongPollingMode(t *testing.T) {
+	t.Parallel()
+
+	body := map[string]interface{}{
+		"connectionMode": "long_polling",
+		"botId":          " bot-001 ",
+		"secret":         " sec-001 ",
+	}
+
+	got := normalizeWeComChannelConfig(body)
+	if got["connectionMode"] != "long-polling" {
+		t.Fatalf("expected long-polling mode, got %#v", got["connectionMode"])
+	}
+	if got["botId"] != "bot-001" || got["secret"] != "sec-001" {
+		t.Fatalf("expected trimmed bot credentials, got %#v", got)
+	}
+	if got["dmPolicy"] != "open" {
+		t.Fatalf("expected long-polling mode to default dmPolicy=open, got %#v", got["dmPolicy"])
+	}
+}
+
 func TestSaveChannelRejectsQQWhenPluginMissing(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
@@ -1028,6 +1164,56 @@ func TestSaveChannelRejectsQQWhenPluginMissing(t *testing.T) {
 
 	body := []byte(`{"enabled":true,"wsUrl":"ws://127.0.0.1:3001"}`)
 	req := httptest.NewRequest(http.MethodPut, "/openclaw/channels/qq", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d, body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestSaveChannelAllowsQQBotWithoutPluginInstall(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	r := gin.New()
+	r.PUT("/openclaw/channels/:id", SaveChannel(cfg, nil))
+
+	body := []byte(`{"enabled":true,"appId":"123","clientSecret":"secret"}`)
+	req := httptest.NewRequest(http.MethodPut, "/openclaw/channels/qqbot", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	saved, err := cfg.ReadOpenClawJSON()
+	if err != nil {
+		t.Fatalf("read openclaw.json: %v", err)
+	}
+	channels, _ := saved["channels"].(map[string]interface{})
+	qqbot, _ := channels["qqbot"].(map[string]interface{})
+	if strings.TrimSpace(fmt.Sprint(qqbot["appId"])) != "123" {
+		t.Fatalf("expected qqbot appId to be saved, got %#v", qqbot)
+	}
+}
+
+func TestSaveChannelRejectsWeComWhenPluginMissing(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	r := gin.New()
+	r.PUT("/openclaw/channels/:id", SaveChannel(cfg, nil))
+
+	body := []byte(`{"enabled":true,"token":"abc","encodingAESKey":"def","webhookPath":"/wecom"}`)
+	req := httptest.NewRequest(http.MethodPut, "/openclaw/channels/wecom", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -1054,6 +1240,103 @@ func TestToggleChannelRejectsQQWhenPluginMissing(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d, body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestToggleChannelAllowsQQBotWithoutPluginInstall(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	r := gin.New()
+	r.PUT("/openclaw/channels/toggle", ToggleChannel(cfg, nil, nil))
+
+	body := []byte(`{"channelId":"qqbot","enabled":true}`)
+	req := httptest.NewRequest(http.MethodPut, "/openclaw/channels/toggle", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	saved, err := cfg.ReadOpenClawJSON()
+	if err != nil {
+		t.Fatalf("read openclaw.json: %v", err)
+	}
+	channels, _ := saved["channels"].(map[string]interface{})
+	qqbot, _ := channels["qqbot"].(map[string]interface{})
+	if enabled, _ := qqbot["enabled"].(bool); !enabled {
+		t.Fatalf("expected qqbot channel enabled, got %#v", qqbot)
+	}
+}
+
+func TestToggleChannelRejectsWeComWhenPluginMissing(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	r := gin.New()
+	r.PUT("/openclaw/channels/toggle", ToggleChannel(cfg, nil, nil))
+
+	body := []byte(`{"channelId":"wecom","enabled":true}`)
+	req := httptest.NewRequest(http.MethodPut, "/openclaw/channels/toggle", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d, body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestResolveWeComBotEntryID(t *testing.T) {
+	tests := []struct {
+		name    string
+		entries map[string]interface{}
+		want    string
+	}{
+		{"empty entries returns canonical id", map[string]interface{}{}, "wecom-openclaw-plugin"},
+		{"new official entry present", map[string]interface{}{"wecom-openclaw-plugin": map[string]interface{}{}}, "wecom-openclaw-plugin"},
+		{"legacy entry present", map[string]interface{}{"wecom": map[string]interface{}{}}, "wecom"},
+		{"new entry takes precedence", map[string]interface{}{"wecom-openclaw-plugin": map[string]interface{}{}, "wecom": map[string]interface{}{}}, "wecom-openclaw-plugin"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveWecomBotEntryID(tt.entries)
+			if got != tt.want {
+				t.Errorf("resolveWecomBotEntryID() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestToggleChannelSupportsOpenClawWeixinLabel(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "extensions", "openclaw-weixin"), 0755); err != nil {
+		t.Fatalf("mkdir openclaw-weixin extension: %v", err)
+	}
+	cfg := &config.Config{OpenClawDir: dir}
+	r := gin.New()
+	r.POST("/openclaw/toggle-channel", ToggleChannel(cfg, nil, nil))
+
+	body := []byte(`{"channelId":"openclaw-weixin","enabled":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/openclaw/toggle-channel", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "微信（ClawBot）") {
+		t.Fatalf("expected response to mention openclaw-weixin label, got %s", w.Body.String())
 	}
 }
 
@@ -1151,5 +1434,292 @@ func TestSaveChannelRequestsGatewayRestartForTelegramWhenRunning(t *testing.T) {
 		t.Fatalf("expected telegram botToken to be normalized, got %#v", telegram)
 	} else if allowFrom, _ := channels["telegram"].(map[string]interface{})["allowFrom"].([]interface{}); len(allowFrom) == 0 || fmt.Sprint(allowFrom[len(allowFrom)-1]) != "*" {
 		t.Fatalf("expected telegram allowFrom wildcard, got %#v", channels["telegram"])
+	}
+}
+
+// --- Feishu plugin ID resolution tests ---
+
+func TestResolveFeishuEntryID(t *testing.T) {
+	entries := map[string]interface{}{
+		"openclaw-lark": map[string]interface{}{"enabled": false},
+		"feishu":        map[string]interface{}{"enabled": true},
+	}
+	tests := []struct {
+		name           string
+		entries        map[string]interface{}
+		candidates     []string
+		requireEnabled bool
+		want           string
+	}{
+		{"empty entries enabled", map[string]interface{}{}, feishuAllPluginIDs, true, ""},
+		{"empty entries present", map[string]interface{}{}, feishuAllPluginIDs, false, ""},
+		{"find enabled community", entries, feishuAllPluginIDs, true, "feishu"},
+		{"find enabled official only", entries, feishuOfficialPluginIDs, true, ""},
+		{"find present official", entries, feishuOfficialPluginIDs, false, "openclaw-lark"},
+		{"enabled wins over present", entries, feishuAllPluginIDs, false, "feishu"},
+		{"all disabled returns first present", map[string]interface{}{
+			"openclaw-lark": map[string]interface{}{"enabled": false},
+			"feishu":        map[string]interface{}{"enabled": false},
+		}, feishuAllPluginIDs, false, "openclaw-lark"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveFeishuEntryID(tt.entries, tt.candidates, tt.requireEnabled)
+			if got != tt.want {
+				t.Errorf("resolveFeishuEntryID() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCleanupLegacyFeishuPluginIDs(t *testing.T) {
+	plugins := map[string]interface{}{
+		"allow": []interface{}{"feishu-openclaw-plugin", canonicalFeishuOfficialPluginID},
+		"entries": map[string]interface{}{
+			"feishu-openclaw-plugin":         map[string]interface{}{"enabled": true},
+			canonicalFeishuOfficialPluginID:  map[string]interface{}{"enabled": true},
+			canonicalFeishuCommunityPluginID: map[string]interface{}{"enabled": true},
+		},
+	}
+	got := cleanupLegacyFeishuPluginIDs(plugins)
+	allow, _ := got["allow"].([]interface{})
+	entries, _ := got["entries"].(map[string]interface{})
+	if len(allow) != 1 || strings.TrimSpace(fmt.Sprint(allow[0])) != canonicalFeishuOfficialPluginID {
+		t.Fatalf("expected legacy ID removed from allow, got %#v", allow)
+	}
+	if _, ok := entries["feishu-openclaw-plugin"]; ok {
+		t.Fatalf("expected legacy entry removed, got %#v", entries["feishu-openclaw-plugin"])
+	}
+}
+
+func TestResolveFeishuToggleEntryID(t *testing.T) {
+	tests := []struct {
+		name    string
+		plugins map[string]interface{}
+		entries map[string]interface{}
+		want    string
+	}{
+		{"prefer allow official", map[string]interface{}{"allow": []interface{}{canonicalFeishuOfficialPluginID}}, map[string]interface{}{}, canonicalFeishuOfficialPluginID},
+		{"prefer allow community", map[string]interface{}{"allow": []interface{}{canonicalFeishuCommunityPluginID}}, map[string]interface{}{}, canonicalFeishuCommunityPluginID},
+		{"community entry stays community", map[string]interface{}{}, map[string]interface{}{
+			canonicalFeishuCommunityPluginID: map[string]interface{}{"enabled": true},
+		}, canonicalFeishuCommunityPluginID},
+		{"default fallback community", map[string]interface{}{}, map[string]interface{}{}, canonicalFeishuCommunityPluginID},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveFeishuToggleEntryID(tt.plugins, tt.entries)
+			if got != tt.want {
+				t.Fatalf("resolveFeishuToggleEntryID() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolvePreferredOfficialFeishuID(t *testing.T) {
+	tests := []struct {
+		name    string
+		plugins map[string]interface{}
+		entries map[string]interface{}
+		want    string
+	}{
+		{"prefer allow canonical official", map[string]interface{}{"allow": []interface{}{canonicalFeishuOfficialPluginID}}, map[string]interface{}{}, canonicalFeishuOfficialPluginID},
+		{"prefer installs canonical official", map[string]interface{}{"installs": map[string]interface{}{canonicalFeishuOfficialPluginID: true}}, map[string]interface{}{}, canonicalFeishuOfficialPluginID},
+		{"default fallback canonical official", map[string]interface{}{}, map[string]interface{}{}, canonicalFeishuOfficialPluginID},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolvePreferredOfficialFeishuID(tt.plugins, tt.entries)
+			if got != tt.want {
+				t.Fatalf("resolvePreferredOfficialFeishuID() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestToggleChannelFeishuHealsEntriesAndAllow(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	initial := map[string]interface{}{
+		"plugins": map[string]interface{}{
+			"allow": []interface{}{"feishu-openclaw-plugin"},
+			"entries": map[string]interface{}{
+				"feishu-openclaw-plugin": map[string]interface{}{"enabled": true},
+			},
+		},
+	}
+	if err := cfg.WriteOpenClawJSON(initial); err != nil {
+		t.Fatalf("seed openclaw config: %v", err)
+	}
+
+	r := gin.New()
+	r.PUT("/openclaw/channels/toggle", ToggleChannel(cfg, nil, nil))
+	body := []byte(`{"channelId":"feishu","enabled":true}`)
+	req := httptest.NewRequest(http.MethodPut, "/openclaw/channels/toggle", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	saved, err := cfg.ReadOpenClawJSON()
+	if err != nil {
+		t.Fatalf("read openclaw config: %v", err)
+	}
+	plugins, _ := saved["plugins"].(map[string]interface{})
+	entries, _ := plugins["entries"].(map[string]interface{})
+	allow, _ := plugins["allow"].([]interface{})
+	if got := strings.TrimSpace(fmt.Sprint(allow[0])); got != canonicalFeishuCommunityPluginID || len(allow) != 1 {
+		t.Fatalf("expected allow=[%s], got %#v", canonicalFeishuCommunityPluginID, allow)
+	}
+	if _, ok := entries["feishu-openclaw-plugin"]; ok {
+		t.Fatalf("expected legacy official entry removed, got %#v", entries["feishu-openclaw-plugin"])
+	}
+	if entry, _ := entries[canonicalFeishuCommunityPluginID].(map[string]interface{}); entry == nil || entry["enabled"] != true {
+		t.Fatalf("expected %s enabled entry, got %#v", canonicalFeishuCommunityPluginID, entries[canonicalFeishuCommunityPluginID])
+	}
+}
+
+func TestSwitchFeishuVariantUsesCanonicalIDsAndAllow(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	t.Run("switch to official removes legacy and uses canonical official", func(t *testing.T) {
+		dir := t.TempDir()
+		cfg := &config.Config{OpenClawDir: dir}
+		initial := map[string]interface{}{
+			"plugins": map[string]interface{}{
+				"allow": []interface{}{"feishu-openclaw-plugin"},
+				"entries": map[string]interface{}{
+					"feishu-openclaw-plugin":         map[string]interface{}{"enabled": true},
+					canonicalFeishuCommunityPluginID: map[string]interface{}{"enabled": true},
+				},
+			},
+		}
+		if err := cfg.WriteOpenClawJSON(initial); err != nil {
+			t.Fatalf("seed openclaw config: %v", err)
+		}
+		r := gin.New()
+		r.POST("/openclaw/feishu-variant", SwitchFeishuVariant(cfg, nil))
+		body := []byte(`{"variant":"official"}`)
+		req := httptest.NewRequest(http.MethodPost, "/openclaw/feishu-variant", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+		}
+		saved, err := cfg.ReadOpenClawJSON()
+		if err != nil {
+			t.Fatalf("read openclaw config: %v", err)
+		}
+		plugins, _ := saved["plugins"].(map[string]interface{})
+		entries, _ := plugins["entries"].(map[string]interface{})
+		allow, _ := plugins["allow"].([]interface{})
+		if len(allow) != 1 || strings.TrimSpace(fmt.Sprint(allow[0])) != canonicalFeishuOfficialPluginID {
+			t.Fatalf("expected allow=[%s], got %#v", canonicalFeishuOfficialPluginID, allow)
+		}
+		if _, ok := entries["feishu-openclaw-plugin"]; ok {
+			t.Fatalf("expected legacy official entry removed, got %#v", entries["feishu-openclaw-plugin"])
+		}
+		if entry, _ := entries[canonicalFeishuOfficialPluginID].(map[string]interface{}); entry == nil || entry["enabled"] != true {
+			t.Fatalf("expected %s enabled, got %#v", canonicalFeishuOfficialPluginID, entries[canonicalFeishuOfficialPluginID])
+		}
+		if entry, _ := entries[canonicalFeishuCommunityPluginID].(map[string]interface{}); entry == nil || entry["enabled"] != false {
+			t.Fatalf("expected %s disabled, got %#v", canonicalFeishuCommunityPluginID, entries[canonicalFeishuCommunityPluginID])
+		}
+	})
+
+	t.Run("switch to community uses community canonical id", func(t *testing.T) {
+		dir := t.TempDir()
+		cfg := &config.Config{OpenClawDir: dir}
+		initial := map[string]interface{}{
+			"plugins": map[string]interface{}{
+				"allow": []interface{}{canonicalFeishuOfficialPluginID},
+				"entries": map[string]interface{}{
+					canonicalFeishuOfficialPluginID: map[string]interface{}{"enabled": true},
+				},
+			},
+		}
+		if err := cfg.WriteOpenClawJSON(initial); err != nil {
+			t.Fatalf("seed openclaw config: %v", err)
+		}
+		r := gin.New()
+		r.POST("/openclaw/feishu-variant", SwitchFeishuVariant(cfg, nil))
+		body := []byte(`{"variant":"clawteam"}`)
+		req := httptest.NewRequest(http.MethodPost, "/openclaw/feishu-variant", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+		}
+		saved, err := cfg.ReadOpenClawJSON()
+		if err != nil {
+			t.Fatalf("read openclaw config: %v", err)
+		}
+		plugins, _ := saved["plugins"].(map[string]interface{})
+		entries, _ := plugins["entries"].(map[string]interface{})
+		allow, _ := plugins["allow"].([]interface{})
+		if len(allow) != 1 || strings.TrimSpace(fmt.Sprint(allow[0])) != canonicalFeishuCommunityPluginID {
+			t.Fatalf("expected allow=[%s], got %#v", canonicalFeishuCommunityPluginID, allow)
+		}
+		if entry, _ := entries[canonicalFeishuCommunityPluginID].(map[string]interface{}); entry == nil || entry["enabled"] != true {
+			t.Fatalf("expected %s enabled, got %#v", canonicalFeishuCommunityPluginID, entries[canonicalFeishuCommunityPluginID])
+		}
+		if entry, _ := entries[canonicalFeishuOfficialPluginID].(map[string]interface{}); entry == nil || entry["enabled"] != false {
+			t.Fatalf("expected %s disabled, got %#v", canonicalFeishuOfficialPluginID, entries[canonicalFeishuOfficialPluginID])
+		}
+	})
+}
+
+func TestToggleChannelFeishuDisableKeepsAllowButDisablesEntries(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	initial := map[string]interface{}{
+		"plugins": map[string]interface{}{
+			"allow": []interface{}{canonicalFeishuOfficialPluginID, "diagnostics-otel"},
+			"entries": map[string]interface{}{
+				canonicalFeishuOfficialPluginID:  map[string]interface{}{"enabled": true},
+				canonicalFeishuCommunityPluginID: map[string]interface{}{"enabled": true},
+			},
+		},
+	}
+	if err := cfg.WriteOpenClawJSON(initial); err != nil {
+		t.Fatalf("seed openclaw config: %v", err)
+	}
+
+	r := gin.New()
+	r.PUT("/openclaw/channels/toggle", ToggleChannel(cfg, nil, nil))
+	body := []byte(`{"channelId":"feishu","enabled":false}`)
+	req := httptest.NewRequest(http.MethodPut, "/openclaw/channels/toggle", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	saved, err := cfg.ReadOpenClawJSON()
+	if err != nil {
+		t.Fatalf("read openclaw config: %v", err)
+	}
+	plugins, _ := saved["plugins"].(map[string]interface{})
+	entries, _ := plugins["entries"].(map[string]interface{})
+	allow, _ := plugins["allow"].([]interface{})
+	if len(allow) != 2 || strings.TrimSpace(fmt.Sprint(allow[0])) != canonicalFeishuOfficialPluginID || strings.TrimSpace(fmt.Sprint(allow[1])) != "diagnostics-otel" {
+		t.Fatalf("expected allow preserved, got %#v", allow)
+	}
+	for _, pluginID := range feishuAllPluginIDs {
+		if entry, _ := entries[pluginID].(map[string]interface{}); entry != nil && entry["enabled"] != false {
+			t.Fatalf("expected %s disabled, got %#v", pluginID, entry)
+		}
 	}
 }

@@ -204,6 +204,8 @@ func runServer(stopCh chan struct{}) {
 		api.POST("/workflows/intercept", workflowRuntime.InterceptInbound())
 		api.Any("/panel/updater", handler.ProxyUpdater(cfg))
 		api.Any("/panel/updater/*path", handler.ProxyUpdater(cfg))
+		api.GET("/panel/update-mirror/:edition", handler.GetPanelUpdateMirror(cfg))
+		api.GET("/panel/update-mirror/:edition/files/:name", handler.GetPanelUpdateMirrorFile(cfg))
 
 		// 需要认证的路由
 		auth := api.Group("")
@@ -231,6 +233,11 @@ func runServer(stopCh chan struct{}) {
 			auth.POST("/openclaw/route/preview", handler.PreviewOpenClawRoute(cfg))
 			auth.GET("/openclaw/models", handler.GetModels(cfg))
 			auth.PUT("/openclaw/models", handler.SaveModels(cfg))
+			auth.GET("/openclaw/channel-catalog", handler.GetChannelCatalog())
+			auth.GET("/openclaw/pairing", handler.GetOpenClawPairingRequests(cfg))
+			auth.POST("/openclaw/pairing/approve", handler.ApproveOpenClawPairingRequest(cfg))
+			auth.GET("/openclaw/tasks", handler.GetOpenClawTasks(cfg))
+			auth.GET("/openclaw/tasks/:id", handler.GetOpenClawTaskDetail(cfg))
 			auth.GET("/openclaw/channels", handler.GetChannels(cfg))
 			auth.PUT("/openclaw/channels/:id", handler.SaveChannel(cfg, procMgr))
 			auth.PUT("/openclaw/plugins/:id", handler.SavePlugin(cfg))
@@ -241,6 +248,11 @@ func runServer(stopCh chan struct{}) {
 			auth.POST("/openclaw/qq-channel/cleanup", handler.CleanupQQChannel(cfg, taskMgr, procMgr))
 			auth.POST("/openclaw/qq-channel/delete", handler.DeleteQQChannel(cfg, taskMgr, procMgr, pluginMgr, napcatMon))
 			auth.POST("/openclaw/feishu-variant", handler.SwitchFeishuVariant(cfg, procMgr, sysLog))
+			auth.POST("/openclaw/qqbot-variant", handler.SwitchQQBotVariant(cfg, procMgr, sysLog))
+			auth.GET("/openclaw/weixin/status", handler.GetOpenClawWeixinStatus(cfg))
+			auth.POST("/openclaw/weixin/qrcode", handler.StartOpenClawWeixinQRCode(cfg))
+			auth.POST("/openclaw/weixin/qrcode/wait", handler.WaitOpenClawWeixinQRCode(cfg, procMgr))
+			auth.POST("/openclaw/weixin/logout", handler.LogoutOpenClawWeixin(cfg, procMgr))
 
 			// 进程管理
 			auth.POST("/process/start", handler.StartProcess(procMgr, sysLog))
@@ -261,6 +273,7 @@ func runServer(stopCh chan struct{}) {
 			// 技能 & 插件
 			auth.GET("/system/skills", handler.GetSkills(cfg))
 			auth.PUT("/system/skills/:id/toggle", handler.ToggleSkill(cfg))
+			auth.POST("/system/skills/:id/copy", handler.CopySkill(cfg))
 			auth.GET("/system/skills/:id/config", handler.GetSkillConfig(cfg))
 			auth.PUT("/system/skills/:id/config", handler.UpdateSkillConfig(cfg))
 			auth.GET("/system/clawhub/search", handler.SearchClawHub(cfg))
@@ -405,6 +418,8 @@ func runServer(stopCh chan struct{}) {
 			auth.GET("/workspace/stats", handler.WorkspaceStats(cfg))
 			auth.GET("/workspace/config", handler.WorkspaceConfig(cfg))
 			auth.PUT("/workspace/config", handler.WorkspaceUpdateConfig(cfg))
+			auth.GET("/workspace/path", handler.GetWorkspacePath(cfg))
+			auth.PUT("/workspace/path", handler.SetWorkspacePath(cfg))
 			auth.POST("/workspace/upload", handler.WorkspaceUpload(cfg))
 			auth.POST("/workspace/mkdir", handler.WorkspaceMkdir(cfg))
 			auth.POST("/workspace/delete", handler.WorkspaceDelete(cfg))
@@ -414,6 +429,7 @@ func runServer(stopCh chan struct{}) {
 
 			// 会话管理
 			auth.GET("/sessions", handler.GetSessions(cfg))
+			auth.GET("/sessions/usage", handler.GetSessionUsage(cfg))
 			auth.GET("/sessions/:id", handler.GetSessionDetail(cfg))
 			auth.DELETE("/sessions/:id", handler.DeleteSession(cfg))
 
@@ -426,20 +442,20 @@ func runServer(stopCh chan struct{}) {
 			auth.GET("/plugins/installed", handler.GetInstalledPlugins(pluginMgr))
 			auth.GET("/plugins/:id", handler.GetPluginDetail(pluginMgr))
 			auth.POST("/plugins/registry/refresh", handler.RefreshPluginRegistry(pluginMgr))
-			auth.POST("/plugins/install", handler.InstallPlugin(pluginMgr, taskMgr))
-			auth.DELETE("/plugins/:id", handler.UninstallPlugin(pluginMgr, taskMgr))
+			auth.POST("/plugins/install", handler.InstallPlugin(pluginMgr, taskMgr, procMgr))
+			auth.DELETE("/plugins/:id", handler.UninstallPlugin(pluginMgr, taskMgr, procMgr))
 			auth.PUT("/plugins/:id/toggle", handler.TogglePlugin(pluginMgr))
 			auth.GET("/plugins/:id/config", handler.GetPluginConfig(pluginMgr))
 			auth.PUT("/plugins/:id/config", handler.UpdatePluginConfig(pluginMgr))
 			auth.GET("/plugins/:id/logs", handler.GetPluginLogs(pluginMgr))
-			auth.POST("/plugins/:id/update", handler.UpdatePluginVersion(pluginMgr, taskMgr))
+			auth.POST("/plugins/:id/update", handler.UpdatePluginVersion(pluginMgr, taskMgr, procMgr))
 
 			// 软件环境 & 安装任务
 			auth.GET("/software/list", handler.GetSoftwareList(cfg))
 			auth.GET("/software/openclaw-instances", handler.DetectOpenClawInstances(cfg))
 			auth.POST("/software/install", handler.InstallSoftware(cfg, taskMgr))
-			auth.GET("/tasks", handler.GetTasks(taskMgr))
-			auth.GET("/tasks/:id", handler.GetTaskDetail(taskMgr))
+			auth.GET("/panel/tasks", handler.GetPanelTasks(taskMgr))
+			auth.GET("/panel/tasks/:id", handler.GetPanelTaskDetail(taskMgr))
 
 			// WebSocket 实时日志
 			auth.GET("/ws/logs", wsHub.HandleWebSocket())
@@ -457,6 +473,9 @@ func runServer(stopCh chan struct{}) {
 	r.GET("/ws", wsHub.HandleWebSocket(func(token string) bool {
 		return middleware.ValidateToken(token, cfg.JWTSecret)
 	}))
+	r.GET("/scripts/:name", handler.PublicScript(cfg))
+	r.GET("/plugins/:name", handler.PublicPluginAsset(cfg))
+	r.GET("/bin/:name", handler.PublicBinaryAsset(cfg))
 
 	// 内嵌前端静态资源
 	frontendDist, err := fs.Sub(frontendFS, "frontend/dist")

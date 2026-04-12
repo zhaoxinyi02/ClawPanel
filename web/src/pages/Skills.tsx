@@ -4,7 +4,7 @@ import { useOutletContext } from 'react-router-dom';
 import { api } from '../lib/api';
 import {
   Sparkles, Search, ToggleLeft, ToggleRight, Download,
-  RefreshCw, Package, Globe, Check, Loader2, ExternalLink, X, Key, FolderOpen, Plug, Trash2, ArrowUpCircle, CheckSquare, Square, Upload, Star, TrendingUp,
+  RefreshCw, Package, Globe, Check, Loader2, ExternalLink, X, Key, FolderOpen, Plug, Trash2, ArrowUpCircle, CheckSquare, Square, Upload, Star, TrendingUp, Copy,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import MobileActionTray from '../components/MobileActionTray';
@@ -21,6 +21,23 @@ interface SkillEntry {
   requires?: { env?: string[]; bins?: string[]; anyBins?: string[]; config?: string[] };
   path?: string;
   skillKey?: string;
+  configSchema?: SkillConfigField[];
+}
+
+interface SkillConfigOption {
+  label?: string;
+  value: unknown;
+}
+
+interface SkillConfigField {
+  key: string;
+  label?: string;
+  type?: 'text' | 'password' | 'textarea' | 'select' | 'toggle' | 'number';
+  placeholder?: string;
+  help?: string;
+  required?: boolean;
+  options?: SkillConfigOption[];
+  defaultValue?: unknown;
 }
 
 interface PluginEntry {
@@ -92,6 +109,8 @@ interface SkillHubStatus {
   installGuideURL?: string;
   skillInstallCommand?: string;
   error?: string;
+  missingPython?: boolean;
+  installHint?: string;
 }
 
 type SkillScopeFilter = 'all' | 'current-agent' | 'global-shared' | 'built-in' | 'plugin' | 'custom';
@@ -99,6 +118,25 @@ type StoreInstallTarget = 'agent' | 'global';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeSkillConfigFields(skill: SkillEntry | null): SkillConfigField[] {
+  if (!skill) return [];
+  const schema = Array.isArray(skill.configSchema) ? skill.configSchema.filter(field => field && typeof field.key === 'string' && field.key) : [];
+  const seen = new Set(schema.map(field => field.key));
+  const declared = Array.isArray(skill.requires?.config) ? skill.requires!.config : [];
+  const merged = [...schema];
+  declared.forEach((key) => {
+    if (!key || seen.has(key)) return;
+    merged.push({ key, type: 'text' });
+  });
+  return merged;
+}
+
+function normalizeConfigInputValue(field: SkillConfigField, value: unknown): string | number | boolean {
+  if (field.type === 'toggle') return value === true;
+  if (field.type === 'number') return typeof value === 'number' ? value : (typeof value === 'string' && value.trim() ? Number(value) : '');
+  return typeof value === 'string' ? value : (value == null ? '' : String(value));
 }
 
 function normalizeClawHubRegistryBase(value: unknown): string {
@@ -124,7 +162,7 @@ function buildClawHubLink(base: string, path: string): string {
 }
 
 export default function Skills() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { uiMode } = (useOutletContext() as { uiMode?: 'modern' }) || {};
   const modern = uiMode === 'modern';
   const [skills, setSkills] = useState<SkillEntry[]>([]);
@@ -146,11 +184,14 @@ export default function Skills() {
   const [confirmUninstall, setConfirmUninstall] = useState<{ id: string; name: string; installTarget: StoreInstallTarget } | null>(null);
   const [detailSkill, setDetailSkill] = useState<any | null>(null);
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set());
+  const [selectedPlugins, setSelectedPlugins] = useState<Set<string>>(new Set());
+  const [copyTarget, setCopyTarget] = useState<{ skillId: string; skillName: string } | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [configSkill, setConfigSkill] = useState<SkillEntry | null>(null);
   const [configSnapshot, setConfigSnapshot] = useState<SkillConfigSnapshot | null>(null);
   const [configLoading, setConfigLoading] = useState(false);
-  const [configAction, setConfigAction] = useState<'export' | 'import' | ''>('');
+  const [configAction, setConfigAction] = useState<'export' | 'import' | 'save' | ''>('');
+  const [configDraft, setConfigDraft] = useState<Record<string, unknown>>({});
   const [pendingConfigImport, setPendingConfigImport] = useState<PendingSkillConfigImport | null>(null);
   const [hubCategory, setHubCategory] = useState<string>('all');
   const [hubPage, setHubPage] = useState(1);
@@ -162,7 +203,7 @@ export default function Skills() {
   const configImportRef = useRef<HTMLInputElement>(null);
 
   // SkillHub state
-  const [hubSource] = useState<'clawhub' | 'skillhub'>('clawhub');
+  const [hubSource, setHubSource] = useState<'clawhub' | 'skillhub'>('clawhub');
   const [skillHubCatalog, setSkillHubCatalog] = useState<SkillHubCatalog | null>(null);
   const [skillHubLoading, setSkillHubLoading] = useState(false);
   const [skillHubError, setSkillHubError] = useState('');
@@ -176,7 +217,10 @@ export default function Skills() {
   const [skillHubCliLoading, setSkillHubCliLoading] = useState(false);
   const [skillHubCliInstalling, setSkillHubCliInstalling] = useState(false);
   const [storeEverLoaded, setStoreEverLoaded] = useState(false);
+  const [skillHubStoreEverLoaded, setSkillHubStoreEverLoaded] = useState(false);
   const skillHubPageSize = 30;
+  const configFields = useMemo(() => normalizeSkillConfigFields(configSkill), [configSkill]);
+  const hasStructuredConfig = configFields.length > 0;
 
   const debouncedHubSearch = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -256,7 +300,7 @@ export default function Skills() {
     setSkillHubError('');
     try {
       const r = await api.getSkillHubCatalog(selectedAgent, storeInstallTarget);
-      if (r.ok) { setSkillHubCatalog(r as SkillHubCatalog); setStoreEverLoaded(true); }
+      if (r.ok) { setSkillHubCatalog(r as SkillHubCatalog); setSkillHubStoreEverLoaded(true); }
       else setSkillHubError(r.error || t.skills.skillHubLoadError);
     } catch (err) {
       console.error('Failed to load SkillHub:', err);
@@ -280,9 +324,13 @@ export default function Skills() {
   // Custom marketplace auto refresh on entry
   useEffect(() => {
     if (tab === 'clawhub') {
-      loadClawHub(1);
+      if (hubSource === 'clawhub') {
+        loadClawHub(1);
+      } else if (!skillHubCliStatus && !skillHubCliLoading) {
+        loadSkillHubStatus();
+      }
     }
-  }, [tab, selectedAgent, storeInstallTarget]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, hubSource, selectedAgent, storeInstallTarget]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getSkillScope = (source: string): Exclude<SkillScopeFilter, 'all'> => {
     switch (source) {
@@ -371,7 +419,8 @@ export default function Skills() {
         setMsg(t.skills.skillHubCliInstallSuccess);
         await loadSkillHubStatus(true);
       } else {
-        setMsg(r.error || t.skills.skillHubCliInstallFailed);
+        setMsg(r.installHint || r.error || t.skills.skillHubCliInstallFailed);
+        await loadSkillHubStatus(true);
       }
     } catch (err) {
       console.error('Failed to install SkillHub CLI:', err);
@@ -539,7 +588,11 @@ export default function Skills() {
       if (r.ok) {
         setMsg(t.skills.uninstallSuccess.replace('{id}', skillId));
         await loadSkills();
-        if (tab === 'clawhub') await loadClawHub();
+        // 刷新当前商店视图以更新安装状态
+        if (tab === 'clawhub') {
+          if (hubSource === 'skillhub') await loadSkillHub();
+          else await loadClawHub();
+        }
       } else {
         setMsg(t.skills.uninstallFailed.replace('{id}', skillId));
       }
@@ -549,6 +602,37 @@ export default function Skills() {
       setUninstalling('');
       setTimeout(() => setMsg(''), 3000);
     }
+  };
+
+  const bulkTogglePlugins = async (enable: boolean) => {
+    const targets = plugins.filter(p => selectedPlugins.has(p.id));
+    let count = 0;
+    for (const p of targets) {
+      try {
+        const r = await api.togglePlugin(p.id, enable);
+        if (r.ok) count++;
+      } catch {}
+    }
+    setMsg(`${count}/${targets.length} ${enable ? (locale === 'zh-CN' ? '已启用' : 'enabled') : (locale === 'zh-CN' ? '已禁用' : 'disabled')}`);
+    setSelectedPlugins(new Set());
+    await loadSkills();
+    setTimeout(() => setMsg(''), 3000);
+  };
+
+  const bulkUninstallPlugins = async () => {
+    if (!confirm(locale === 'zh-CN' ? `确定批量卸载 ${selectedPlugins.size} 个插件？` : `Uninstall ${selectedPlugins.size} plugins?`)) return;
+    const targets = plugins.filter(p => selectedPlugins.has(p.id));
+    let count = 0;
+    for (const p of targets) {
+      try {
+        const r = await api.uninstallPlugin(p.id, false);
+        if (r.ok) count++;
+      } catch {}
+    }
+    setMsg(`${count}/${targets.length} ${locale === 'zh-CN' ? '已卸载' : 'uninstalled'}`);
+    setSelectedPlugins(new Set());
+    await loadSkills();
+    setTimeout(() => setMsg(''), 3000);
   };
 
   const handleUpdateSkill = async (skillId: string) => {
@@ -705,9 +789,45 @@ export default function Skills() {
     }
   };
 
+  const handleSaveSkillConfig = async () => {
+    if (!configSkill) return;
+    const skillKey = configSkill.skillKey || configSkill.id;
+    if (!skillKey || configFields.length === 0) return;
+    const values: Record<string, unknown> = {};
+    configFields.forEach((field) => {
+      if (!Object.prototype.hasOwnProperty.call(configDraft, field.key)) return;
+      const rawValue = configDraft[field.key];
+      if (field.type === 'number' && rawValue === '') {
+        return;
+      }
+      values[field.key] = rawValue;
+    });
+    setConfigAction('save');
+    try {
+      const r = await api.updateSkillConfig(skillKey, values, selectedAgent);
+      if (r.ok) {
+        setConfigSnapshot({
+          skillId: r.skillId || configSkill.id,
+          skillKey: r.skillKey || skillKey,
+          configKeys: Array.isArray(r.configKeys) ? r.configKeys : (configSkill.requires?.config || []),
+          values: isPlainObject(r.values) ? r.values : {},
+        });
+        setMsg(`${configSkill.name} ${t.common.save}`);
+      } else {
+        setMsg((r.error as string) || t.common.operationFailed);
+      }
+    } catch {
+      setMsg(t.common.operationFailed);
+    } finally {
+      setConfigAction('');
+      setTimeout(() => setMsg(''), 3000);
+    }
+  };
+
   useEffect(() => {
     if (!configSkill) {
       setConfigSnapshot(null);
+      setConfigDraft({});
       setPendingConfigImport(null);
       setConfigAction('');
       return;
@@ -719,11 +839,27 @@ export default function Skills() {
         configKeys: [],
         values: {},
       });
+      setConfigDraft({});
       setPendingConfigImport(null);
       return;
     }
     void loadSkillConfigSnapshot(configSkill);
   }, [configSkill, loadSkillConfigSnapshot]);
+
+  useEffect(() => {
+    if (!configSkill) return;
+    const nextDraft: Record<string, unknown> = {};
+    configFields.forEach((field) => {
+      if (configSnapshot && Object.prototype.hasOwnProperty.call(configSnapshot.values, field.key)) {
+        nextDraft[field.key] = configSnapshot.values[field.key];
+      } else if (field.defaultValue !== undefined) {
+        nextDraft[field.key] = field.defaultValue;
+      } else if (field.type === 'toggle') {
+        nextDraft[field.key] = false;
+      }
+    });
+    setConfigDraft(nextDraft);
+  }, [configFields, configSnapshot, configSkill]);
 
   const filtered = skills.filter(s => {
     if (filter === 'enabled' && !s.enabled) return false;
@@ -814,7 +950,7 @@ export default function Skills() {
         </button>
         <button onClick={() => setTab('clawhub')}
           className={`${modern ? 'px-3.5 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 border' : 'pb-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2'} ${tab === 'clawhub' ? (modern ? 'border-blue-100/80 bg-blue-50/85 dark:bg-blue-900/20 dark:border-blue-800/40 text-blue-700 dark:text-blue-300 shadow-sm' : 'border-violet-600 text-violet-700 dark:text-violet-400') : (modern ? 'border-transparent text-gray-500 hover:bg-white/70 dark:hover:bg-slate-800/70 hover:text-gray-700 dark:hover:text-gray-300' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300')}`}>
-          <Globe size={16} />{t.skills.storeTab} <span className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs px-1.5 py-0.5 rounded-full">{storeEverLoaded ? storeBadgeCount : '\u00b7\u00b7\u00b7'}</span>
+          <Globe size={16} />{t.skills.storeTab} <span className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs px-1.5 py-0.5 rounded-full">{(storeEverLoaded || skillHubStoreEverLoaded) ? storeBadgeCount : '\u00b7\u00b7\u00b7'}</span>
         </button>
       </div>
 
@@ -923,6 +1059,15 @@ export default function Skills() {
                           {uninstalling === (skill.skillKey || skill.id) ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
                         </button>
                       )}
+                      {(skill.source === 'workspace' || skill.source === 'installed' || skill.source === 'managed') && (
+                        <button
+                          onClick={() => setCopyTarget({ skillId: skill.skillKey || skill.id, skillName: skill.name })}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors shrink-0"
+                          title={locale === 'zh-CN' ? '复制到其他智能体' : 'Copy to other agent'}
+                        >
+                          <Copy size={16} />
+                        </button>
+                      )}
                         <button onClick={() => toggleSkill(skill)} className="relative group/toggle focus:outline-none shrink-0" title={skill.enabled ? t.common.running : t.common.stopped}>
                         {skill.enabled 
                           ? <ToggleRight size={36} className="text-emerald-500 transition-transform group-hover/toggle:scale-105" /> 
@@ -951,10 +1096,38 @@ export default function Skills() {
             </div>
           ) : (
             <div className="grid gap-3">
+              <div className="flex items-center justify-between px-1">
+                <button onClick={() => {
+                  if (selectedPlugins.size === plugins.length && plugins.length > 0) setSelectedPlugins(new Set());
+                  else setSelectedPlugins(new Set(plugins.map(p => p.id)));
+                }} className="text-xs text-gray-500 hover:text-violet-600 transition-colors flex items-center gap-1">
+                  {selectedPlugins.size === plugins.length && plugins.length > 0 ? <CheckSquare size={14} /> : <Square size={14} />}
+                  {selectedPlugins.size === plugins.length && plugins.length > 0 ? (locale === 'zh-CN' ? '取消全选' : 'Deselect All') : (locale === 'zh-CN' ? '全选' : 'Select All')}
+                </button>
+                {selectedPlugins.size > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">{locale === 'zh-CN' ? `已选 ${selectedPlugins.size}` : `${selectedPlugins.size} selected`}</span>
+                    <button onClick={() => bulkTogglePlugins(true)} className="text-xs px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 border border-emerald-100 dark:border-emerald-800 hover:bg-emerald-100 transition-colors">
+                      {locale === 'zh-CN' ? '批量启用' : 'Enable'}
+                    </button>
+                    <button onClick={() => bulkTogglePlugins(false)} className="text-xs px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 hover:bg-gray-200 transition-colors">
+                      {locale === 'zh-CN' ? '批量禁用' : 'Disable'}
+                    </button>
+                    <button onClick={bulkUninstallPlugins} className="text-xs px-2.5 py-1 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-600 border border-red-100 dark:border-red-800 hover:bg-red-100 transition-colors">
+                      {locale === 'zh-CN' ? '批量卸载' : 'Uninstall'}
+                    </button>
+                  </div>
+                )}
+              </div>
               {plugins.map(plugin => (
                 <div key={plugin.id} className={`${modern ? 'relative overflow-hidden rounded-[24px] p-4 border border-white/65 dark:border-slate-700/50 bg-[linear-gradient(145deg,rgba(255,255,255,0.84),rgba(239,246,255,0.62))] dark:bg-[linear-gradient(145deg,rgba(15,23,42,0.88),rgba(30,64,175,0.10))] shadow-[0_18px_40px_rgba(15,23,42,0.06)] backdrop-blur-xl' : 'bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700/50'} hover:shadow-md transition-all group`}>
                   {modern && <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent dark:via-slate-200/20" />}
                   <div className="flex items-center gap-3">
+                    <button onClick={() => {
+                      setSelectedPlugins(prev => { const n = new Set(prev); if (n.has(plugin.id)) n.delete(plugin.id); else n.add(plugin.id); return n; });
+                    }} className="shrink-0 text-gray-400 hover:text-violet-600 transition-colors">
+                      {selectedPlugins.has(plugin.id) ? <CheckSquare size={18} className="text-violet-600" /> : <Square size={18} />}
+                    </button>
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm border ${plugin.enabled ? 'bg-[linear-gradient(135deg,rgba(37,99,235,0.18),rgba(14,165,233,0.12))] border-blue-100/80 dark:border-blue-800/40' : 'bg-gray-100 dark:bg-gray-700 border-transparent'}`}>
                       <Plug size={18} className={plugin.enabled ? 'text-blue-600 dark:text-blue-300' : 'text-gray-400'} />
                     </div>
@@ -985,9 +1158,15 @@ export default function Skills() {
         <div className="space-y-4">
           {/* Store Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl w-fit px-3 py-2">
-              <Globe size={14} className="text-violet-600 dark:text-violet-300" />
-              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">ClawPanel 自定义技能仓库（GitHub 优先，失败回退 Gitee）</span>
+            <div className="flex items-center gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl w-fit">
+              <button onClick={() => setHubSource('clawhub')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${hubSource === 'clawhub' ? 'bg-white dark:bg-gray-700 text-violet-600 dark:text-violet-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                <Globe size={14} /> ClawPanel 自定义仓库
+              </button>
+              <button onClick={() => setHubSource('skillhub')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${hubSource === 'skillhub' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                <Star size={14} /> {t.skills.tencentSkillHub}
+              </button>
             </div>
 
             <div className="flex items-center gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl w-fit">
@@ -1055,7 +1234,7 @@ export default function Skills() {
 
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-             <input value={search} onChange={e => { setSearch(e.target.value); debouncedHubSearch(); }} onKeyDown={e => e.key === 'Enter' && handleSearchClawHub()} placeholder="搜索 ClawPanel 自定义技能"
+            <input value={search} onChange={e => { setSearch(e.target.value); debouncedHubSearch(); }} onKeyDown={e => e.key === 'Enter' && handleSearchClawHub()} placeholder="搜索 ClawPanel 自定义技能"
               className="w-full pl-9 pr-10 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all" />
             <button onClick={handleSearchClawHub} className="absolute right-3 top-1/2 -translate-y-1/2 text-violet-600 hover:text-violet-700">
               <Search size={14} />
@@ -1182,7 +1361,10 @@ export default function Skills() {
                             </button>
                           ) : (
                             <button
-                              onClick={() => setConfirmUninstall({ id: skill.id, name: skill.name, installTarget: storeInstallTarget })}
+                              onClick={() => {
+                                const localMatch = skills.find(s => s.id === skill.id || s.skillKey === skill.id);
+                                setConfirmUninstall({ id: skill.id, name: skill.name, installTarget: localMatch ? getLocalSkillInstallTarget(localMatch) : storeInstallTarget });
+                              }}
                               disabled={uninstalling === skill.id}
                               className={`${modern ? 'page-modern-action flex-1 py-2 text-xs text-red-500 hover:text-red-600' : 'flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors disabled:opacity-50'}`}>
                               {uninstalling === skill.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
@@ -1270,6 +1452,12 @@ export default function Skills() {
 
           {skillHubError && (
             <div className="px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-lg text-sm text-red-700 dark:text-red-400">{skillHubError}</div>
+          )}
+
+          {!skillHubCliStatus?.installed && (skillHubCliStatus?.installHint || skillHubCliStatus?.error) && (
+            <div className="px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 rounded-lg text-sm text-amber-700 dark:text-amber-300">
+              {skillHubCliStatus.installHint || skillHubCliStatus.error}
+            </div>
           )}
 
           {/* Search */}
@@ -1465,28 +1653,90 @@ export default function Skills() {
                 </button>
               </div>
             </div>
-            <div className="flex-1 overflow-auto p-6 space-y-6">
-              {configSkill.requires?.config && configSkill.requires.config.length > 0 && (
+              <div className="flex-1 overflow-auto p-6 space-y-6">
+              {hasStructuredConfig && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
                       <FolderOpen size={14} /> {t.skills.configCurrentValues}
                     </h4>
-                    {configLoading ? <span className="text-[11px] text-gray-400">{t.common.loading}</span> : null}
+                    <div className="flex items-center gap-2">
+                      {configLoading ? <span className="text-[11px] text-gray-400">{t.common.loading}</span> : null}
+                      <button
+                        onClick={handleSaveSkillConfig}
+                        disabled={configLoading || !!configAction}
+                        className={`${modern ? 'page-modern-accent px-3 py-1.5 text-xs' : 'px-3 py-1.5 text-xs font-medium rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition-colors'} disabled:opacity-50`}
+                      >
+                        {configAction === 'save' ? <Loader2 size={14} className="animate-spin inline mr-1" /> : null}
+                        {t.common.save}
+                      </button>
+                    </div>
                   </div>
                   <div className="space-y-3">
-                    {configSkill.requires.config.map(configKey => {
-                      const hasValue = Object.prototype.hasOwnProperty.call(configSnapshot?.values || {}, configKey);
-                      const value = hasValue ? configSnapshot?.values[configKey] : undefined;
+                    {configFields.map(field => {
+                      const hasValue = Object.prototype.hasOwnProperty.call(configSnapshot?.values || {}, field.key);
+                      const inputValue = normalizeConfigInputValue(field, configDraft[field.key]);
                       return (
-                        <div key={configKey} className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-100 dark:border-gray-800">
+                        <div key={field.key} className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-100 dark:border-gray-800 space-y-3">
                           <div className="flex items-center justify-between mb-2">
-                            <code className="text-sm font-bold font-mono text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/30 px-2 py-0.5 rounded">{configKey}</code>
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-bold text-gray-900 dark:text-white">{field.label || field.key}</span>
+                                {field.required ? <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-medium">{t.common.required}</span> : null}
+                              </div>
+                              <code className="text-xs font-bold font-mono text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/30 px-2 py-0.5 rounded inline-block">{field.key}</code>
+                            </div>
                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${hasValue ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>
                               {hasValue ? t.skills.configValueSet : t.skills.configValueUnset}
                             </span>
                           </div>
-                          <pre className="bg-gray-900 dark:bg-black rounded-lg p-3 text-[11px] font-mono text-gray-300 whitespace-pre-wrap break-all overflow-x-auto">{hasValue ? JSON.stringify(value, null, 2) : t.skills.configValueUnset}</pre>
+                          {field.help ? <p className="text-xs text-gray-500 dark:text-gray-400">{field.help}</p> : null}
+                          {field.type === 'textarea' ? (
+                            <textarea
+                              value={String(inputValue)}
+                              onChange={e => setConfigDraft(prev => ({ ...prev, [field.key]: e.target.value }))}
+                              placeholder={field.placeholder || field.key}
+                              rows={4}
+                              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all"
+                            />
+                          ) : field.type === 'select' ? (
+                            <select
+                              value={String(inputValue)}
+                              onChange={e => {
+                                const matched = (field.options || []).find(option => String(option.value) === e.target.value);
+                                setConfigDraft(prev => ({ ...prev, [field.key]: matched ? matched.value : e.target.value }));
+                              }}
+                              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all"
+                            >
+                              <option value="">{field.placeholder || field.key}</option>
+                              {(field.options || []).map((option, idx) => (
+                                <option key={`${field.key}-${idx}`} value={String(option.value)}>{option.label || String(option.value)}</option>
+                              ))}
+                            </select>
+                          ) : field.type === 'toggle' ? (
+                            <label className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 cursor-pointer">
+                              <span className="text-sm text-gray-700 dark:text-gray-300">{field.help || field.label || field.key}</span>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(inputValue)}
+                                onChange={e => setConfigDraft(prev => ({ ...prev, [field.key]: e.target.checked }))}
+                                className="h-4 w-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                              />
+                            </label>
+                          ) : (
+                            <input
+                              type={field.type === 'password' ? 'password' : field.type === 'number' ? 'number' : 'text'}
+                              value={field.type === 'number' && inputValue === '' ? '' : String(inputValue)}
+                              onChange={e => setConfigDraft(prev => ({
+                                ...prev,
+                                [field.key]: field.type === 'number'
+                                  ? (e.target.value === '' ? '' : Number(e.target.value))
+                                  : e.target.value,
+                              }))}
+                              placeholder={field.placeholder || field.key}
+                              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all"
+                            />
+                          )}
                         </div>
                       );
                     })}
@@ -1720,6 +1970,57 @@ export default function Skills() {
               <button onClick={() => setDetailSkill(null)}
                 className={`${modern ? 'page-modern-action px-4 py-2 text-xs' : 'px-4 py-2 text-xs font-medium rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors'}`}>
                 {t.common.close}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Copy Skill to Other Agent Modal */}
+      {copyTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setCopyTarget(null)}>
+          <div className={`${modern ? 'relative overflow-hidden rounded-[24px] p-6 border border-white/65 dark:border-slate-700/50 bg-[linear-gradient(145deg,rgba(255,255,255,0.92),rgba(239,246,255,0.72))] dark:bg-[linear-gradient(145deg,rgba(15,23,42,0.95),rgba(30,64,175,0.12))] shadow-2xl backdrop-blur-xl' : 'bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-6 border border-gray-200 dark:border-gray-700'} max-w-sm w-full mx-4`} onClick={e => e.stopPropagation()}>
+            {modern && <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent dark:via-slate-200/20" />}
+            <h3 className="text-base font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+              <Copy size={16} className="text-blue-600" />
+              {locale === 'zh-CN' ? '复制技能' : 'Copy Skill'}
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">{copyTarget.skillName}</p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 block mb-1">{locale === 'zh-CN' ? '目标智能体' : 'Target Agent'}</label>
+                <select id="copy-target-select" className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="__global__">{locale === 'zh-CN' ? '全局 (Global)' : 'Global'}</option>
+                  {agents.filter(a => a.id !== selectedAgent).map(a => (
+                    <option key={a.id} value={a.id}>{a.id}{a.default ? ' ⭐' : ''}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button onClick={() => setCopyTarget(null)} className={`flex-1 ${modern ? 'page-modern-action px-4 py-2 text-sm' : 'px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors'}`}>
+                {t.common.cancel}
+              </button>
+              <button onClick={async () => {
+                const sel = (document.getElementById('copy-target-select') as HTMLSelectElement)?.value;
+                if (!sel) return;
+                const target = sel === '__global__' ? 'global' : 'agent';
+                const agentId = sel === '__global__' ? '' : sel;
+                try {
+                  const r = await api.copySkill(copyTarget.skillId, selectedAgent, agentId, target as any);
+                  if (r.ok) {
+                    setMsg((locale === 'zh-CN' ? '已复制到 ' : 'Copied to ') + (sel === '__global__' ? 'Global' : sel));
+                  } else {
+                    setMsg(locale === 'zh-CN' ? '复制失败' : 'Copy failed');
+                  }
+                } catch {
+                  setMsg(locale === 'zh-CN' ? '复制失败' : 'Copy failed');
+                }
+                setCopyTarget(null);
+                await loadSkills();
+                setTimeout(() => setMsg(''), 3000);
+              }} className={`flex-1 ${modern ? 'page-modern-accent px-4 py-2 text-sm' : 'px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors'}`}>
+                {locale === 'zh-CN' ? '复制' : 'Copy'}
               </button>
             </div>
           </div>

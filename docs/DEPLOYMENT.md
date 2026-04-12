@@ -1,203 +1,129 @@
-# ClawPanel 部署指南 (v4.2.1)
+# ClawPanel 部署指南
+
+## 当前推荐方式
+
+- `ClawPanel Pro`：直接部署官方二进制，适合接管现有 OpenClaw 环境，包括宿主机安装、1Panel、Docker、WSL 等。
+- `ClawPanel Lite`：使用官方 Lite 安装脚本，适合需要开箱即用、由面板托管运行时的场景。
+- 当前仓库**没有提供官方 ClawPanel Docker 镜像**。如果你的 OpenClaw 跑在 Docker / 1Panel 中，建议继续让 OpenClaw 保持容器化，只把 ClawPanel Pro 作为宿主机面板运行。
 
 ## 环境要求
 
-| 组件 | 最低版本 |
-|------|----------|
-| Docker | 20.10+ |
-| Docker Compose | v2+ |
-| 内存 | 2GB+ |
-| 系统 | Linux / macOS / Windows (Docker Desktop) |
+| 组件 | 建议版本 |
+| --- | --- |
+| Linux | Ubuntu 22.04+ / Debian 12+ / CentOS Stream 9+ |
+| macOS | 13+ |
+| systemd | Linux 推荐使用 |
+| OpenClaw | 近期稳定版本 |
 
-## Linux 部署
+## Pro 安装
+
+### Linux / macOS
 
 ```bash
-# 1. 安装 Docker（如未安装）
-curl -fsSL https://get.docker.com | sh
-sudo systemctl enable docker && sudo systemctl start docker
-
-# 2. 安装 OpenClaw
-curl -fsSL https://get.openclaw.ai | bash
-openclaw onboard
-openclaw gateway start
-
-# 3. 克隆项目
-git clone https://github.com/zhaoxinyi02/ClawPanel.git
-cd ClawPanel
-
-# 4. 配置
-cp .env.example .env
-nano .env   # 修改 ADMIN_TOKEN、QQ_ACCOUNT、OWNER_QQ 等
-
-# 5. 启动
-docker compose up -d
-
-# 6. 配置 OpenClaw 频道
-chmod +x setup-openclaw.sh
-./setup-openclaw.sh
+export CLAWPANEL_PUBLIC_BASE="http://43.248.142.249:19527"
+curl -fsSL "$CLAWPANEL_PUBLIC_BASE/scripts/install.sh" | sudo CLAWPANEL_PUBLIC_BASE="$CLAWPANEL_PUBLIC_BASE" bash
 ```
 
-## macOS 部署
+如果需要以非 root 用户运行服务，可以先创建用户，再执行：
 
-1. 安装 [Docker Desktop for Mac](https://www.docker.com/products/docker-desktop/)
-2. 其余步骤与 Linux 相同
-
-## Windows 部署
-
-1. 安装 [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/)
-2. 确保 WSL2 后端已启用
-
-```powershell
-# 克隆项目
-git clone https://github.com/zhaoxinyi02/ClawPanel.git
-cd ClawPanel
-
-# 配置
-copy .env.example .env
-# 编辑 .env，设置 OPENCLAW_DIR=C:\Users\你的用户名\.openclaw
-
-# 启动
-docker compose up -d
-
-# 配置 OpenClaw 频道
-powershell -ExecutionPolicy Bypass -File setup-openclaw.ps1
+```bash
+sudo useradd -r -m -s /bin/bash clawpanel
+export CLAWPANEL_PUBLIC_BASE="http://43.248.142.249:19527"
+curl -fsSL "$CLAWPANEL_PUBLIC_BASE/scripts/install.sh" | sudo CLAWPANEL_PUBLIC_BASE="$CLAWPANEL_PUBLIC_BASE" CLAWPANEL_SERVICE_USER=clawpanel bash
 ```
 
-## 环境变量说明
+安装完成后默认访问：
 
-| 变量 | 必填 | 默认值 | 说明 |
-|------|------|--------|------|
-| `ADMIN_TOKEN` | 是 | `openclaw-qq-admin` | ClawPanel 登录密码 |
-| `QQ_ACCOUNT` | 否 | 空 | QQ 号，填写后支持快速登录 |
-| `OWNER_QQ` | 否 | `0` | 主人 QQ 号，接收通知 |
-| `WEBUI_TOKEN` | 否 | `openclaw-qq-admin` | NapCat WebUI Token |
-| `NAPCAT_TOKEN` | 否 | 空 | NapCat OneBot AccessToken |
-| `WECHAT_TOKEN` | 否 | `openclaw-wechat` | 微信 Webhook API Token |
-| `OPENCLAW_DIR` | 否 | `~/.openclaw` | OpenClaw 配置目录路径 |
+```text
+http://<your-host>:19527
+```
 
-## 端口映射
+### Windows / WSL
 
-| 宿主机端口 | 容器端口 | 服务 | 用途 |
-|------------|----------|------|------|
-| 6199 | 6199 | ClawPanel | 主入口 |
-| 6099 | 6099 | NapCat WebUI | QQ 管理（可选访问） |
-| 3001 | 3001 | OneBot11 WS | OpenClaw 连接 QQ |
-| 3002 | 3001 | 微信 Webhook | 微信 API（调试用） |
+- Windows 推荐直接运行 Pro 版二进制。
+- 如果 OpenClaw 跑在 WSL 或 Docker 中，请把 ClawPanel 当作外部面板接入，不要依赖 Windows 面板去直接拉起 Linux 版 OpenClaw。
+- 通过环境变量或 systemd drop-in 指定 `OPENCLAW_DIR` 到实际配置目录。
 
-## Docker Volume
+## Lite 安装
 
-| Volume | 容器路径 | 说明 |
-|--------|----------|------|
-| `qq-session` | `/app/.config/QQ` | QQ 登录 session 持久化 |
-| `napcat-data` | `/app/napcat/config` | NapCat 配置 |
-| `manager-data` | `/app/manager/data` | ClawPanel 配置 |
-| `wechat-data` | `/app/data` | 微信登录数据 |
+```bash
+export CLAWPANEL_PUBLIC_BASE="http://43.248.142.249:19527"
+curl -fsSL "$CLAWPANEL_PUBLIC_BASE/scripts/install-lite.sh" | sudo CLAWPANEL_PUBLIC_BASE="$CLAWPANEL_PUBLIC_BASE" bash
+```
+
+Lite 默认同样监听 `19527` 端口，并自带 OpenClaw 运行时与工作目录。
+
+## 接管 Docker / 1Panel 中的 OpenClaw
+
+如果 OpenClaw 已经运行在 Docker / 1Panel 中，不需要把 ClawPanel 也放进容器。只需要保证宿主机上的 ClawPanel 能读到 OpenClaw 的配置目录。
+
+例如 systemd drop-in：
+
+```ini
+[Service]
+Environment="OPENCLAW_DIR=/opt/1panel/apps/openclaw/OpenClaw/data/conf"
+```
+
+更新后执行：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart clawpanel
+```
+
+说明：
+
+- `OPENCLAW_DIR` 指向包含 `openclaw.json` 的目录。
+- ClawPanel Pro 会把该实例识别为外部托管运行时。
+- 如果你的网关绑定端口不是默认值，也请同步检查 OpenClaw 侧的 gateway 配置。
+
+## 更新
+
+### Pro
+
+```bash
+export CLAWPANEL_PUBLIC_BASE="http://43.248.142.249:19527"
+curl -fsSL "$CLAWPANEL_PUBLIC_BASE/scripts/update-pro.sh" | sudo CLAWPANEL_PUBLIC_BASE="$CLAWPANEL_PUBLIC_BASE" bash
+```
+
+### Lite
+
+```bash
+export CLAWPANEL_PUBLIC_BASE="http://43.248.142.249:19527"
+curl -fsSL "$CLAWPANEL_PUBLIC_BASE/scripts/update-lite.sh" | sudo CLAWPANEL_PUBLIC_BASE="$CLAWPANEL_PUBLIC_BASE" bash
+```
 
 ## 常用运维命令
 
 ```bash
-# 查看容器状态
-docker compose ps
-
-# 查看所有日志
-docker compose logs -f
-
-# 只看 QQ 容器日志
-docker compose logs -f openclaw-qq
-
-# 只看微信容器日志
-docker compose logs -f wechat
-
-# 重启所有服务
-docker compose restart
-
-# 停止所有服务
-docker compose down
-
-# 更新到最新版本
-git pull
-docker compose up -d --build
-
-# 完全重建（清除缓存）
-docker compose down
-docker compose build --no-cache
-docker compose up -d
+sudo systemctl status clawpanel
+sudo systemctl restart clawpanel
+journalctl -u clawpanel -n 100 --no-pager
 ```
 
-## 防火墙配置
-
-建议只开放必要端口：
+Lite 服务名为：
 
 ```bash
-# UFW (Ubuntu)
-sudo ufw allow 6199/tcp   # ClawPanel（必须）
-sudo ufw allow 3001/tcp   # OneBot WS（OpenClaw 需要）
-# 6099 和 3002 仅调试时开放
-
-# firewalld (CentOS)
-sudo firewall-cmd --permanent --add-port=6199/tcp
-sudo firewall-cmd --permanent --add-port=3001/tcp
-sudo firewall-cmd --reload
+sudo systemctl status clawpanel-lite
+sudo systemctl restart clawpanel-lite
+journalctl -u clawpanel-lite -n 100 --no-pager
 ```
 
-## 反向代理（可选）
+## 常见问题
 
-如需通过域名 + HTTPS 访问 ClawPanel，可配置 Nginx：
+### 面板显示 OpenClaw / 网关离线，但 Docker 里实际正常
 
-```nginx
-server {
-    listen 443 ssl;
-    server_name panel.example.com;
+- 确认 `OPENCLAW_DIR` 指向的是宿主机上真实的配置目录。
+- 确认网关端口从宿主机可访问，而不是只在容器内部监听。
+- 升级到 `Pro v5.3.2+`，该版本已经放宽外部托管实例的健康探测规则，并补齐官方插件通道的直装兜底。
 
-    ssl_certificate     /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
+### NapCat 网页已登录，但面板仍显示未登录
 
-    location / {
-        proxy_pass http://127.0.0.1:6199;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
+- 升级到 `Pro v5.3.2+ / Lite v0.2.2+`。
+- 在通道页重新触发一次状态检测。
+- 若 NapCat 重启过，等待 10~30 秒让 WebUI token 和登录态重新同步。
 
-    location /ws {
-        proxy_pass http://127.0.0.1:6199;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-```
+### Lite 覆盖安装后目录权限被改成 root
 
-## 故障排查
-
-### 容器启动失败
-```bash
-docker compose logs openclaw-qq 2>&1 | head -50
-```
-
-### QQ 无法登录
-- 检查 NapCat 日志中是否有二维码
-- 确认 QQ 账号未开启设备锁
-- 尝试快速登录或账密登录
-
-### 微信无法登录
-- 确认微信容器正常运行：`docker compose logs wechat`
-- 部分微信号不支持网页版登录，需使用较早注册的账号
-- 检查端口 3002 是否被占用
-
-### OpenClaw 连接失败
-- 确认 `openclaw.json` 中 QQ 频道的 `wsUrl` 为 `ws://127.0.0.1:3001`
-- 重新运行配置脚本：`./setup-openclaw.sh`
-- 重启 OpenClaw：`systemctl restart openclaw`
-
-### OpenClaw 报错 `unknown channel id: wechat`
-- ClawPanel v4.2.0 已修复此问题。微信通道由 ClawPanel 内部管理，不写入 `openclaw.json`
-- 如果升级后仍有此错误，重启容器即可自动清理：`docker compose restart openclaw-qq`
-- 或手动删除 `openclaw.json` 中的 `channels.wechat` 字段
-
-### OpenClaw 报错 `Unrecognized keys: "tools", "session"`
-- ClawPanel v4.2.0 已修复此问题。GET/PUT 配置接口自动过滤 OpenClaw 不支持的顶层键
-- 如果升级后仍有此错误，手动删除 `openclaw.json` 中的 `tools` 和 `session` 顶层字段
-
-### 关闭通道后仍能收到消息
-- 确保使用 ClawPanel v4.2.0+，通道开关会自动重启 OpenClaw 网关
-- 关闭 QQ 通道会同时退出 QQ 登录，重新开启需扫码登录
+- 升级到 `Lite v0.2.2+`。
+- 新版安装脚本会保留已有 `data/` 目录的属主，不再把整个安装目录递归改成 `root:root`。

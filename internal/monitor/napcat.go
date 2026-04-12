@@ -932,6 +932,42 @@ func checkQQLoginStatus(cfg *config.Config) (loggedIn bool, nickname string, qqI
 	return
 }
 
+func napCatBool(v interface{}) bool {
+	switch value := v.(type) {
+	case bool:
+		return value
+	case string:
+		value = strings.TrimSpace(strings.ToLower(value))
+		return value == "true" || value == "1" || value == "yes" || value == "online"
+	case float64:
+		return value != 0
+	case int:
+		return value != 0
+	case int64:
+		return value != 0
+	default:
+		return false
+	}
+}
+
+func napCatString(v interface{}) string {
+	switch value := v.(type) {
+	case string:
+		return strings.TrimSpace(value)
+	case float64:
+		if value == float64(int64(value)) {
+			return fmt.Sprintf("%.0f", value)
+		}
+		return strings.TrimSpace(fmt.Sprintf("%v", value))
+	case int:
+		return fmt.Sprintf("%d", value)
+	case int64:
+		return fmt.Sprintf("%d", value)
+	default:
+		return ""
+	}
+}
+
 func getNapCatWebUIToken(cfg *config.Config) string {
 	if runtime.GOOS == "windows" {
 		napcatDir := findNapCatShellDir(cfg)
@@ -1159,9 +1195,17 @@ func doCheckQQLoginStatus(cfg *config.Config) (loggedIn bool, nickname string, q
 	if statusData == nil {
 		return false, "", ""
 	}
-	isLogin, _ := statusData["isLogin"].(bool)
+	isLogin := napCatBool(statusData["isLogin"])
 	if !isLogin {
 		return false, "", ""
+	}
+	nickname = napCatString(statusData["nick"])
+	if nickname == "" {
+		nickname = napCatString(statusData["nickname"])
+	}
+	qqID = napCatString(statusData["uin"])
+	if qqID == "" {
+		qqID = napCatString(statusData["uid"])
 	}
 
 	// Get login info
@@ -1181,11 +1225,16 @@ func doCheckQQLoginStatus(cfg *config.Config) (loggedIn bool, nickname string, q
 	if infoCode, ok := infoResp["code"].(float64); ok && infoCode == 0 {
 		infoData, _ := infoResp["data"].(map[string]interface{})
 		if infoData != nil {
-			nickname, _ = infoData["nick"].(string)
-			if uid, ok := infoData["uin"].(float64); ok {
-				qqID = fmt.Sprintf("%.0f", uid)
+			if nick := napCatString(infoData["nick"]); nick != "" {
+				nickname = nick
 			}
-			if uid, ok := infoData["uin"].(string); ok {
+			if nick := napCatString(infoData["nickname"]); nick != "" && nickname == "" {
+				nickname = nick
+			}
+			if uid := napCatString(infoData["uin"]); uid != "" {
+				qqID = uid
+			}
+			if uid := napCatString(infoData["uid"]); uid != "" && qqID == "" {
 				qqID = uid
 			}
 		}

@@ -2,7 +2,8 @@
 # ClawPanel QQ NapCat 插件诊断与修复脚本 (Windows PowerShell)
 # 兼容 PowerShell 5.1 及以上版本
 # 用法 (管理员 PowerShell):
-#   irm https://raw.githubusercontent.com/zhaoxinyi02/ClawPanel/main/scripts/fix-qq-napcat.ps1 | iex
+#   $env:CLAWPANEL_PUBLIC_BASE="http://43.248.142.249:19527"
+#   irm "$env:CLAWPANEL_PUBLIC_BASE/scripts/fix-qq-napcat.ps1" | iex
 # ============================================================
 
 $ErrorActionPreference = "Continue"

@@ -14,6 +14,7 @@
     "clsx": "^2.1.1",
     "dagre": "^0.8.5",
     "lucide-react": "^0.460.0",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@types/dagre": "^0.7.54",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

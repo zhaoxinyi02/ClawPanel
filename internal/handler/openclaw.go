@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -17,6 +18,95 @@ import (
 	"github.com/zhaoxinyi02/ClawPanel/internal/monitor"
 	"github.com/zhaoxinyi02/ClawPanel/internal/process"
 )
+
+const (
+	canonicalFeishuOfficialPluginID  = "openclaw-lark"
+	canonicalFeishuCommunityPluginID = "feishu"
+)
+
+// 飞书官方版当前仅认可新 ID，旧 ID 仅用于清理历史脏配置。
+var feishuOfficialPluginIDs = []string{canonicalFeishuOfficialPluginID}
+
+// 当前有效的飞书插件 ID（官方版 + 社区版）。
+var feishuAllPluginIDs = []string{canonicalFeishuOfficialPluginID, canonicalFeishuCommunityPluginID}
+
+// 企业微信机器人插件 ID（优先级从高到低：新 ID 优先）
+var wecomBotPluginIDs = []string{"wecom-openclaw-plugin", "wecom"}
+
+// QQ 官方机器人插件 ID（内置版和社区版）
+var qqBotAllPluginIDs = []string{"qqbot", "qqbot-community"}
+
+type openClawChannelCatalogItem struct {
+	ID           string                 `json:"id"`
+	Label        string                 `json:"label"`
+	Description  string                 `json:"description"`
+	Type         string                 `json:"type"`
+	Bundled      bool                   `json:"bundled"`
+	Channels     []string               `json:"channels,omitempty"`
+	EnvVars      []string               `json:"envVars,omitempty"`
+	ConfigSchema map[string]interface{} `json:"configSchema,omitempty"`
+	UIHints      map[string]interface{} `json:"uiHints,omitempty"`
+}
+
+type openClawManifest struct {
+	ID             string                 `json:"id"`
+	Name           string                 `json:"name"`
+	Description    string                 `json:"description"`
+	Channels       []string               `json:"channels"`
+	ChannelEnvVars map[string][]string    `json:"channelEnvVars"`
+	ConfigSchema   map[string]interface{} `json:"configSchema"`
+	UIHints        map[string]interface{} `json:"uiHints"`
+}
+
+var channelCatalogLabels = map[string]string{
+	"bluebubbles":     "BlueBubbles",
+	"discord":         "Discord",
+	"feishu":          "飞书 / Lark",
+	"googlechat":      "Google Chat",
+	"imessage":        "iMessage",
+	"irc":             "IRC",
+	"line":            "LINE",
+	"matrix":          "Matrix",
+	"mattermost":      "Mattermost",
+	"msteams":         "Microsoft Teams",
+	"nextcloud-talk":  "Nextcloud Talk",
+	"nostr":           "Nostr",
+	"qa-channel":      "QA Channel",
+	"qqbot":           "QQ 官方机器人",
+	"signal":          "Signal",
+	"slack":           "Slack",
+	"synology-chat":   "Synology Chat",
+	"telegram":        "Telegram",
+	"tlon":            "Tlon",
+	"twitch":          "Twitch",
+	"voice-call":      "Voice Call",
+	"whatsapp":        "WhatsApp",
+	"zalo":            "Zalo",
+	"zalouser":        "Zalo User",
+	"qq":              "QQ (NapCat)",
+	"dingtalk":        "钉钉",
+	"wecom":           "企业微信（智能机器人）",
+	"wecom-app":       "企业微信（自建应用）",
+	"openclaw-weixin": "微信（ClawBot）",
+}
+
+var channelCatalogDescriptions = map[string]string{
+	"voice-call":      "OpenClaw 内置语音呼叫通道，支持 Twilio / Telnyx / Plivo / mock。",
+	"zalouser":        "OpenClaw 内置 Zalo 用户侧通道。",
+	"qq":              "QQ 个人号，NapCat OneBot11 协议。",
+	"dingtalk":        "钉钉机器人通道（插件）。",
+	"wecom":           "企业微信智能机器人通道（插件）。",
+	"wecom-app":       "企业微信自建应用通道（插件）。",
+	"openclaw-weixin": "腾讯官方 WeChat ClawBot 插件。",
+}
+
+var manualPluginChannelCatalog = []openClawChannelCatalogItem{
+	{ID: "qq", Label: channelCatalogLabels["qq"], Description: channelCatalogDescriptions["qq"], Type: "plugin"},
+	{ID: "dingtalk", Label: channelCatalogLabels["dingtalk"], Description: channelCatalogDescriptions["dingtalk"], Type: "plugin"},
+	{ID: "wecom", Label: channelCatalogLabels["wecom"], Description: channelCatalogDescriptions["wecom"], Type: "plugin"},
+	{ID: "wecom-app", Label: channelCatalogLabels["wecom-app"], Description: channelCatalogDescriptions["wecom-app"], Type: "plugin"},
+	{ID: "openclaw-weixin", Label: channelCatalogLabels["openclaw-weixin"], Description: channelCatalogDescriptions["openclaw-weixin"], Type: "plugin"},
+}
 
 func normalizeProviderAPI(api string) string {
 	switch api {
@@ -55,10 +145,10 @@ func normalizeProviderAPIs(providers map[string]interface{}) {
 }
 
 var knownAPIKeyPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`nvapi-[A-Za-z0-9._\-]+`),
-	regexp.MustCompile(`sk-[A-Za-z0-9._\-]+`),
-	regexp.MustCompile(`sess-[A-Za-z0-9._\-]+`),
-	regexp.MustCompile(`AIza[0-9A-Za-z_\-]+`),
+	regexp.MustCompile(`nvapi-[A-Za-z0-9._\-=]+`),
+	regexp.MustCompile(`sk-[A-Za-z0-9._\-=]+`),
+	regexp.MustCompile(`sess-[A-Za-z0-9._\-=]+`),
+	regexp.MustCompile(`AIza[0-9A-Za-z_\-=]+`),
 }
 
 func sanitizeProviderAPIKey(raw string) string {
@@ -72,6 +162,16 @@ func sanitizeProviderAPIKey(raw string) string {
 		}
 	}
 	return raw
+}
+
+func stripTransientProviderFields(providers map[string]interface{}) {
+	for _, prov := range providers {
+		providerMap, ok := prov.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		delete(providerMap, "_note")
+	}
 }
 
 func preserveMissingMapFields(dst, src map[string]interface{}) {
@@ -102,6 +202,32 @@ func preserveHiddenOpenClawFields(dst, src map[string]interface{}) {
 			dstTools = map[string]interface{}{}
 		}
 		preserveMissingMapFields(dstTools, srcTools)
+		// OpenClaw forbids both "allow" and "alsoAllow" in the same scope.
+		// If merge introduced a conflict, merge alsoAllow items into allow,
+		// then drop alsoAllow to resolve the conflict without losing tools.
+		if allowVal, hasAllow := dstTools["allow"]; hasAllow {
+			if alsoAllowVal, hasAlsoAllow := dstTools["alsoAllow"]; hasAlsoAllow {
+				if allowList, ok := allowVal.([]interface{}); ok {
+					if alsoList, ok2 := alsoAllowVal.([]interface{}); ok2 {
+						existing := make(map[string]bool, len(allowList))
+						for _, v := range allowList {
+							if s, ok := v.(string); ok {
+								existing[s] = true
+							}
+						}
+						for _, v := range alsoList {
+							if s, ok := v.(string); ok {
+								if !existing[s] {
+									allowList = append(allowList, v)
+								}
+							}
+						}
+						dstTools["allow"] = allowList
+					}
+				}
+				delete(dstTools, "alsoAllow")
+			}
+		}
 		if len(dstTools) > 0 {
 			dst["tools"] = dstTools
 		}
@@ -138,6 +264,217 @@ func preserveHiddenOpenClawFields(dst, src map[string]interface{}) {
 	}
 }
 
+func wecomAppActiveDir(cfg *config.Config) string {
+	if cfg == nil || strings.TrimSpace(cfg.OpenClawDir) == "" {
+		return ""
+	}
+	return filepath.Join(cfg.OpenClawDir, "extensions", "wecom-app")
+}
+
+func isWecomAppEnabled(cfg *config.Config) bool {
+	activeDir := wecomAppActiveDir(cfg)
+	if activeDir == "" {
+		return false
+	}
+	info, err := os.Stat(activeDir)
+	return err == nil && info.IsDir()
+}
+
+func injectWecomVirtualChannel(cfg *config.Config, ocConfig map[string]interface{}) {
+	if ocConfig == nil {
+		return
+	}
+	channels, _ := ocConfig["channels"].(map[string]interface{})
+	if channels == nil {
+		return
+	}
+	wecom, _ := channels["wecom"].(map[string]interface{})
+	if wecom == nil {
+		delete(channels, "wecom-app")
+		return
+	}
+	delete(channels, "wecom-app")
+	agent, _ := wecom["agent"].(map[string]interface{})
+	if len(agent) == 0 && !isWecomAppEnabled(cfg) {
+		return
+	}
+	virtual := map[string]interface{}{}
+	for k, v := range agent {
+		virtual[k] = v
+	}
+	virtual["enabled"] = isWecomAppEnabled(cfg)
+	channels["wecom-app"] = virtual
+}
+
+func detectOpenClawPackageRoot() string {
+	bin, err := exec.LookPath("openclaw")
+	if err != nil {
+		return ""
+	}
+	resolved, err := filepath.EvalSymlinks(bin)
+	if err != nil {
+		resolved = bin
+	}
+	if strings.HasSuffix(resolved, ".mjs") || strings.HasSuffix(resolved, ".js") {
+		return filepath.Dir(resolved)
+	}
+	return filepath.Dir(resolved)
+}
+
+func detectBundledExtensionsDir() string {
+	root := detectOpenClawPackageRoot()
+	if strings.TrimSpace(root) != "" {
+		candidate := filepath.Join(root, "dist", "extensions")
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+	for _, candidate := range []string{
+		"/usr/local/lib/node_modules/openclaw/dist/extensions",
+		"/usr/lib/node_modules/openclaw/dist/extensions",
+	} {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func readOpenClawManifestFile(dir string) (*openClawManifest, error) {
+	data, err := os.ReadFile(filepath.Join(dir, "openclaw.plugin.json"))
+	if err != nil {
+		return nil, err
+	}
+	var manifest openClawManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(manifest.ID) == "" {
+		manifest.ID = filepath.Base(dir)
+	}
+	return &manifest, nil
+}
+
+func normalizeChannelCatalogItem(manifest *openClawManifest) openClawChannelCatalogItem {
+	id := strings.TrimSpace(manifest.ID)
+	label := channelCatalogLabels[id]
+	if label == "" {
+		if strings.TrimSpace(manifest.Name) != "" {
+			label = strings.TrimSpace(manifest.Name)
+		} else {
+			label = id
+		}
+	}
+	description := channelCatalogDescriptions[id]
+	if description == "" {
+		description = strings.TrimSpace(manifest.Description)
+	}
+	envVars := []string{}
+	if manifest.ChannelEnvVars != nil {
+		for _, vars := range manifest.ChannelEnvVars {
+			envVars = append(envVars, vars...)
+		}
+	}
+	return openClawChannelCatalogItem{
+		ID:           id,
+		Label:        label,
+		Description:  description,
+		Type:         "builtin",
+		Bundled:      true,
+		Channels:     append([]string{}, manifest.Channels...),
+		EnvVars:      envVars,
+		ConfigSchema: manifest.ConfigSchema,
+		UIHints:      manifest.UIHints,
+	}
+}
+
+func buildOpenClawChannelCatalog() []openClawChannelCatalogItem {
+	items := map[string]openClawChannelCatalogItem{}
+	extDir := detectBundledExtensionsDir()
+	if extDir != "" {
+		entries, _ := os.ReadDir(extDir)
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			manifest, err := readOpenClawManifestFile(filepath.Join(extDir, entry.Name()))
+			if err != nil {
+				continue
+			}
+			if len(manifest.Channels) == 0 && manifest.ID != "voice-call" {
+				continue
+			}
+			item := normalizeChannelCatalogItem(manifest)
+			if item.ID == "talk-voice" {
+				item.ID = "voice-call"
+				item.Label = channelCatalogLabels["voice-call"]
+				item.Description = channelCatalogDescriptions["voice-call"]
+			}
+			items[item.ID] = item
+		}
+	}
+	for _, item := range manualPluginChannelCatalog {
+		items[item.ID] = item
+	}
+	list := make([]openClawChannelCatalogItem, 0, len(items))
+	for _, item := range items {
+		list = append(list, item)
+	}
+	sort.Slice(list, func(i, j int) bool {
+		if list[i].Type != list[j].Type {
+			return list[i].Type < list[j].Type
+		}
+		return list[i].ID < list[j].ID
+	})
+	return list
+}
+
+func GetChannelCatalog() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"ok":       true,
+			"channels": buildOpenClawChannelCatalog(),
+		})
+	}
+}
+
+func normalizeOpenClawCompatConfig(ocConfig map[string]interface{}) {
+	if ocConfig == nil {
+		return
+	}
+
+	legacyModel, _ := ocConfig["model"].(map[string]interface{})
+	agents, _ := ocConfig["agents"].(map[string]interface{})
+	defaults := map[string]interface{}(nil)
+	if agents != nil {
+		defaults, _ = agents["defaults"].(map[string]interface{})
+	}
+
+	currentModel := map[string]interface{}(nil)
+	if defaults != nil {
+		currentModel, _ = defaults["model"].(map[string]interface{})
+	}
+	if currentModel == nil && legacyModel == nil {
+		return
+	}
+
+	if agents == nil {
+		agents = map[string]interface{}{}
+		ocConfig["agents"] = agents
+	}
+	if defaults == nil {
+		defaults = map[string]interface{}{}
+		agents["defaults"] = defaults
+	}
+	if currentModel == nil && legacyModel != nil {
+		currentModel = deepCloneMap(legacyModel)
+		defaults["model"] = currentModel
+	}
+	if currentModel != nil {
+		ocConfig["model"] = deepCloneMap(currentModel)
+	}
+}
+
 // GetOpenClawConfig 获取 OpenClaw 配置
 func GetOpenClawConfig(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -146,6 +483,8 @@ func GetOpenClawConfig(cfg *config.Config) gin.HandlerFunc {
 			c.JSON(http.StatusOK, gin.H{"ok": true, "config": gin.H{}})
 			return
 		}
+		normalizeOpenClawCompatConfig(ocConfig)
+		injectWecomVirtualChannel(cfg, ocConfig)
 		c.JSON(http.StatusOK, gin.H{"ok": true, "config": ocConfig})
 	}
 }
@@ -170,6 +509,7 @@ func SaveOpenClawConfig(cfg *config.Config) gin.HandlerFunc {
 		// 自动为非 OpenAI 提供商注入 compat.supportsDeveloperRole=false
 		injectCompatFlags(ocCfg)
 		normalizeOpenClawModelAPIs(ocCfg)
+		normalizeOpenClawCompatConfig(ocCfg)
 		syncAllowedModels(ocCfg)
 		preserveHiddenOpenClawFields(ocCfg, existingCfg)
 		if err := validateOpenClawNumericConfig(ocCfg); err != nil {
@@ -197,6 +537,7 @@ func GetModels(cfg *config.Config) gin.HandlerFunc {
 			c.JSON(http.StatusOK, gin.H{"ok": true, "providers": gin.H{}, "defaults": gin.H{}})
 			return
 		}
+		normalizeOpenClawCompatConfig(ocConfig)
 		models, _ := ocConfig["models"].(map[string]interface{})
 		if models == nil {
 			models = map[string]interface{}{}
@@ -234,6 +575,7 @@ func SaveModels(cfg *config.Config) gin.HandlerFunc {
 		if providers, ok := body["providers"]; ok {
 			if provMap, ok := providers.(map[string]interface{}); ok {
 				normalizeProviderAPIs(provMap)
+				stripTransientProviderFields(provMap)
 			}
 			if models, ok := ocConfig["models"].(map[string]interface{}); ok {
 				models["providers"] = providers
@@ -268,34 +610,54 @@ func GetChannels(cfg *config.Config) gin.HandlerFunc {
 		if plugins == nil {
 			plugins = map[string]interface{}{}
 		}
-		// Expose channels.wecom.agent as a virtual "wecom-app" channel for the panel UI
-		if wecom, ok := channels["wecom"].(map[string]interface{}); ok {
-			if agent, ok := wecom["agent"].(map[string]interface{}); ok && len(agent) > 0 {
-				webhookApp := map[string]interface{}{}
-				for k, v := range agent {
-					webhookApp[k] = v
-				}
-				// Also carry enabled state from parent wecom channel
-				if enabled, ok := wecom["enabled"]; ok {
-					webhookApp["enabled"] = enabled
-				}
-				channels["wecom-app"] = webhookApp
-			}
-		}
+		injectWecomVirtualChannel(cfg, ocConfig)
+		channels, _ = ocConfig["channels"].(map[string]interface{})
 		c.JSON(http.StatusOK, gin.H{"ok": true, "channels": channels, "plugins": plugins})
 	}
 }
 
-func qqPluginInstalled(cfg *config.Config) bool {
-	for _, candidate := range []string{
-		filepath.Join(cfg.OpenClawDir, "extensions", "qq"),
-		filepath.Join(filepath.Dir(cfg.OpenClawDir), "extensions", "qq"),
-	} {
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return true
+func pluginInstalled(cfg *config.Config, pluginID string) bool {
+	return pluginInstalledAny(cfg, pluginID)
+
+}
+
+func pluginInstalledAny(cfg *config.Config, pluginIDs ...string) bool {
+	for _, pluginID := range pluginIDs {
+		pluginID = strings.TrimSpace(pluginID)
+		if pluginID == "" {
+			continue
+		}
+		for _, candidate := range []string{
+			filepath.Join(cfg.OpenClawDir, "extensions", pluginID),
+			filepath.Join(filepath.Dir(cfg.OpenClawDir), "extensions", pluginID),
+		} {
+			if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+func qqPluginInstalled(cfg *config.Config) bool {
+	return pluginInstalled(cfg, "qq")
+}
+
+func qqbotPluginInstalled(cfg *config.Config) bool {
+	return pluginInstalled(cfg, "qqbot")
+}
+
+func wecomBotPluginInstalled(cfg *config.Config) bool {
+	return pluginInstalledAny(cfg, wecomBotPluginIDs...)
+}
+
+func resolveWecomBotEntryID(entries map[string]interface{}) string {
+	for _, id := range wecomBotPluginIDs {
+		if entries[id] != nil {
+			return id
+		}
+	}
+	return wecomBotPluginIDs[0]
 }
 
 // SaveChannel 保存通道配置
@@ -303,7 +665,12 @@ func SaveChannel(cfg *config.Config, procMgr *process.Manager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
 		if id == "qq" && !qqPluginInstalled(cfg) {
-			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "QQ 个人号插件未安装，请先安装 QQ 个人号插件后再配置通道"})
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "QQ plugin is not installed; install QQ before configuring the channel"})
+			return
+		}
+
+		if id == "wecom" && !wecomBotPluginInstalled(cfg) {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "WeCom plugin is not installed; install WeCom before configuring the channel"})
 			return
 		}
 		var body map[string]interface{}
@@ -327,7 +694,7 @@ func SaveChannel(cfg *config.Config, procMgr *process.Manager) gin.HandlerFunc {
 		if id == "qqbot" {
 			body = normalizeQQBotChannelConfig(body)
 		}
-		if id == "telegram" {
+		if strings.HasPrefix(id, "telegram") {
 			body = normalizeTelegramChannelConfig(body)
 		}
 		if id == "feishu" {
@@ -338,6 +705,9 @@ func SaveChannel(cfg *config.Config, procMgr *process.Manager) gin.HandlerFunc {
 		}
 		if id == "wecom" {
 			body = normalizeWeComChannelConfig(body)
+			if existing, ok := channels["wecom"].(map[string]interface{}); ok {
+				preserveMissingMapFields(body, existing)
+			}
 		}
 		// wecom-app is a virtual channel backed by channels.wecom.agent
 		if id == "wecom-app" {
@@ -346,9 +716,13 @@ func SaveChannel(cfg *config.Config, procMgr *process.Manager) gin.HandlerFunc {
 				wecom = map[string]interface{}{}
 			}
 			agent := map[string]interface{}{}
-			for _, k := range []string{"corpId", "corpSecret", "agentId", "token", "encodingAesKey"} {
+			for _, k := range []string{"corpId", "corpSecret", "agentId", "token", "encodingAesKey", "encodingAESKey"} {
 				if v, ok := body[k]; ok {
-					agent[k] = v
+					if k == "encodingAesKey" {
+						agent["encodingAESKey"] = v
+					} else {
+						agent[k] = v
+					}
 				}
 			}
 			wecom["agent"] = agent
@@ -356,15 +730,14 @@ func SaveChannel(cfg *config.Config, procMgr *process.Manager) gin.HandlerFunc {
 			if t, ok := agent["token"].(string); ok && t != "" {
 				wecom["token"] = t
 			}
-			if k, ok := agent["encodingAesKey"].(string); ok && k != "" {
-				wecom["encodingAesKey"] = k
+			if k, ok := agent["encodingAESKey"].(string); ok && k != "" {
+				wecom["encodingAESKey"] = k
 			}
-			if _, hasEnabled := body["enabled"]; hasEnabled {
-				wecom["enabled"] = body["enabled"]
-			} else if _, ok := wecom["enabled"]; !ok {
-				wecom["enabled"] = true
+			if _, ok := wecom["enabled"]; !ok {
+				wecom["enabled"] = false
 			}
 			channels["wecom"] = wecom
+			delete(channels, "wecom-app")
 			ocConfig["channels"] = channels
 			if err := cfg.WriteOpenClawJSON(ocConfig); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
@@ -812,6 +1185,31 @@ func normalizeWeComChannelConfig(body map[string]interface{}) map[string]interfa
 	if body == nil {
 		return map[string]interface{}{}
 	}
+	mode := strings.TrimSpace(strings.ToLower(toString(body["connectionMode"])))
+	switch mode {
+	case "long_polling", "longpolling":
+		mode = "long-polling"
+	case "callback", "long-polling":
+	default:
+		if strings.TrimSpace(toString(body["botId"])) != "" && strings.TrimSpace(toString(body["secret"])) != "" {
+			mode = "long-polling"
+		} else {
+			mode = "callback"
+		}
+	}
+	body["connectionMode"] = mode
+	for _, key := range []string{"token", "encodingAESKey", "encodingAesKey", "webhookPath"} {
+		if trimmed := strings.TrimSpace(toString(body[key])); trimmed != "" {
+			if key == "encodingAesKey" {
+				body["encodingAESKey"] = trimmed
+				delete(body, "encodingAesKey")
+				continue
+			}
+			body[key] = trimmed
+		} else {
+			delete(body, key)
+		}
+	}
 	for _, key := range []string{"botId", "secret", "websocketUrl", "name"} {
 		if trimmed := strings.TrimSpace(toString(body[key])); trimmed != "" {
 			body[key] = trimmed
@@ -1037,7 +1435,17 @@ func SavePlugin(cfg *config.Config) gin.HandlerFunc {
 		if entries == nil {
 			entries = map[string]interface{}{}
 		}
-		entries[id] = body
+		if id == "wecom" {
+			entryID := resolveWecomBotEntryID(entries)
+			entries[entryID] = body
+			for _, aliasID := range wecomBotPluginIDs {
+				if aliasID != entryID {
+					delete(entries, aliasID)
+				}
+			}
+		} else {
+			entries[id] = body
+		}
 		plugins["entries"] = entries
 		ocConfig["plugins"] = plugins
 
@@ -1062,7 +1470,12 @@ func ToggleChannel(cfg *config.Config, procMgr *process.Manager, napcatMon *moni
 			return
 		}
 		if req.ChannelID == "qq" && !qqPluginInstalled(cfg) {
-			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "QQ 个人号插件未安装，请先安装 QQ 个人号插件"})
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "QQ plugin is not installed; install QQ before enabling the channel"})
+			return
+		}
+
+		if req.ChannelID == "wecom" && !wecomBotPluginInstalled(cfg) {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "WeCom plugin is not installed; install WeCom before enabling the channel"})
 			return
 		}
 
@@ -1070,7 +1483,6 @@ func ToggleChannel(cfg *config.Config, procMgr *process.Manager, napcatMon *moni
 		if ocConfig == nil {
 			ocConfig = map[string]interface{}{}
 		}
-
 		// 更新 channels
 		channels, _ := ocConfig["channels"].(map[string]interface{})
 		if channels == nil {
@@ -1081,6 +1493,9 @@ func ToggleChannel(cfg *config.Config, procMgr *process.Manager, napcatMon *moni
 		plugins, _ := ocConfig["plugins"].(map[string]interface{})
 		if plugins == nil {
 			plugins = map[string]interface{}{}
+		}
+		if req.ChannelID == "feishu" {
+			plugins = cleanupLegacyFeishuPluginIDs(plugins)
 		}
 		entries, _ := plugins["entries"].(map[string]interface{})
 		if entries == nil {
@@ -1096,10 +1511,11 @@ func ToggleChannel(cfg *config.Config, procMgr *process.Manager, napcatMon *moni
 					other["enabled"] = false
 					channels[mutexID] = other
 				}
-				// 关闭另一个 plugin entry（两个都映射到 wecom entry）
-				if pe, ok2 := entries["wecom"].(map[string]interface{}); ok2 {
+				// 关闭另一个 plugin entry（企业微信机器人使用当前实际插件 ID）
+				entryID := resolveWecomBotEntryID(entries)
+				if pe, ok2 := entries[entryID].(map[string]interface{}); ok2 {
 					pe["enabled"] = false
-					entries["wecom"] = pe
+					entries[entryID] = pe
 				}
 				// 关闭 channels.wecom 的 enabled（另一个方向时）
 				if mutexID == "wecom" {
@@ -1119,13 +1535,21 @@ func ToggleChannel(cfg *config.Config, procMgr *process.Manager, napcatMon *moni
 			}
 			wecom["enabled"] = req.Enabled
 			channels["wecom"] = wecom
-			// plugin entry 也用 wecom
-			pe, _ := entries["wecom"].(map[string]interface{})
+			delete(channels, "wecom-app")
+			// plugin entry 使用当前实际的 wecom 机器人插件 ID
+			entryID := resolveWecomBotEntryID(entries)
+			pe, _ := entries[entryID].(map[string]interface{})
 			if pe == nil {
 				pe = map[string]interface{}{}
 			}
 			pe["enabled"] = req.Enabled
-			entries["wecom"] = pe
+			entries[entryID] = pe
+			delete(entries, "wecom-app")
+			for _, aliasID := range wecomBotPluginIDs {
+				if aliasID != entryID {
+					delete(entries, aliasID)
+				}
+			}
 		} else {
 			ch, _ := channels[req.ChannelID].(map[string]interface{})
 			if ch == nil {
@@ -1133,24 +1557,47 @@ func ToggleChannel(cfg *config.Config, procMgr *process.Manager, napcatMon *moni
 			}
 			ch["enabled"] = req.Enabled
 			channels[req.ChannelID] = ch
+			if req.ChannelID == "wecom" {
+				delete(channels, "wecom-app")
+			}
 
-			// 飞书特殊处理：确定当前活跃的 plugin entry ID，启用/禁用正确的条目
+			// 飞书特殊处理：启用时自愈目标插件 entry，并同步 plugins.allow
 			if req.ChannelID == "feishu" {
-				activeEntryID := resolveActiveFeishuEntryID(entries)
-				pe, _ := entries[activeEntryID].(map[string]interface{})
+				targetEntryID := resolveFeishuToggleEntryID(plugins, entries)
+				disableIDs := make([]string, 0, len(feishuAllPluginIDs)-1)
+				for _, othID := range feishuAllPluginIDs {
+					if othID == targetEntryID {
+						continue
+					}
+					disableIDs = append(disableIDs, othID)
+				}
+				if req.Enabled {
+					plugins = ensureFeishuPluginSelection(plugins, targetEntryID, disableIDs)
+					entries, _ = plugins["entries"].(map[string]interface{})
+				} else {
+					for _, pluginID := range feishuAllPluginIDs {
+						entry, _ := entries[pluginID].(map[string]interface{})
+						if entry == nil {
+							continue
+						}
+						entry["enabled"] = false
+						entries[pluginID] = entry
+					}
+					plugins["entries"] = entries
+				}
+			} else if req.ChannelID == "wecom" {
+				entryID := resolveWecomBotEntryID(entries)
+				pe, _ := entries[entryID].(map[string]interface{})
 				if pe == nil {
 					pe = map[string]interface{}{}
 				}
 				pe["enabled"] = req.Enabled
-				entries[activeEntryID] = pe
-				// 禁用另一个变体（如果存在）
-				otherID := "feishu"
-				if activeEntryID == "feishu" {
-					otherID = "feishu-openclaw-plugin"
-				}
-				if otherEntry, ok := entries[otherID].(map[string]interface{}); ok {
-					otherEntry["enabled"] = false
-					entries[otherID] = otherEntry
+				entries[entryID] = pe
+				delete(entries, "wecom-app")
+				for _, aliasID := range wecomBotPluginIDs {
+					if aliasID != entryID {
+						delete(entries, aliasID)
+					}
 				}
 			} else {
 				pe, _ := entries[req.ChannelID].(map[string]interface{})
@@ -1159,6 +1606,9 @@ func ToggleChannel(cfg *config.Config, procMgr *process.Manager, napcatMon *moni
 				}
 				pe["enabled"] = req.Enabled
 				entries[req.ChannelID] = pe
+				if req.ChannelID == "wecom" {
+					delete(entries, "wecom-app")
+				}
 			}
 		}
 		ocConfig["channels"] = channels
@@ -1208,8 +1658,36 @@ func ToggleChannel(cfg *config.Config, procMgr *process.Manager, napcatMon *moni
 		}
 
 		channelNames := map[string]string{
-			"qq": "QQ (NapCat)", "wechat": "微信", "feishu": "飞书",
-			"qqbot": "QQ Bot", "dingtalk": "钉钉", "wecom": "企业微信",
+			"qq":              "QQ (NapCat)",
+			"wechat":          "微信",
+			"feishu":          "飞书",
+			"qqbot":           "QQ 官方机器人",
+			"dingtalk":        "钉钉",
+			"wecom":           "企业微信",
+			"wecom-app":       "企业微信（自建应用）",
+			"openclaw-weixin": "微信（ClawBot）",
+			"telegram":        "Telegram",
+			"discord":         "Discord",
+			"slack":           "Slack",
+			"signal":          "Signal",
+			"googlechat":      "Google Chat",
+			"bluebubbles":     "BlueBubbles",
+			"imessage":        "iMessage",
+			"irc":             "IRC",
+			"line":            "LINE",
+			"matrix":          "Matrix",
+			"mattermost":      "Mattermost",
+			"msteams":         "Microsoft Teams",
+			"nextcloud-talk":  "Nextcloud Talk",
+			"nostr":           "Nostr",
+			"qa-channel":      "QA Channel",
+			"synology-chat":   "Synology Chat",
+			"tlon":            "Tlon",
+			"twitch":          "Twitch",
+			"voice-call":      "Voice Call",
+			"whatsapp":        "WhatsApp",
+			"zalo":            "Zalo",
+			"zalouser":        "Zalo User",
 		}
 		label := channelNames[req.ChannelID]
 		if label == "" {
@@ -1428,23 +1906,156 @@ func isNativeOpenAI(baseURL string) bool {
 	return strings.Contains(strings.ToLower(baseURL), "api.openai.com")
 }
 
-
-// resolveActiveFeishuEntryID 返回当前启用的飞书插件 entry ID
-func resolveActiveFeishuEntryID(entries map[string]interface{}) string {
-	for _, id := range []string{"feishu-openclaw-plugin", "feishu"} {
+// resolveFeishuEntryID 从 candidates 中查找飞书插件 entry ID。
+// requireEnabled=true 时只返回 enabled 的；false 时先找 enabled 再找 present。
+// 未找到返回 ""。
+func resolveFeishuEntryID(entries map[string]interface{}, candidates []string, requireEnabled bool) string {
+	for _, id := range candidates {
 		if entry, ok := entries[id].(map[string]interface{}); ok {
 			if enabled, _ := entry["enabled"].(bool); enabled {
 				return id
 			}
 		}
 	}
-	// 没有 enabled 的，返回有 entry 的第一个
-	for _, id := range []string{"feishu-openclaw-plugin", "feishu"} {
+	if requireEnabled {
+		return ""
+	}
+	for _, id := range candidates {
 		if entries[id] != nil {
 			return id
 		}
 	}
-	return "feishu"
+	return ""
+}
+
+func cleanupLegacyFeishuPluginIDs(plugins map[string]interface{}) map[string]interface{} {
+	if plugins == nil {
+		plugins = map[string]interface{}{}
+	}
+	entries, _ := plugins["entries"].(map[string]interface{})
+	if entries != nil {
+		delete(entries, "feishu-openclaw-plugin")
+		plugins["entries"] = entries
+	}
+	allowList, _ := plugins["allow"].([]interface{})
+	plugins["allow"] = removeStringFromInterfaceSlice(allowList, "feishu-openclaw-plugin")
+	return plugins
+}
+
+func resolveFeishuPluginIDFromAllow(plugins map[string]interface{}, candidates []string) string {
+	allowList, _ := plugins["allow"].([]interface{})
+	for _, value := range allowList {
+		pluginID := strings.TrimSpace(fmt.Sprint(value))
+		if containsString(candidates, pluginID) {
+			return pluginID
+		}
+	}
+	return ""
+}
+
+func resolveFeishuPluginIDFromInstalls(plugins map[string]interface{}, candidates []string) string {
+	installs, _ := plugins["installs"].(map[string]interface{})
+	for _, id := range candidates {
+		if installs[id] != nil {
+			return id
+		}
+	}
+	return ""
+}
+
+// resolvePreferredOfficialFeishuID 确定官方版飞书插件 ID。
+// 优先级：entries 中已启用 → allow 列表 → entries 中已存在 → installs → 默认 canonical ID。
+func resolvePreferredOfficialFeishuID(plugins map[string]interface{}, entries map[string]interface{}) string {
+	if id := resolveFeishuEntryID(entries, feishuOfficialPluginIDs, true); id != "" {
+		return id
+	}
+	if allowID := resolveFeishuPluginIDFromAllow(plugins, feishuOfficialPluginIDs); allowID != "" {
+		return allowID
+	}
+	if id := resolveFeishuEntryID(entries, feishuOfficialPluginIDs, false); id != "" {
+		return id
+	}
+	if installedID := resolveFeishuPluginIDFromInstalls(plugins, feishuOfficialPluginIDs); installedID != "" {
+		return installedID
+	}
+	return canonicalFeishuOfficialPluginID
+}
+
+// resolveFeishuToggleEntryID 确定飞书渠道开关操作的目标 entry ID（官方版或社区版均可）。
+// 优先级：entries 中已启用 → allow 列表 → entries 中已存在 → 官方已安装 → 社区已安装 → 默认社区版。
+func resolveFeishuToggleEntryID(plugins map[string]interface{}, entries map[string]interface{}) string {
+	if id := resolveFeishuEntryID(entries, feishuAllPluginIDs, true); id != "" {
+		return id
+	}
+	if allowID := resolveFeishuPluginIDFromAllow(plugins, feishuAllPluginIDs); allowID != "" {
+		return allowID
+	}
+	if id := resolveFeishuEntryID(entries, feishuAllPluginIDs, false); id != "" {
+		return id
+	}
+	if installedID := resolveFeishuPluginIDFromInstalls(plugins, feishuOfficialPluginIDs); installedID != "" {
+		return installedID
+	}
+	if installedID := resolveFeishuPluginIDFromInstalls(plugins, []string{canonicalFeishuCommunityPluginID}); installedID != "" {
+		return installedID
+	}
+	return canonicalFeishuCommunityPluginID
+}
+
+func ensureStringSliceContains(values []interface{}, target string) []interface{} {
+	for _, value := range values {
+		if strings.TrimSpace(fmt.Sprint(value)) == target {
+			return values
+		}
+	}
+	return append(values, target)
+}
+
+func removeStringFromInterfaceSlice(values []interface{}, targets ...string) []interface{} {
+	if len(values) == 0 || len(targets) == 0 {
+		return values
+	}
+	result := make([]interface{}, 0, len(values))
+	for _, value := range values {
+		current := strings.TrimSpace(fmt.Sprint(value))
+		if current != "" && containsString(targets, current) {
+			continue
+		}
+		result = append(result, value)
+	}
+	return result
+}
+
+func ensureFeishuPluginSelection(plugins map[string]interface{}, enableID string, disableIDs []string) map[string]interface{} {
+	if plugins == nil {
+		plugins = map[string]interface{}{}
+	}
+	entries, _ := plugins["entries"].(map[string]interface{})
+	if entries == nil {
+		entries = map[string]interface{}{}
+	}
+	entry, _ := entries[enableID].(map[string]interface{})
+	if entry == nil {
+		entry = map[string]interface{}{}
+	}
+	entry["enabled"] = true
+	entries[enableID] = entry
+	for _, disableID := range disableIDs {
+		if disableID == enableID {
+			continue
+		}
+		if otherEntry, ok := entries[disableID].(map[string]interface{}); ok {
+			otherEntry["enabled"] = false
+			entries[disableID] = otherEntry
+		}
+	}
+	plugins["entries"] = entries
+
+	allowList, _ := plugins["allow"].([]interface{})
+	allowList = removeStringFromInterfaceSlice(allowList, disableIDs...)
+	allowList = ensureStringSliceContains(allowList, enableID)
+	plugins["allow"] = allowList
+	return plugins
 }
 
 // SwitchFeishuVariant 切换飞书插件版本（官方版 / ClawTeam 版）
@@ -1472,51 +2083,33 @@ func SwitchFeishuVariant(cfg *config.Config, procMgr *process.Manager, sysLog ..
 			entries = map[string]interface{}{}
 		}
 
-		// 互斥设置 enabled
-		// Lite 版只有内置插件目录 "feishu"，不存在 "feishu-openclaw-plugin"；
-		// Pro 版两种变体均可能存在，用不同的 entry key 区分。
-		var enableID, disableID string
+		// 飞书变体切换：官方版优先保留当前实际存在的官方 ID，社区版固定使用 feishu，并同步 plugins.allow
+		var enableID string
 		label := "ClawTeam 社区版"
-		if cfg.IsLiteEdition() {
-			// Lite 版两种变体都映射到同一个内置插件 "feishu"
-			enableID = "feishu"
-			disableID = ""
-			if req.Variant == "official" {
-				label = "飞书官方版"
-			}
+		if req.Variant == "official" {
+			enableID = resolvePreferredOfficialFeishuID(plugins, entries)
+			label = "飞书官方版"
 		} else {
-			// Pro 版：clawteam→"feishu"，official→"feishu-openclaw-plugin"
-			enableID = "feishu"
-			disableID = "feishu-openclaw-plugin"
-			if req.Variant == "official" {
-				enableID = "feishu-openclaw-plugin"
-				disableID = "feishu"
-				label = "飞书官方版"
+			enableID = canonicalFeishuCommunityPluginID
+		}
+		disableIDs := make([]string, 0, len(feishuAllPluginIDs)-1)
+		for _, pluginID := range feishuAllPluginIDs {
+			if pluginID == enableID {
+				continue
 			}
+			disableIDs = append(disableIDs, pluginID)
 		}
+		plugins = ensureFeishuPluginSelection(plugins, enableID, disableIDs)
+		entries, _ = plugins["entries"].(map[string]interface{})
 
-		enableEntry, _ := entries[enableID].(map[string]interface{})
-		if enableEntry == nil {
-			enableEntry = map[string]interface{}{}
-		}
-		enableEntry["enabled"] = true
-		entries[enableID] = enableEntry
-
-		if disableID != "" {
-			disableEntry, _ := entries[disableID].(map[string]interface{})
-			if disableEntry == nil {
-				disableEntry = map[string]interface{}{}
-			}
-			disableEntry["enabled"] = false
-			entries[disableID] = disableEntry
-		}
-
-		// 清理可能存在的 feishu-openclaw-plugin 脏 entry（Lite 版无此插件）
+		// Lite 版只有内置插件目录 feishu；同时统一清理旧官方 ID 脏配置
 		if cfg.IsLiteEdition() {
-			delete(entries, "feishu-openclaw-plugin")
+			for _, aliasID := range feishuOfficialPluginIDs {
+				delete(entries, aliasID)
+			}
+			plugins["entries"] = entries
 		}
-
-		plugins["entries"] = entries
+		plugins = cleanupLegacyFeishuPluginIDs(plugins)
 		ocConfig["plugins"] = plugins
 
 		if err := cfg.WriteOpenClawJSON(ocConfig); err != nil {
@@ -1532,6 +2125,127 @@ func SwitchFeishuVariant(cfg *config.Config, procMgr *process.Manager, sysLog ..
 		if procMgr != nil && procMgr.GetStatus().Running {
 			if err := procMgr.Restart(); err != nil {
 				resp["message"] = "飞书通道已切换为" + label + "，但自动重启网关失败，请手动重启 OpenClaw 网关后生效"
+				resp["restartWarning"] = err.Error()
+			} else {
+				resp["restarted"] = true
+			}
+		}
+		c.JSON(http.StatusOK, resp)
+	}
+}
+// resolveQQBotPluginID 根据当前插件配置，返回实际启用的 qqbot 插件 ID
+func resolveQQBotPluginID(entries map[string]interface{}) string {
+	for _, id := range qqBotAllPluginIDs {
+		if entry, ok := entries[id].(map[string]interface{}); ok {
+			if enabled, ok := entry["enabled"].(bool); ok && enabled {
+				return id
+			}
+		}
+	}
+	// 默认返回内置版
+	return "qqbot"
+}
+
+// ensureQQBotPluginSelection 确保 qqbot 插件选择正确，启用目标 ID，禁用其他
+func ensureQQBotPluginSelection(plugins map[string]interface{}, enableID string, disableIDs []string) map[string]interface{} {
+	entries, _ := plugins["entries"].(map[string]interface{})
+	if entries == nil {
+		entries = map[string]interface{}{}
+	}
+
+	// 启用目标插件
+	entry, _ := entries[enableID].(map[string]interface{})
+	if entry == nil {
+		entry = map[string]interface{}{}
+	}
+	entry["enabled"] = true
+	entries[enableID] = entry
+
+	// 禁用其他插件
+	for _, id := range disableIDs {
+		if entry, ok := entries[id].(map[string]interface{}); ok {
+			entry["enabled"] = false
+			entries[id] = entry
+		}
+	}
+
+	plugins["entries"] = entries
+	return plugins
+}
+
+// SwitchQQBotVariant 切换 QQ 机器人插件版本（内置版 / 社区版）
+func SwitchQQBotVariant(cfg *config.Config, procMgr *process.Manager, sysLog ...*eventlog.SystemLogger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			Variant string `json:"variant"` // "builtin" 或 "community"
+		}
+		if err := c.ShouldBindJSON(&req); err != nil || (req.Variant != "builtin" && req.Variant != "community") {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "variant must be 'builtin' or 'community'"})
+			return
+		}
+
+		ocConfig, _ := cfg.ReadOpenClawJSON()
+		if ocConfig == nil {
+			ocConfig = map[string]interface{}{}
+		}
+
+		plugins, _ := ocConfig["plugins"].(map[string]interface{})
+		if plugins == nil {
+			plugins = map[string]interface{}{}
+		}
+		entries, _ := plugins["entries"].(map[string]interface{})
+		if entries == nil {
+			entries = map[string]interface{}{}
+		}
+
+		var enableID string
+		label := ""
+		if req.Variant == "builtin" {
+			enableID = "qqbot"
+			label = "内置版"
+		} else {
+			enableID = "qqbot-community"
+			label = "社区版"
+		}
+
+		disableIDs := make([]string, 0, len(qqBotAllPluginIDs)-1)
+		for _, pluginID := range qqBotAllPluginIDs {
+			if pluginID == enableID {
+				continue
+			}
+			disableIDs = append(disableIDs, pluginID)
+		}
+
+		plugins = ensureQQBotPluginSelection(plugins, enableID, disableIDs)
+		entries, _ = plugins["entries"].(map[string]interface{})
+
+		// 更新 plugins.allow（如果存在）
+		if allowList, ok := plugins["allow"].([]interface{}); ok {
+			newAllow := make([]interface{}, 0)
+			for _, item := range allowList {
+				if s, ok := item.(string); ok && s != "qqbot" && s != "qqbot-community" {
+					newAllow = append(newAllow, item)
+				}
+			}
+			newAllow = append(newAllow, enableID)
+			plugins["allow"] = newAllow
+		}
+
+		ocConfig["plugins"] = plugins
+
+		if err := cfg.WriteOpenClawJSON(ocConfig); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+
+		if len(sysLog) > 0 && sysLog[0] != nil {
+			sysLog[0].Log("system", "channel.variant_switched", "QQ机器人通道切换为"+label)
+		}
+
+		resp := gin.H{"ok": true, "message": "QQ机器人通道已切换为" + label}
+		if procMgr != nil && procMgr.GetStatus().Running {
+			if err := procMgr.Restart(); err != nil {
+				resp["message"] = "QQ机器人通道已切换为" + label + "，但自动重启网关失败，请手动重启 OpenClaw 网关后生效"
 				resp["restartWarning"] = err.Error()
 			} else {
 				resp["restarted"] = true

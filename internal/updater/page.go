@@ -127,19 +127,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         </button>
       </div>
       <div id="source-section" class="source-box hidden">
-        <div class="warn-box">🌐 下载线路建议：<span>中国香港及境外服务器推荐 GitHub，中国大陆服务器推荐加速服务器，失败时会自动切换到另一条线路。</span></div>
+        <div class="warn-box">🌐 更新说明：<span>更新元数据和二进制会先同步到本机缓存目录，再从本机缓存执行替换，降低停服后网络抖动导致的失败概率。</span></div>
         <label class="source-option">
           <input type="radio" name="download-source" value="github">
           <div>
-            <div class="source-title">GitHub</div>
-            <div class="source-desc">中国香港及境外服务器推荐；直接从 GitHub Release 下载更新包。</div>
+            <div class="source-title">本机镜像</div>
+            <div class="source-desc">推荐；先通过代理同步 GitHub Release 到本机，再从本机缓存更新。</div>
           </div>
         </label>
         <label class="source-option">
           <input type="radio" name="download-source" value="accel">
           <div>
-            <div class="source-title">加速服务器</div>
-            <div class="source-desc">中国大陆服务器推荐；直接从香港加速服务器获取更新包。</div>
+            <div class="source-title">本机镜像</div>
+            <div class="source-desc">兼容保留项；当前同样走本机缓存，不再依赖外部加速服务器。</div>
           </div>
         </label>
       </div>
@@ -328,7 +328,7 @@ function confirmUpdate() {
     if (MODE === 'openclaw') t += '\\n\\n将执行 openclaw update 命令。';
   }
   if (MODE === 'clawpanel') {
-    t += '\\n\\n下载线路：' + (getSelectedSource() === 'github' ? 'GitHub' : '加速服务器');
+    t += '\\n\\n更新来源：本机更新镜像';
     if (EDITION === 'lite') t += '\\n本次将整包更新 Lite（面板 + 内置 OpenClaw + 预置插件），不会覆盖现有 data 目录。';
   }
   document.getElementById('confirm-text').textContent = t;

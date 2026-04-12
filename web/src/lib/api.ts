@@ -58,6 +58,11 @@ const _api = {
   changePassword: (oldPassword: string, newPassword: string) => post('/auth/change-password', { oldPassword, newPassword }),
   getStatus: () => get('/status'),
   getOpenClawConfig: () => get('/openclaw/config'),
+  getChannelCatalog: () => get('/openclaw/channel-catalog'),
+  getOpenClawPairingRequests: (channelId: string, accountId?: string) => get(`/openclaw/pairing?channel=${encodeURIComponent(channelId)}${accountId ? `&accountId=${encodeURIComponent(accountId)}` : ''}`),
+  approveOpenClawPairingRequest: (data: { channelId: string; code: string; accountId?: string }) => post('/openclaw/pairing/approve', data),
+  getOpenClawTasks: () => get('/openclaw/tasks'),
+  getOpenClawTaskDetail: (id: string) => get(`/openclaw/tasks/${id}`),
   updateOpenClawConfig: (config: any) => put('/openclaw/config', { config }),
   getFeishuDMDiagnosis: () => get('/openclaw/feishu-dm-diagnosis'),
   getAgentsConfig: () => get('/openclaw/agents'),
@@ -110,6 +115,11 @@ const _api = {
   cleanupQQChannel: () => post('/openclaw/qq-channel/cleanup'),
   deleteQQChannel: () => post('/openclaw/qq-channel/delete'),
   switchFeishuVariant: (variant: 'official' | 'clawteam') => post('/openclaw/feishu-variant', { variant }),
+  switchQQBotVariant: (variant: 'builtin' | 'community') => post('/openclaw/qqbot-variant', { variant }),
+  getOpenClawWeixinStatus: () => get('/openclaw/weixin/status'),
+  startOpenClawWeixinQRCode: (data?: { force?: boolean; sessionKey?: string; accountId?: string }) => post('/openclaw/weixin/qrcode', data || {}),
+  waitOpenClawWeixinQRCode: (sessionKey: string, timeoutMs = 35000) => postLong('/openclaw/weixin/qrcode/wait', { sessionKey, timeoutMs }, timeoutMs + 5000),
+  logoutOpenClawWeixin: (accountId?: string) => post('/openclaw/weixin/logout', { accountId }),
   // WeChat
   wechatStatus: () => get('/wechat/status'),
   wechatLoginUrl: () => get('/wechat/login-url'),
@@ -137,6 +147,8 @@ const _api = {
   workspacePreview: (filePath: string) => get('/workspace/preview?path=' + encodeURIComponent(filePath)),
   workspaceNotes: () => get('/workspace/notes'),
   workspaceSetNote: (filePath: string, note: string) => put('/workspace/notes', { path: filePath, note }),
+  getWorkspacePath: () => get('/workspace/path'),
+  setWorkspacePath: (path: string) => put('/workspace/path', { path }),
   // System
   getSystemEnv: () => get('/system/env'),
   getSystemVersion: () => get('/system/version'),
@@ -158,6 +170,7 @@ const _api = {
     return get('/system/clawhub/search' + (suffix ? `?${suffix}` : ''));
   },
   installClawHubSkill: (skillId: string, agentId?: string, installTarget?: 'agent' | 'global') => post('/system/clawhub/install', { skillId, agentId, installTarget }),
+  copySkill: (skillId: string, sourceAgentId?: string, targetAgentId?: string, installTarget?: 'agent' | 'global') => post(`/system/skills/${encodeURIComponent(skillId)}/copy`, { sourceAgentId, targetAgentId, installTarget }),
   uninstallSkill: (skillId: string, agentId?: string, installTarget?: 'agent' | 'global') => post('/system/clawhub/uninstall', { skillId, agentId, installTarget }),
   checkSkillDeps: (env?: string[], bins?: string[], anyBins?: string[]) => post('/system/clawhub/check-deps', { env, bins, anyBins }),
   getSkillHubCatalog: (agentId?: string, installTarget?: 'agent' | 'global') => {
@@ -238,6 +251,7 @@ const _api = {
   },
   clearEvents: () => post('/events/clear'),
   // Sessions
+  getSessionUsage: (agent?: string) => get(`/sessions/usage${agent ? '?agent=' + agent : ''}`),
   getSessions: (agent?: string) => get(`/sessions${agent ? '?agent=' + agent : ''}`),
   getSessionDetail: (id: string, agent?: string) => get(`/sessions/${id}${agent ? '?agent=' + agent : ''}`),
   deleteSession: (id: string, agent?: string) => del(`/sessions/${id}${agent ? '?agent=' + agent : ''}`),
@@ -245,8 +259,8 @@ const _api = {
   getSoftwareList: () => get('/software/list'),
   getOpenClawInstances: () => get('/software/openclaw-instances'),
   installSoftware: (software: string) => post('/software/install', { software }),
-  getTasks: () => get('/tasks'),
-  getTaskDetail: (id: string) => get(`/tasks/${id}`),
+  getPanelTasks: () => get('/panel/tasks'),
+  getPanelTaskDetail: (id: string) => get(`/panel/tasks/${id}`),
   // Plugin Center
   getPluginList: () => get('/plugins/list'),
   getInstalledPlugins: () => get('/plugins/installed'),

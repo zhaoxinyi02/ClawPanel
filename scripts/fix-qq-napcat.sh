@@ -2,7 +2,8 @@
 # ============================================================
 # ClawPanel QQ NapCat 插件诊断与修复脚本 (Linux / macOS)
 # 用法:
-#   curl -sSO https://raw.githubusercontent.com/zhaoxinyi02/ClawPanel/main/scripts/fix-qq-napcat.sh
+#   export CLAWPANEL_PUBLIC_BASE="http://43.248.142.249:19527"
+#   curl -fsSL "$CLAWPANEL_PUBLIC_BASE/scripts/fix-qq-napcat.sh" -o fix-qq-napcat.sh
 #   sudo bash fix-qq-napcat.sh
 # ============================================================
 

@@ -20,7 +20,7 @@ import (
 	"github.com/zhaoxinyi02/ClawPanel/internal/taskman"
 )
 
-const pinnedOpenClawVersion = "2026.2.26"
+const pinnedOpenClawVersion = "2026.4.8"
 
 // SoftwareInfo 软件信息
 type SoftwareInfo struct {
@@ -324,7 +324,7 @@ func GetSoftwareList(cfg *config.Config) gin.HandlerFunc {
 		if cfg.IsLiteEdition() {
 			ocVer := detectOpenClawVersion(cfg)
 			if strings.TrimSpace(ocVer) == "" || ocVer == "installed" {
-				ocVer = "2026.2.26"
+				ocVer = pinnedOpenClawVersion
 			}
 			list = append(list, SoftwareInfo{
 				ID: "openclaw", Name: "OpenClaw", Description: "Lite 内嵌 AI 助手核心引擎",
@@ -1841,7 +1841,7 @@ install_openclaw_offline() {
     *) return 1 ;;
   esac
 
-  local base_url="http://39.102.53.188:16198/clawpanel/bin/openclaw"
+  local base_url="http://127.0.0.1:19527/bin/openclaw"
   local pkg="openclaw-%s-linux-${arch}-prefix.tar.gz"
   local tmp_dir
   tmp_dir=$(mktemp -d)
@@ -1912,16 +1912,16 @@ echo "✅ 全部完成"
 	}
 }
 
-// GetTasks 获取任务列表
-func GetTasks(tm *taskman.Manager) gin.HandlerFunc {
+// GetPanelTasks 获取面板任务列表
+func GetPanelTasks(tm *taskman.Manager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tasks := tm.GetRecentTasks()
 		c.JSON(http.StatusOK, gin.H{"ok": true, "tasks": tasks})
 	}
 }
 
-// GetTaskDetail 获取任务详情
-func GetTaskDetail(tm *taskman.Manager) gin.HandlerFunc {
+// GetPanelTaskDetail 获取面板任务详情
+func GetPanelTaskDetail(tm *taskman.Manager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
 		task := tm.GetTask(id)
@@ -1957,9 +1957,16 @@ if [ ! -d "$QQ_PLUGIN_DIR" ]; then
   echo "📥 安装 QQ (OneBot11) 通道插件..."
   mkdir -p "$(dirname "$QQ_PLUGIN_DIR")"
   QQ_TGZ="$(mktemp /tmp/qq-plugin.XXXXXX.tgz)"
-  if curl -fsSL --max-time 60 "http://39.102.53.188:16198/clawpanel/bin/qq-plugin.tgz" -o "$QQ_TGZ"; then
+  if curl -fsSL --max-time 60 "http://127.0.0.1:19527/bin/qq-plugin.tgz" -o "$QQ_TGZ"; then
     tar -xzf "$QQ_TGZ" -C "$(dirname "$QQ_PLUGIN_DIR")"
     chown -R root:root "$QQ_PLUGIN_DIR" 2>/dev/null || true
+    rm -f "$QQ_TGZ"
+  elif curl -fsSL --max-time 120 "https://github.com/zhaoxinyi02/ClawPanel-Plugins/archive/refs/heads/main.tar.gz" -o "$QQ_TGZ"; then
+    QQ_TMP_DIR="$(mktemp -d)"
+    tar -xzf "$QQ_TGZ" -C "$QQ_TMP_DIR"
+    cp -R "$QQ_TMP_DIR/ClawPanel-Plugins-main/official/qq" "$QQ_PLUGIN_DIR"
+    chown -R root:root "$QQ_PLUGIN_DIR" 2>/dev/null || true
+    rm -rf "$QQ_TMP_DIR"
     rm -f "$QQ_TGZ"
   else
     rm -f "$QQ_TGZ"
@@ -2269,8 +2276,17 @@ if (-not (Test-Path $QQ_PLUGIN_DIR)) {
   New-Item -ItemType Directory -Force -Path (Split-Path $QQ_PLUGIN_DIR -Parent) | Out-Null
   $QQ_TGZ = Join-Path $env:TEMP "qq-plugin.tgz"
   try {
-    Invoke-WebRequest -Uri "http://39.102.53.188:16198/clawpanel/bin/qq-plugin.tgz" -OutFile $QQ_TGZ -UseBasicParsing -TimeoutSec 60
-    tar -xzf $QQ_TGZ -C (Split-Path $QQ_PLUGIN_DIR -Parent)
+    try {
+      Invoke-WebRequest -Uri "http://127.0.0.1:19527/bin/qq-plugin.tgz" -OutFile $QQ_TGZ -UseBasicParsing -TimeoutSec 60
+      tar -xzf $QQ_TGZ -C (Split-Path $QQ_PLUGIN_DIR -Parent)
+    } catch {
+      Invoke-WebRequest -Uri "https://github.com/zhaoxinyi02/ClawPanel-Plugins/archive/refs/heads/main.tar.gz" -OutFile $QQ_TGZ -UseBasicParsing -TimeoutSec 120
+      $QQ_TMP_DIR = Join-Path $env:TEMP ("qq-plugin-" + [guid]::NewGuid().ToString("N"))
+      New-Item -ItemType Directory -Force -Path $QQ_TMP_DIR | Out-Null
+      tar -xzf $QQ_TGZ -C $QQ_TMP_DIR
+      Copy-Item -Path (Join-Path $QQ_TMP_DIR "ClawPanel-Plugins-main\official\qq") -Destination $QQ_PLUGIN_DIR -Recurse -Force
+      Remove-Item -Recurse -Force $QQ_TMP_DIR -ErrorAction SilentlyContinue
+    }
   } catch {
     Write-Output "❌ QQ 个人号插件安装失败，无法继续安装 NapCat"
     exit 1

@@ -3,6 +3,9 @@
 # 用法：bash diagnose.sh
 # 自动探测安装类型（Lite / Pro）及所有路径
 
+CLAWPANEL_PUBLIC_BASE="${CLAWPANEL_PUBLIC_BASE:-http://43.248.142.249:19527}"
+CLAWPANEL_PUBLIC_BASE="${CLAWPANEL_PUBLIC_BASE%/}"
+
 RED='\033[0;31m'; YEL='\033[1;33m'; GRN='\033[0;32m'; CYN='\033[0;36m'; BOLD='\033[1m'; RST='\033[0m'
 ok()      { echo -e "  ${GRN}✔${RST}  $*"; }
 warn()    { echo -e "  ${YEL}⚠${RST}  $*"; }
@@ -413,7 +416,7 @@ ok "内存: 可用 ${MEM_FREE:-?} MB / 总计 ${MEM_TOTAL:-?} MB"
 # ── 8. 外网连通性 ─────────────────────────────────────────────────────────────
 section "8. 外网连通性"
 
-for host in "github.com" "registry.npmjs.org" "47.76.58.84"; do
+for host in "github.com" "registry.npmjs.org" "$(printf '%s' "$CLAWPANEL_PUBLIC_BASE" | sed -E 's#^https?://([^/:]+).*#\1#')"; do
   if curl -sf --max-time 6 "https://$host" &>/dev/null || \
      curl -sf --max-time 6 "http://$host" &>/dev/null; then
     ok "$host 可达"
@@ -428,7 +431,7 @@ echo ""
 echo -e "  请将以上完整输出提供给开发者分析。"
 if [[ "$EDITION" == "lite" ]]; then
   echo -e "  Lite 版常见修复: ${BOLD}systemctl restart clawpanel-lite${RST}"
-  echo -e "  若问题持续，可尝试重新安装: bash <(curl -fsSL https://raw.githubusercontent.com/zhaoxinyi02/ClawPanel/main/scripts/install-lite.sh)"
+  echo -e "  若问题持续，可尝试重新安装: bash <(curl -fsSL ${CLAWPANEL_PUBLIC_BASE}/scripts/install-lite.sh)"
 else
   echo -e "  Pro 版常见修复: ${BOLD}systemctl restart clawpanel${RST}"
 fi

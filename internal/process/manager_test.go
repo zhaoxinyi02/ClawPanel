@@ -92,6 +92,22 @@ func TestLooksLikeOpenClawGatewayResponseRecognizesHealthJSON(t *testing.T) {
 	}
 }
 
+func TestLooksLikeOpenClawGatewayResponseRecognizesPlainTextHealth(t *testing.T) {
+	headers := http.Header{"Content-Type": []string{"text/plain; charset=utf-8"}}
+	body := []byte("OK")
+	if !looksLikeOpenClawGatewayResponse("/health", 200, headers, body) {
+		t.Fatalf("expected plain text health response to be recognized as OpenClaw gateway")
+	}
+}
+
+func TestLooksLikeOpenClawGatewayResponseRecognizesGatewayTextPage(t *testing.T) {
+	headers := http.Header{"Content-Type": []string{"text/html"}}
+	body := []byte("OpenClaw Gateway is running")
+	if !looksLikeOpenClawGatewayResponse("/", 200, headers, body) {
+		t.Fatalf("expected gateway text page to be recognized as OpenClaw gateway")
+	}
+}
+
 func TestGetStatusReportsExternallyManagedGateway(t *testing.T) {
 
 	openclawDir := newOpenClawDir(t)
@@ -256,6 +272,15 @@ func TestGetGatewayPortCheckTargetsUsesRuntimeFallbackWhenLoopbackUnavailable(t 
 	want := collectGatewayCandidateTargets()
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("expected port-check targets to follow runtime fallback when loopback is unavailable, got %#v", got)
+	}
+}
+
+func TestGatewayPortIntWithNilConfigFallsBackToDefaultPort(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewManager(nil)
+	if got := mgr.GatewayPortInt(); got != 18789 {
+		t.Fatalf("expected GatewayPortInt to return default 18789 when manager config is nil, got %d", got)
 	}
 }
 

@@ -1,0 +1,56 @@
+name: 功能建议
+description: 提交产品功能、交互优化、部署体验或生态建设建议
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        欢迎提出功能建议。请尽量说明场景、目标用户和预期收益。
+  - type: input
+    id: summary
+    attributes:
+      label: 一句话描述
+      placeholder: 例如：为外部 OpenClaw 托管模式增加更明确的状态诊断
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: 当前痛点
+      placeholder: 你遇到了什么问题？现有方案哪里不方便？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+      placeholder: 你希望 ClawPanel 具体如何改进？
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案或补充说明
+      placeholder: 有没有临时方案、竞品做法或其他实现思路？
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响模块
+      options:
+        - 前端界面
+        - 后端 API
+        - 插件中心
+        - 通道接入
+        - OpenClaw 托管 / 外部运行时
+        - 安装 / 更新脚本
+        - 文档 / 社区建设
+        - 其他
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已检查现有 Issues / Discussions，确认没有明显重复
+          required: true

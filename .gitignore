@@ -45,6 +45,7 @@ ClawPanel_logo/
 
 # Local agent/tooling notes (keep local only)
 local/
+local-binaries/
 CLAUDE.md
 Claude.md
 

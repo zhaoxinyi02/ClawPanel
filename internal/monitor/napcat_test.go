@@ -128,3 +128,32 @@ func TestFindNapCatInnerDirAndReadTokenFromLogs(t *testing.T) {
 		t.Fatalf("readTokenFromNapCatLogs() = %q, want live-token", got)
 	}
 }
+
+func TestNapCatBoolAcceptsStringAndNumber(t *testing.T) {
+	cases := []struct {
+		name  string
+		input interface{}
+		want  bool
+	}{
+		{name: "bool true", input: true, want: true},
+		{name: "string true", input: "true", want: true},
+		{name: "string one", input: "1", want: true},
+		{name: "string online", input: "online", want: true},
+		{name: "number one", input: float64(1), want: true},
+		{name: "zero", input: 0, want: false},
+	}
+	for _, tc := range cases {
+		if got := napCatBool(tc.input); got != tc.want {
+			t.Fatalf("%s: napCatBool(%v) = %v, want %v", tc.name, tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestNapCatStringNormalizesNumericIDs(t *testing.T) {
+	if got := napCatString(float64(123456)); got != "123456" {
+		t.Fatalf("napCatString(float64) = %q, want 123456", got)
+	}
+	if got := napCatString("  abc  "); got != "abc" {
+		t.Fatalf("napCatString(string) = %q, want abc", got)
+	}
+}

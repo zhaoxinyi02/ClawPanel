@@ -21,9 +21,70 @@ const (
 	// RegistryURL is the official plugin registry
 	RegistryURL = "https://raw.githubusercontent.com/zhaoxinyi02/ClawPanel-Plugins/main/registry.json"
 	// RegistryMirrorURL is the China mirror
-	RegistryMirrorURL = "http://47.76.58.84:16198/clawpanel/plugins/registry.json"
+	RegistryMirrorURL = "http://127.0.0.1:19527/plugins/registry.json"
 	// RegistryFallbackURLCN is the Gitee fallback when GitHub is unreachable in CN networks
 	RegistryFallbackURLCN = "https://gitee.com/zhaoxinyi02/ClawPanel-Plugins/raw/main/registry.json"
+)
+
+var officialFeishuPluginIDs = []string{"openclaw-lark"}
+
+var preferredPluginPackageSpecs = map[string]string{
+	"dingtalk":        "@largezhou/ddingtalk@latest",
+	"wecom":           "@wecom/wecom-openclaw-plugin@latest",
+	"wecom-app":       "@openclaw-china/wecom-app@latest",
+	"openclaw-weixin": "@tencent-weixin/openclaw-weixin@latest",
+}
+
+var builtInOfficialChannelPlugins = map[string]RegistryPlugin{
+	"dingtalk": {
+		PluginMeta: PluginMeta{
+			ID:          "dingtalk",
+			Name:        "钉钉通道插件",
+			Version:     "latest",
+			Author:      "BytePioneer-AI",
+			Description: "钉钉 (DingTalk) 通道插件",
+			Category:    "channel",
+		},
+		NpmPackage: "@largezhou/ddingtalk",
+	},
+	"wecom": {
+		PluginMeta: PluginMeta{
+			ID:          "wecom",
+			Name:        "企业微信（智能机器人）",
+			Version:     "latest",
+			Author:      "BytePioneer-AI",
+			Description: "企业微信 (WeCom) 智能机器人通道插件",
+			Category:    "channel",
+		},
+		NpmPackage: "@wecom/wecom-openclaw-plugin",
+	},
+	"wecom-app": {
+		PluginMeta: PluginMeta{
+			ID:          "wecom-app",
+			Name:        "企业微信（自建应用）",
+			Version:     "latest",
+			Author:      "BytePioneer-AI",
+			Description: "企业微信自建应用通道插件",
+			Category:    "channel",
+		},
+		NpmPackage: "@openclaw-china/wecom-app",
+	},
+	"openclaw-weixin": {
+		PluginMeta: PluginMeta{
+			ID:          "openclaw-weixin",
+			Name:        "微信（ClawBot）",
+			Version:     "latest",
+			Author:      "Tencent",
+			Description: "腾讯官方 WeChat ClawBot 通道插件",
+			Category:    "channel",
+		},
+		NpmPackage: "@tencent-weixin/openclaw-weixin",
+	},
+}
+
+var (
+	gitLookPath    = exec.LookPath
+	gitCloneRunner = runGitClone
 )
 
 // PluginMeta represents a plugin's metadata (plugin.json)
@@ -256,6 +317,12 @@ func resolvePluginInstallStrategy(regPlugin *RegistryPlugin, source string) plug
 	if regPlugin == nil {
 		return pluginInstallStrategy{}
 	}
+	if preferred := preferredPluginPackageSpec(regPlugin); preferred != "" {
+		return pluginInstallStrategy{kind: "npm", target: preferred}
+	}
+	if preferred := preferredPluginDownloadURL(regPlugin); preferred != "" {
+		return pluginInstallStrategy{kind: "download", target: preferred}
+	}
 	if regPlugin.NpmPackage != "" {
 		return pluginInstallStrategy{kind: "npm", target: regPlugin.NpmPackage}
 	}
@@ -268,6 +335,67 @@ func resolvePluginInstallStrategy(regPlugin *RegistryPlugin, source string) plug
 	return pluginInstallStrategy{}
 }
 
+func preferredPluginPackageSpec(regPlugin *RegistryPlugin) string {
+	if regPlugin == nil {
+		return ""
+	}
+	return preferredPluginPackageSpecs[regPlugin.ID]
+}
+
+func preferredPluginDownloadURL(regPlugin *RegistryPlugin) string {
+	if regPlugin == nil {
+		return ""
+	}
+	switch regPlugin.ID {
+	case "qqbot":
+		return "https://raw.githubusercontent.com/zhaoxinyi02/ClawPanel-Plugins/main/official/qqbot/qqbot-1.2.2.tgz"
+	default:
+		return ""
+	}
+}
+
+var bundledOfficialChannelIDs = []string{
+	"bluebubbles",
+	"discord",
+	"feishu",
+	"googlechat",
+	"imessage",
+	"irc",
+	"line",
+	"matrix",
+	"mattermost",
+	"msteams",
+	"nextcloud-talk",
+	"nostr",
+	"qa-channel",
+	"qqbot",
+	"signal",
+	"slack",
+	"synology-chat",
+	"telegram",
+	"tlon",
+	"twitch",
+	"whatsapp",
+	"zalo",
+	"qq",
+	"dingtalk",
+	"wecom",
+	"wecom-app",
+	"openclaw-weixin",
+}
+
+func builtInOfficialChannelPlugin(pluginID string) *RegistryPlugin {
+	plugin, ok := builtInOfficialChannelPlugins[pluginID]
+	if !ok {
+		return nil
+	}
+	cp := plugin
+	if preferred := preferredPluginPackageSpec(&cp); preferred != "" {
+		cp.NpmPackage = normalizeNpmPackageName(preferred)
+	}
+	return &cp
+}
+
 // Install installs a plugin from registry or URL
 func (m *Manager) Install(pluginID string, source string) error {
 	return m.InstallWithProgress(pluginID, source, nil)
@@ -277,6 +405,14 @@ func (m *Manager) InstallWithProgress(pluginID string, source string, logf func(
 	// Find plugin in registry
 	reg := m.GetRegistry()
 	var regPlugin *RegistryPlugin
+	if strings.TrimSpace(source) == "" {
+		if fallback := builtInOfficialChannelPlugin(pluginID); fallback != nil {
+			regPlugin = fallback
+			if logf != nil {
+				logf(fmt.Sprintf("📦 %s 使用内置官方安装信息，直接按官方包安装", pluginID))
+			}
+		}
+	}
 	for i := range reg.Plugins {
 		if reg.Plugins[i].ID == pluginID {
 			regPlugin = &reg.Plugins[i]
@@ -301,21 +437,31 @@ func (m *Manager) InstallWithProgress(pluginID string, source string, logf func(
 		}
 	}
 
+	if regPlugin == nil {
+		if fallback := builtInOfficialChannelPlugin(pluginID); fallback != nil {
+			regPlugin = fallback
+			if logf != nil {
+				logf(fmt.Sprintf("📦 在线仓库未命中 %s，使用内置官方插件安装信息直接安装", pluginID))
+			}
+		}
+	}
+
 	if regPlugin == nil && source == "" {
 		return fmt.Errorf("插件 %s 不在仓库中，请提供安装源", pluginID)
 	}
 
 	strategy := resolvePluginInstallStrategy(regPlugin, source)
 	if strategy.kind == "npm" {
-		npmPkg := strategy.target
+		npmSpec := strategy.target
+		npmPkg := normalizeNpmPackageName(npmSpec)
 		if logf != nil {
-			logf(fmt.Sprintf("📦 优先尝试 OpenClaw 官方命令安装插件: %s", npmPkg))
+			logf(fmt.Sprintf("📦 优先尝试 OpenClaw 官方命令安装插件: %s", npmSpec))
 		}
-		if err := m.installViaOpenClawCLI(npmPkg, logf); err != nil {
+		if err := m.installViaOpenClawCLI(npmSpec, logf); err != nil {
 			if logf != nil {
 				logf(fmt.Sprintf("⚠️ 官方命令安装失败，回退到面板安装逻辑: %v", err))
 			}
-			if err := m.installFromNpm(npmPkg); err != nil {
+			if err := m.installFromNpm(npmSpec); err != nil {
 				return fmt.Errorf("官方命令安装失败，且 npm 回退安装失败: %v", err)
 			}
 		}
@@ -414,7 +560,7 @@ func (m *Manager) InstallWithProgress(pluginID string, source string, logf func(
 				return fmt.Errorf("Git 安装失败: %v", err)
 			}
 		}
-	} else if strings.HasSuffix(downloadURL, ".zip") || strings.HasSuffix(downloadURL, ".tar.gz") {
+	} else if strings.HasSuffix(downloadURL, ".zip") || strings.HasSuffix(downloadURL, ".tar.gz") || strings.HasSuffix(downloadURL, ".tgz") {
 		// Download archive
 		if err := m.installFromArchive(downloadURL, pluginDir); err != nil {
 			os.RemoveAll(pluginDir)
@@ -484,19 +630,38 @@ func (m *Manager) findInstalledPluginDir(pluginID string) (string, bool) {
 }
 
 func (m *Manager) installViaOpenClawCLI(spec string, logf func(string)) error {
-	var cmd *exec.Cmd
-	var err error
-	if m.cfg != nil && m.cfg.IsLiteEdition() {
-		cmd, err = m.cfg.OpenClawCommand("plugins", "install", spec)
-		if err != nil {
-			return err
+	if err := m.runOpenClawPluginInstall(spec, logf); err == nil {
+		return nil
+	} else if shouldFallbackToPackedTarball(spec, err) {
+		if logf != nil {
+			logf("⚠️ 官方源安装触发限流，尝试先从 npm 打包到本地 tarball 再交给 OpenClaw 安装...")
 		}
+		if packErr := m.installPackedTarballViaOpenClawCLI(spec, logf); packErr == nil {
+			return nil
+		} else if logf != nil {
+			logf(fmt.Sprintf("⚠️ 本地 tarball 安装失败，继续回退 npm 全局安装: %v", packErr))
+		}
+		return err
 	} else {
-		bin := config.DetectOpenClawBinaryPath()
-		if strings.TrimSpace(bin) == "" {
-			return fmt.Errorf("未找到 openclaw 可执行文件")
-		}
-		cmd = exec.Command(bin, "plugins", "install", spec)
+		return err
+	}
+}
+
+func (m *Manager) openClawPluginInstallCommand(target string) (*exec.Cmd, error) {
+	if m.cfg != nil && m.cfg.IsLiteEdition() {
+		return m.cfg.OpenClawCommand("plugins", "install", target)
+	}
+	bin := config.DetectOpenClawBinaryPath()
+	if strings.TrimSpace(bin) == "" {
+		return nil, fmt.Errorf("未找到 openclaw 可执行文件")
+	}
+	return exec.Command(bin, "plugins", "install", target), nil
+}
+
+func (m *Manager) runOpenClawPluginInstall(target string, logf func(string)) error {
+	cmd, err := m.openClawPluginInstallCommand(target)
+	if err != nil {
+		return err
 	}
 	cmd.Env = config.BuildExecEnv()
 	stdout, err := cmd.StdoutPipe()
@@ -520,6 +685,69 @@ func (m *Manager) installViaOpenClawCLI(spec string, logf func(string)) error {
 		return err
 	}
 	return nil
+}
+
+func shouldFallbackToPackedTarball(spec string, err error) bool {
+	if err == nil {
+		return false
+	}
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	if !strings.Contains(lower, "rate limit exceeded") && !strings.Contains(lower, "clawhub") {
+		return false
+	}
+	return strings.HasPrefix(spec, "@") || (!strings.Contains(spec, "/") && !strings.HasSuffix(spec, ".tgz") && !strings.HasSuffix(spec, ".tar.gz"))
+}
+
+func (m *Manager) installPackedTarballViaOpenClawCLI(spec string, logf func(string)) error {
+	tmpDir, err := os.MkdirTemp("", "clawpanel-plugin-pack-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	packArgs := []string{"pack", spec, "--silent", "--pack-destination", tmpDir, "--registry=https://registry.npmmirror.com"}
+	packCmd := exec.Command("npm", packArgs...)
+	packCmd.Env = config.BuildExecEnv()
+	packCmd.Dir = tmpDir
+	packOut, packErr := packCmd.CombinedOutput()
+	if packErr != nil {
+		fallbackArgs := []string{"pack", spec, "--silent", "--pack-destination", tmpDir}
+		fallbackCmd := exec.Command("npm", fallbackArgs...)
+		fallbackCmd.Env = config.BuildExecEnv()
+		fallbackCmd.Dir = tmpDir
+		packOut, packErr = fallbackCmd.CombinedOutput()
+		if packErr != nil {
+			return fmt.Errorf("npm pack 失败: %v: %s", packErr, strings.TrimSpace(string(packOut)))
+		}
+	}
+	packedName := strings.TrimSpace(string(packOut))
+	if idx := strings.LastIndex(packedName, "\n"); idx >= 0 {
+		packedName = strings.TrimSpace(packedName[idx+1:])
+	}
+	if packedName == "" {
+		entries, readErr := os.ReadDir(tmpDir)
+		if readErr != nil {
+			return fmt.Errorf("npm pack 未返回输出且无法读取产物: %v", readErr)
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() && (strings.HasSuffix(entry.Name(), ".tgz") || strings.HasSuffix(entry.Name(), ".tar.gz")) {
+				packedName = entry.Name()
+				break
+			}
+		}
+	}
+	if packedName == "" {
+		return fmt.Errorf("npm pack 未生成可识别的 tarball")
+	}
+	target := filepath.Join(tmpDir, packedName)
+	if logf != nil {
+		logf("📦 已获取本地插件包: " + filepath.Base(target))
+	}
+	return m.runOpenClawPluginInstall(target, logf)
 }
 
 // InstallLocal installs a plugin from a local directory
@@ -807,6 +1035,35 @@ func (m *Manager) scanInstalledPlugins() {
 	if m.cfg.IsLiteEdition() {
 		m.scanLiteRuntimePlugins()
 	}
+	m.pruneMissingPlugins()
+}
+
+func (m *Manager) pruneMissingPlugins() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	changed := false
+	for id, plugin := range m.plugins {
+		if plugin == nil {
+			delete(m.plugins, id)
+			changed = true
+			continue
+		}
+		dir := strings.TrimSpace(plugin.Dir)
+		if dir == "" {
+			delete(m.plugins, id)
+			changed = true
+			continue
+		}
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			delete(m.plugins, id)
+			changed = true
+		}
+	}
+
+	if changed {
+		m.savePluginsStateUnlocked()
+	}
 }
 
 func (m *Manager) scanLiteRuntimePlugins() {
@@ -825,7 +1082,7 @@ func (m *Manager) scanLiteRuntimePlugins() {
 			entries = currentEntries
 		}
 	}
-	for _, pluginID := range []string{"telegram", "feishu", "qq", "qqbot", "dingtalk", "wecom", "wecom-app"} {
+	for _, pluginID := range bundledOfficialChannelIDs {
 		pluginDir := filepath.Join(appDir, "extensions", pluginID)
 		meta, err := m.readPluginMeta(pluginDir)
 		if err != nil {
@@ -1265,42 +1522,18 @@ func cleanupChannelConfigForPlugin(ocConfig map[string]interface{}, pluginID str
 	if channels == nil {
 		return
 	}
-	pluginEntries, _ := ocConfig["plugins"].(map[string]interface{})
-	entries, _ := pluginEntries["entries"].(map[string]interface{})
-	installs, _ := pluginEntries["installs"].(map[string]interface{})
-	stillInstalled := func(id string) bool {
-		if entries != nil {
-			if _, ok := entries[id]; ok {
-				return true
-			}
-		}
-		if installs != nil {
-			if _, ok := installs[id]; ok {
-				return true
-			}
-		}
-		return false
-	}
 	switch pluginID {
-	case "feishu-openclaw-plugin":
-		if !stillInstalled("feishu") {
-			delete(channels, "feishu")
-		}
-	case "feishu":
-		if !stillInstalled("feishu-openclaw-plugin") {
-			delete(channels, "feishu")
-		}
-	case "wecom", "wecom-app", "dingtalk", "qqbot", "discord", "mattermost", "line", "matrix", "twitch", "msteams":
+	case "wecom", "wecom-app", "dingtalk", "openclaw-weixin":
 		delete(channels, pluginID)
 	}
 }
 
-func (m *Manager) installFromNpm(pkgName string) error {
-	cmd := exec.Command("npm", "install", "-g", pkgName+"@latest", "--registry=https://registry.npmmirror.com")
+func (m *Manager) installFromNpm(pkgSpec string) error {
+	cmd := exec.Command("npm", "install", "-g", pkgSpec, "--registry=https://registry.npmmirror.com")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		// Retry without mirror
-		cmd2 := exec.Command("npm", "install", "-g", pkgName+"@latest")
+		cmd2 := exec.Command("npm", "install", "-g", pkgSpec)
 		out2, err2 := cmd2.CombinedOutput()
 		if err2 != nil {
 			return fmt.Errorf("%s\n%s", string(out), string(out2))
@@ -1310,54 +1543,230 @@ func (m *Manager) installFromNpm(pkgName string) error {
 }
 
 func (m *Manager) installFromGit(gitURL, dest string) error {
-	cmd := exec.Command("git", "clone", "--depth=1", gitURL, dest)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s: %s", err, string(out))
+	for _, archiveURL := range repoArchiveURLs(gitURL) {
+		if err := m.installFromArchive(archiveURL, dest); err == nil {
+			return nil
+		}
+		_ = os.RemoveAll(dest)
 	}
-	return nil
+
+	if _, err := gitLookPath("git"); err != nil {
+		return fmt.Errorf("未检测到 Git，请先安装 Git 后再重试")
+	}
+
+	var lastErr error
+	var lastOut []byte
+	for attempt := 1; attempt <= 3; attempt++ {
+		out, err := gitCloneRunner(gitURL, dest)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		lastOut = out
+		if attempt == 3 || !isTransientGitCloneError(string(out)) {
+			break
+		}
+		_ = os.RemoveAll(dest)
+		time.Sleep(time.Duration(attempt) * time.Second)
+	}
+
+	msg := strings.TrimSpace(string(lastOut))
+	if msg == "" {
+		msg = strings.TrimSpace(lastErr.Error())
+	}
+	if isTransientGitCloneError(msg) {
+		return fmt.Errorf("网络异常，Git 拉取失败（已自动重试）: %s: %s", lastErr, msg)
+	}
+	return fmt.Errorf("%s: %s", lastErr, msg)
+}
+
+func repoArchiveURLs(repoURL string) []string {
+	trimmed := strings.TrimSpace(strings.TrimSuffix(repoURL, ".git"))
+	switch {
+	case strings.HasPrefix(trimmed, "https://github.com/"):
+		repoPath := strings.TrimPrefix(trimmed, "https://github.com/")
+		return []string{
+			"https://codeload.github.com/" + repoPath + "/zip/refs/heads/main",
+			"https://codeload.github.com/" + repoPath + "/zip/refs/heads/master",
+		}
+	case strings.HasPrefix(trimmed, "https://gitee.com/"):
+		repoPath := strings.TrimPrefix(trimmed, "https://gitee.com/")
+		return []string{
+			"https://gitee.com/" + repoPath + "/repository/archive/main.zip",
+			"https://gitee.com/" + repoPath + "/repository/archive/master.zip",
+		}
+	default:
+		return nil
+	}
+}
+
+func normalizeNpmPackageName(spec string) string {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return ""
+	}
+	if strings.HasPrefix(spec, "@") {
+		slash := strings.Index(spec, "/")
+		if slash < 0 || slash == len(spec)-1 {
+			return spec
+		}
+		rest := spec[slash+1:]
+		if at := strings.LastIndex(rest, "@"); at >= 0 {
+			return spec[:slash+1+at]
+		}
+		return spec
+	}
+	if at := strings.LastIndex(spec, "@"); at > 0 {
+		return spec[:at]
+	}
+	return spec
+}
+
+func runGitClone(gitURL, dest string) ([]byte, error) {
+	args := []string{
+		"-c", "http.version=HTTP/1.1",
+		"-c", "http.lowSpeedLimit=1024",
+		"-c", "http.lowSpeedTime=30",
+		"clone", "--depth=1", "--single-branch", gitURL, dest,
+	}
+	cmd := exec.Command("git", args...)
+	cmd.Env = append(os.Environ(),
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_LFS_SKIP_SMUDGE=1",
+	)
+	out, err := cmd.CombinedOutput()
+	return out, err
+}
+
+func isTransientGitCloneError(msg string) bool {
+	lower := strings.ToLower(msg)
+	signatures := []string{
+		"rpc failed",
+		"gnutls recv error",
+		"error decoding the received tls packet",
+		"unexpected disconnect while reading sideband packet",
+		"early eof",
+		"invalid index-pack output",
+		"connection reset by peer",
+		"tls",
+		"timeout",
+	}
+	for _, sig := range signatures {
+		if strings.Contains(lower, sig) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Manager) installFromArchive(url, dest string) error {
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Get(url)
+	return m.installFromArchiveWithRetry(url, dest)
+}
+
+func flattenExtractedArchiveRoot(dest string) error {
+	entries, err := os.ReadDir(dest)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	var dirs []os.DirEntry
+	for _, entry := range entries {
+		if entry.IsDir() {
+			dirs = append(dirs, entry)
+		}
+	}
+	if len(entries) != 1 || len(dirs) != 1 {
+		return nil
 	}
 
-	os.MkdirAll(dest, 0755)
+	rootDir := filepath.Join(dest, dirs[0].Name())
+	children, err := os.ReadDir(rootDir)
+	if err != nil {
+		return err
+	}
+	for _, child := range children {
+		if err := os.Rename(filepath.Join(rootDir, child.Name()), filepath.Join(dest, child.Name())); err != nil {
+			return err
+		}
+	}
+	return os.Remove(rootDir)
+}
+
+func (m *Manager) installFromArchiveWithRetry(url, dest string) error {
+	client := &http.Client{
+		Timeout: 120 * time.Second,
+		Transport: &http.Transport{
+			Proxy:               http.ProxyFromEnvironment,
+			ForceAttemptHTTP2:   false,
+			MaxIdleConns:        10,
+			IdleConnTimeout:     30 * time.Second,
+			TLSHandshakeTimeout: 15 * time.Second,
+		},
+	}
+
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return err
+	}
 	tmpFile := filepath.Join(dest, "plugin-archive.tmp")
-	f, err := os.Create(tmpFile)
-	if err != nil {
-		return err
-	}
 	defer os.Remove(tmpFile)
-	if _, err := io.Copy(f, resp.Body); err != nil {
-		f.Close()
-		return fmt.Errorf("下载插件失败: %v", err)
+
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		_ = os.Remove(tmpFile)
+		req, err := http.NewRequest(http.MethodGet, url, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("User-Agent", "ClawPanel-PluginInstaller")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			time.Sleep(time.Duration(attempt) * time.Second)
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return fmt.Errorf("HTTP %d", resp.StatusCode)
+		}
+
+		f, err := os.Create(tmpFile)
+		if err != nil {
+			resp.Body.Close()
+			return err
+		}
+		_, copyErr := io.Copy(f, resp.Body)
+		closeErr := f.Close()
+		resp.Body.Close()
+		if copyErr == nil && closeErr == nil {
+			lastErr = nil
+			break
+		}
+		if copyErr != nil {
+			lastErr = copyErr
+		} else {
+			lastErr = closeErr
+		}
+		time.Sleep(time.Duration(attempt) * time.Second)
 	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("写入插件归档失败: %v", err)
+	if lastErr != nil {
+		return fmt.Errorf("下载插件失败: %v", lastErr)
 	}
 
-	// Extract based on extension
 	if strings.HasSuffix(url, ".zip") {
 		cmd := exec.Command("unzip", "-o", tmpFile, "-d", dest)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("解压 zip 失败: %v: %s", err, strings.TrimSpace(string(out)))
 		}
-	} else if strings.HasSuffix(url, ".tar.gz") {
+	} else if strings.HasSuffix(url, ".tar.gz") || strings.HasSuffix(url, ".tgz") {
 		cmd := exec.Command("tar", "-xzf", tmpFile, "-C", dest)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("解压 tar.gz 失败: %v: %s", err, strings.TrimSpace(string(out)))
 		}
 	}
 
+	if err := flattenExtractedArchiveRoot(dest); err != nil {
+		return err
+	}
 	return nil
 }
 

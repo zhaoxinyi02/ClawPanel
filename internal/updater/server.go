@@ -20,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/zhaoxinyi02/ClawPanel/internal/updatemirror"
 )
 
 const (
@@ -384,8 +386,7 @@ func (s *Server) handleCheckVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	preferredSource := normalizeDownloadSource(r.URL.Query().Get("source"))
-	info, source, err := s.fetchLatestVersion(preferredSource)
+	info, err := s.resolveLocalVersion(false)
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"ok": false, "error": err.Error(),
@@ -403,8 +404,8 @@ func (s *Server) handleCheckVersion(w http.ResponseWriter, r *http.Request) {
 		"releaseTime":     info.ReleaseTime,
 		"releaseNote":     info.ReleaseNote,
 		"hasUpdate":       hasUpdate,
-		"source":          source,
-		"preferredSource": preferredSource,
+		"source":          "local",
+		"preferredSource": "local",
 		"edition":         s.editionCfg.Edition,
 		"fullPackage":     s.editionCfg.isLiteFullPackage(),
 		"majorChange":     info.MajorChange,
@@ -441,8 +442,7 @@ func (s *Server) handleStartUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Unlock()
 
-	preferredSource := normalizeDownloadSource(r.URL.Query().Get("source"))
-	go s.doUpdate(preferredSource)
+	go s.doUpdate("local")
 
 	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
 }
@@ -927,8 +927,7 @@ func (s *Server) doUpdate(preferredSource string) {
 	// Step 2: Check version
 	s.setStep(1, "running", "正在检测最新版本...")
 	s.logMsg("🔍 检测最新版本...")
-	preferredSource = normalizeDownloadSource(preferredSource)
-	info, source, err := s.fetchLatestVersion(preferredSource)
+	info, err := s.resolveLocalVersion(false)
 	if err != nil {
 		s.setStepError(1, "检测版本失败: "+err.Error())
 		s.setError("检测版本失败: " + err.Error())
@@ -943,11 +942,19 @@ func (s *Server) doUpdate(preferredSource string) {
 	s.mu.Lock()
 	s.state.FromVer = s.currentVersion
 	s.state.ToVer = info.LatestVersion
-	s.state.Source = source
+	s.state.Source = "local"
 	s.mu.Unlock()
-	s.setStep(1, "done", fmt.Sprintf("发现新版本 %s → %s (线路: %s)", s.currentVersion, info.LatestVersion, source))
-	s.logMsg("📦 %s → %s (线路: %s)", s.currentVersion, info.LatestVersion, source)
+	s.setStep(1, "done", fmt.Sprintf("发现新版本 %s → %s (本机更新镜像)", s.currentVersion, info.LatestVersion))
+	s.logMsg("📦 %s → %s (本机更新镜像)", s.currentVersion, info.LatestVersion)
 	s.setProgress(15)
+
+	platformKey := getPlatformKey()
+	localAssetPath, err := s.ensureLocalAsset(info, platformKey)
+	if err != nil {
+		s.setStepError(1, "准备本机更新包失败: "+err.Error())
+		s.setError("准备本机更新包失败: " + err.Error())
+		return
+	}
 
 	// Step 3: Stop service
 	s.setStep(2, "running", "正在停止 ClawPanel 服务...")
@@ -958,21 +965,8 @@ func (s *Server) doUpdate(preferredSource string) {
 	s.setStep(2, "done", "ClawPanel 服务已停止")
 	s.setProgress(25)
 
-	// Step 4: Download
-	s.setStep(3, "running", "正在下载更新包...")
-	platformKey := getPlatformKey()
-	downloadURL := ""
-
-	if urls, ok := info.DownloadURLs[platformKey]; ok {
-		downloadURL = urls
-	}
-
-	if downloadURL == "" {
-		s.setStepError(3, "未找到适用于当前平台的下载链接: "+platformKey)
-		s.setError("未找到适用于当前平台的下载链接")
-		return
-	}
-
+	// Step 4: Stage the cached update package from local mirror.
+	s.setStep(3, "running", "正在装载本机更新包...")
 	tmpDir := filepath.Join(s.dataDir, "update-tmp")
 	os.MkdirAll(tmpDir, 0755)
 	tmpFile := filepath.Join(tmpDir, "clawpanel-new")
@@ -982,41 +976,14 @@ func (s *Server) doUpdate(preferredSource string) {
 		tmpFile += ".exe"
 	}
 
-	s.logMsg("📥 下载: %s", downloadURL)
-	if err := s.downloadFile(downloadURL, tmpFile, source); err != nil {
-		// Fallback to other source
-		s.logMsg("⚠️ %s 线路下载失败: %v, 尝试备用线路...", source, err)
-		fallbackURL := ""
-		fallbackSource := ""
-		for _, candidate := range downloadSourceOrder(source) {
-			if candidate == source {
-				continue
-			}
-			fallbackInfo, ferr := s.fetchVersionFromSource(candidate)
-			if ferr == nil {
-				fallbackURL = fallbackInfo.DownloadURLs[platformKey]
-				fallbackSource = candidate
-				break
-			}
-		}
-		if fallbackURL != "" {
-			s.logMsg("📥 切换至 %s 线路下载...", fallbackSource)
-			if err2 := s.downloadFile(fallbackURL, tmpFile, fallbackSource); err2 != nil {
-				s.setStepError(3, fmt.Sprintf("两条线路均下载失败"))
-				s.setError(fmt.Sprintf("下载失败: %s 线路: %v; %s 线路: %v", source, err, fallbackSource, err2))
-				return
-			}
-			s.mu.Lock()
-			s.state.Source = fallbackSource
-			s.mu.Unlock()
-		} else {
-			s.setStepError(3, "下载失败: "+err.Error())
-			s.setError("下载失败: " + err.Error())
-			return
-		}
+	s.logMsg("📥 读取本机缓存更新包: %s", localAssetPath)
+	if err := copyFile(localAssetPath, tmpFile); err != nil {
+		s.setStepError(3, "复制本机更新包失败: "+err.Error())
+		s.setError("复制本机更新包失败: " + err.Error())
+		return
 	}
-	s.setStep(3, "done", "下载完成")
-	s.logMsg("✅ 下载完成")
+	s.setStep(3, "done", "本机更新包已就绪")
+	s.logMsg("✅ 本机更新包已就绪")
 	s.setProgress(60)
 
 	// Verify SHA256
@@ -1040,11 +1007,49 @@ func (s *Server) doUpdate(preferredSource string) {
 		}
 		s.logMsg("✅ SHA256 校验通过")
 	} else {
-		s.logMsg("⚠️ 远程未提供 SHA256，跳过校验")
+		s.setStepError(3, "当前平台缺少 SHA256 校验值")
+		s.setError("当前平台缺少 SHA256 校验值，已拒绝更新")
+		return
 	}
 
 	// Continue with file replacement
 	s.doReplace(tmpFile)
+}
+
+func (s *Server) resolveLocalVersion(force bool) (*VersionInfo, error) {
+	manifest, err := updatemirror.ResolveLatest(s.dataDir, s.mirrorSpec(), "/api/panel/update-mirror", force)
+	if err != nil {
+		return nil, err
+	}
+	return &VersionInfo{
+		LatestVersion: manifest.LatestVersion,
+		ReleaseTime:   manifest.ReleaseTime,
+		ReleaseNote:   manifest.ReleaseNote,
+		DownloadURLs:  manifest.DownloadURLs,
+		SHA256:        manifest.SHA256,
+	}, nil
+}
+
+func (s *Server) ensureLocalAsset(info *VersionInfo, platformKey string) (string, error) {
+	manifest, err := updatemirror.ResolveLatest(s.dataDir, s.mirrorSpec(), "/api/panel/update-mirror", false)
+	if err != nil {
+		return "", err
+	}
+	if info != nil && strings.TrimSpace(info.LatestVersion) != "" && manifest.LatestVersion != info.LatestVersion {
+		manifest, err = updatemirror.ResolveLatest(s.dataDir, s.mirrorSpec(), "/api/panel/update-mirror", true)
+		if err != nil {
+			return "", err
+		}
+	}
+	return updatemirror.EnsureAsset(s.dataDir, s.mirrorSpec(), manifest, platformKey)
+}
+
+func (s *Server) mirrorSpec() updatemirror.EditionSpec {
+	return updatemirror.EditionSpec{
+		Edition:           s.editionCfg.Edition,
+		GitHubReleasesAPI: s.editionCfg.GitHubReleasesAPI,
+		GitHubTagPrefix:   s.editionCfg.GitHubTagPrefix,
+	}
 }
 
 func (s *Server) doUpdateWithFile(tmpFile string) {

@@ -222,6 +222,211 @@ func TestToggleSkillWritesEntriesAndRemovesLegacyBlocklist(t *testing.T) {
 	}
 }
 
+func TestGetSkillsExposesSkillJSONConfigSchema(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	root := resolvedTempDir(t)
+	openClawDir := filepath.Join(root, "openclaw")
+	workspace := filepath.Join(root, "workspace", "main")
+	cfg := &config.Config{OpenClawDir: openClawDir, OpenClawWork: workspace}
+	writeJSON(t, filepath.Join(openClawDir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "main",
+			"list": []interface{}{
+				map[string]interface{}{"id": "main", "workspace": workspace},
+			},
+		},
+	})
+
+	skillDir := filepath.Join(workspace, "skills", "schema-skill")
+	writeSkillFixture(t, skillDir, "Schema Skill", "skill with structured config", "")
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.json"), []byte(`{
+		"displayName": "Schema Skill",
+		"description": "skill with structured config",
+		"version": "1.0.0",
+		"config": [
+			{"key":"config.baseUrl","label":"Base URL","type":"text","required":true},
+			{"key":"config.mode","label":"Mode","type":"select","options":["fast",{"label":"Safe Mode","value":"safe"}]}
+		]
+	}`), 0644); err != nil {
+		t.Fatalf("write skill.json: %v", err)
+	}
+
+	r := gin.New()
+	r.GET("/system/skills", GetSkills(cfg))
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/system/skills?agentId=main", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		OK     bool        `json:"ok"`
+		Skills []skillInfo `json:"skills"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	skill := findSkillByID(resp.Skills, "schema-skill")
+	if skill == nil {
+		t.Fatalf("expected schema-skill in response")
+	}
+	if len(skill.ConfigSchema) != 2 {
+		t.Fatalf("expected 2 config fields, got %#v", skill.ConfigSchema)
+	}
+	configKeys := asStringSlice(skill.Requires["config"])
+	if len(configKeys) != 2 || configKeys[0] != "config.baseUrl" || configKeys[1] != "config.mode" {
+		t.Fatalf("expected skill.json config keys merged into requires.config, got %#v", skill.Requires)
+	}
+	if skill.ConfigSchema[1].Type != "select" || len(skill.ConfigSchema[1].Options) != 2 {
+		t.Fatalf("expected select config options from skill.json, got %#v", skill.ConfigSchema[1])
+	}
+}
+
+func TestSkillConfigHandlersSupportSkillJSONDeclaredKeys(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	root := resolvedTempDir(t)
+	openClawDir := filepath.Join(root, "openclaw")
+	workspace := filepath.Join(root, "workspace", "main")
+	cfg := &config.Config{OpenClawDir: openClawDir, OpenClawWork: workspace}
+	writeJSON(t, filepath.Join(openClawDir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "main",
+			"list": []interface{}{
+				map[string]interface{}{"id": "main", "workspace": workspace},
+			},
+		},
+	})
+
+	skillDir := filepath.Join(workspace, "skills", "configurable-skill")
+	writeSkillFixture(t, skillDir, "Configurable Skill", "skill config via manifest", "")
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.json"), []byte(`{
+		"config": [
+			{"key":"config.apiKey","label":"API Key","type":"password","required":true},
+			{"key":"config.maxResults","label":"Max Results","type":"number"},
+			{"key":"config.enabled","label":"Enabled","type":"toggle"}
+		]
+	}`), 0644); err != nil {
+		t.Fatalf("write skill.json: %v", err)
+	}
+
+	r := gin.New()
+	r.GET("/system/skills/:id/config", GetSkillConfig(cfg))
+	r.PUT("/system/skills/:id/config", UpdateSkillConfig(cfg))
+
+	getReq := httptest.NewRequest(http.MethodGet, "/system/skills/configurable-skill/config?agentId=main", nil)
+	getW := httptest.NewRecorder()
+	r.ServeHTTP(getW, getReq)
+	if getW.Code != http.StatusOK {
+		t.Fatalf("expected 200 for initial get, got %d: %s", getW.Code, getW.Body.String())
+	}
+	var initial struct {
+		ConfigKeys []string               `json:"configKeys"`
+		Values     map[string]interface{} `json:"values"`
+	}
+	if err := json.Unmarshal(getW.Body.Bytes(), &initial); err != nil {
+		t.Fatalf("decode initial config response: %v", err)
+	}
+	if len(initial.ConfigKeys) != 3 || len(initial.Values) != 0 {
+		t.Fatalf("expected manifest config keys and empty values, got %#v", initial)
+	}
+
+	body := bytes.NewReader([]byte(`{"agentId":"main","values":{"config.apiKey":"secret","config.maxResults":5,"config.enabled":true}}`))
+	putReq := httptest.NewRequest(http.MethodPut, "/system/skills/configurable-skill/config", body)
+	putReq.Header.Set("Content-Type", "application/json")
+	putW := httptest.NewRecorder()
+	r.ServeHTTP(putW, putReq)
+	if putW.Code != http.StatusOK {
+		t.Fatalf("expected 200 for update, got %d: %s", putW.Code, putW.Body.String())
+	}
+
+	saved, err := cfg.ReadOpenClawJSON()
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	configMap := asMapAny(saved["config"])
+	if got := trimmedString(configMap["apiKey"], ""); got != "secret" {
+		t.Fatalf("expected config.apiKey saved, got %#v", saved)
+	}
+	if got, ok := configMap["maxResults"].(float64); !ok || got != 5 {
+		t.Fatalf("expected config.maxResults saved, got %#v", saved)
+	}
+	if got, ok := configMap["enabled"].(bool); !ok || !got {
+		t.Fatalf("expected config.enabled saved, got %#v", saved)
+	}
+}
+
+func TestCopySkillCopiesInstalledSkillToAnotherAgent(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	root := resolvedTempDir(t)
+	openClawDir := filepath.Join(root, "openclaw")
+	mainWorkspace := filepath.Join(root, "workspace", "main")
+	otherWorkspace := filepath.Join(root, "workspace", "secondary")
+	cfg := &config.Config{OpenClawDir: openClawDir, OpenClawWork: mainWorkspace}
+	writeJSON(t, filepath.Join(openClawDir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "main",
+			"list": []interface{}{
+				map[string]interface{}{"id": "main", "workspace": mainWorkspace},
+				map[string]interface{}{"id": "secondary", "workspace": otherWorkspace},
+			},
+		},
+	})
+
+	skillDir := filepath.Join(mainWorkspace, "skills", "copy-me")
+	writeSkillFixture(t, skillDir, "Copy Me", "copyable skill", "")
+	if err := os.WriteFile(filepath.Join(skillDir, "extra.txt"), []byte("hello copy\n"), 0644); err != nil {
+		t.Fatalf("write extra file: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(skillDir, "nested"), 0755); err != nil {
+		t.Fatalf("mkdir nested: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "nested", "notes.md"), []byte("nested\n"), 0644); err != nil {
+		t.Fatalf("write nested file: %v", err)
+	}
+
+	r := gin.New()
+	r.POST("/system/skills/:id/copy", CopySkill(cfg))
+	r.GET("/system/skills", GetSkills(cfg))
+
+	body := bytes.NewReader([]byte(`{"sourceAgentId":"main","targetAgentId":"secondary","installTarget":"agent"}`))
+	req := httptest.NewRequest(http.MethodPost, "/system/skills/copy-me/copy", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 copy response, got %d: %s", w.Code, w.Body.String())
+	}
+
+	for _, rel := range []string{"SKILL.md", "extra.txt", filepath.Join("nested", "notes.md")} {
+		if _, err := os.Stat(filepath.Join(otherWorkspace, "skills", "copy-me", rel)); err != nil {
+			t.Fatalf("expected copied file %s, got %v", rel, err)
+		}
+	}
+
+	skillsReq := httptest.NewRequest(http.MethodGet, "/system/skills?agentId=secondary", nil)
+	skillsW := httptest.NewRecorder()
+	r.ServeHTTP(skillsW, skillsReq)
+	if skillsW.Code != http.StatusOK {
+		t.Fatalf("expected 200 skills response, got %d: %s", skillsW.Code, skillsW.Body.String())
+	}
+	var resp struct {
+		Skills []skillInfo `json:"skills"`
+	}
+	if err := json.Unmarshal(skillsW.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode copied skills response: %v", err)
+	}
+	if findSkillByID(resp.Skills, "copy-me") == nil {
+		t.Fatalf("expected copied skill to appear for target agent")
+	}
+}
+
 func TestSearchAndInstallClawHubUseOfficialAPIContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -397,6 +602,81 @@ func TestSearchAndInstallClawHubUseOfficialAPIContract(t *testing.T) {
 	localWeather := findSkillByID(skillsResp.Skills, "weather")
 	if localWeather == nil || localWeather.Version != "1.2.0" {
 		t.Fatalf("expected local installed skill version 1.2.0, got %#v", localWeather)
+	}
+}
+
+func TestSearchAndInstallClawHubSupportCustomRegistryFiles(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	root := resolvedTempDir(t)
+	openClawDir := filepath.Join(root, "openclaw")
+	workspace := filepath.Join(root, "workspace", "main")
+	cfg := &config.Config{OpenClawDir: openClawDir, OpenClawWork: workspace}
+	writeJSON(t, filepath.Join(openClawDir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "main",
+			"list": []interface{}{
+				map[string]interface{}{"id": "main", "workspace": workspace},
+			},
+		},
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/raw/main/skills/registry.json":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"skills": []map[string]interface{}{{
+					"id":          "web-fetcher",
+					"name":        "Web Fetcher",
+					"description": "custom registry skill",
+					"version":     "1.0.0",
+					"path":        "skills/web-fetcher",
+					"files":       []string{"SKILL.md", "skill.json", "index.py"},
+				}},
+			})
+		case "/raw/main/skills/web-fetcher/SKILL.md":
+			_, _ = w.Write([]byte("---\nname: Web Fetcher\ndescription: custom registry skill\n---\nUse the web fetcher.\n"))
+		case "/raw/main/skills/web-fetcher/skill.json":
+			_, _ = w.Write([]byte(`{"displayName":"Web Fetcher","config":[{"key":"config.baseUrl","label":"Base URL","type":"text"}]}`))
+		case "/raw/main/skills/web-fetcher/index.py":
+			_, _ = w.Write([]byte("print('ok')\n"))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	oldClient := clawHubHTTPClient
+	clawHubHTTPClient = server.Client()
+	defer func() { clawHubHTTPClient = oldClient }()
+	t.Setenv("CLAWHUB_REGISTRY", server.URL+"/raw/main")
+	t.Setenv("CLAWHUB_SITE", server.URL+"/raw/main")
+
+	r := gin.New()
+	r.GET("/system/clawhub/search", SearchClawHub(cfg))
+	r.POST("/system/clawhub/install", InstallClawHubSkill(cfg))
+
+	searchReq := httptest.NewRequest(http.MethodGet, "/system/clawhub/search?q=web-fetcher&agentId=main", nil)
+	searchW := httptest.NewRecorder()
+	r.ServeHTTP(searchW, searchReq)
+	if searchW.Code != http.StatusOK {
+		t.Fatalf("expected 200 search, got %d: %s", searchW.Code, searchW.Body.String())
+	}
+
+	installReq := httptest.NewRequest(http.MethodPost, "/system/clawhub/install", bytes.NewReader([]byte(`{"skillId":"web-fetcher","agentId":"main"}`)))
+	installReq.Header.Set("Content-Type", "application/json")
+	installW := httptest.NewRecorder()
+	r.ServeHTTP(installW, installReq)
+	if installW.Code != http.StatusOK {
+		t.Fatalf("expected 200 install, got %d: %s", installW.Code, installW.Body.String())
+	}
+	for _, rel := range []string{"SKILL.md", "skill.json", "index.py", ".clawhub/origin.json"} {
+		if _, err := os.Stat(filepath.Join(workspace, "skills", "web-fetcher", filepath.FromSlash(rel))); err != nil {
+			t.Fatalf("expected %s downloaded, got %v", rel, err)
+		}
+	}
+	lockRaw, err := os.ReadFile(filepath.Join(workspace, ".clawhub", "lock.json"))
+	if err != nil || !strings.Contains(string(lockRaw), "web-fetcher") {
+		t.Fatalf("expected lock entry for custom registry install, err=%v body=%s", err, string(lockRaw))
 	}
 }
 
@@ -1821,5 +2101,164 @@ func TestSaveCronJobsRollsBackOpenClawJSONWhenMirrorWriteFails(t *testing.T) {
 	job, _ := jobs[0].(map[string]interface{})
 	if got := strings.TrimSpace(toString(job["id"])); got != "old-job" {
 		t.Fatalf("expected rollback to restore old-job, got %q", got)
+	}
+}
+
+func TestValidateCronJobsSessionTargetsNormalizesWebhookDeliveryURLToTo(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	writeJSON(t, filepath.Join(dir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "main",
+			"list":    []interface{}{map[string]interface{}{"id": "main"}},
+		},
+	})
+
+	jobs := []map[string]interface{}{
+		{
+			"id":            "j1",
+			"sessionTarget": "isolated",
+			"delivery": map[string]interface{}{
+				"mode": "webhook",
+				"url":  "https://example.com/hook",
+			},
+		},
+	}
+
+	if err := validateCronJobsSessionTargets(cfg, jobs); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	delivery, _ := jobs[0]["delivery"].(map[string]interface{})
+	if got := strings.TrimSpace(toString(delivery["to"])); got != "https://example.com/hook" {
+		t.Fatalf("expected webhook to field normalized from url, got %q", got)
+	}
+	if _, exists := delivery["url"]; exists {
+		t.Fatalf("expected legacy delivery.url removed after normalization")
+	}
+}
+
+func TestValidateCronJobsSessionTargetsRejectsWebhookMissingTo(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	writeJSON(t, filepath.Join(dir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "main",
+			"list":    []interface{}{map[string]interface{}{"id": "main"}},
+		},
+	})
+
+	jobs := []map[string]interface{}{
+		{
+			"id":            "j1",
+			"sessionTarget": "isolated",
+			"delivery": map[string]interface{}{
+				"mode": "webhook",
+			},
+		},
+	}
+
+	err := validateCronJobsSessionTargets(cfg, jobs)
+	if err == nil {
+		t.Fatalf("expected error for webhook delivery without target")
+	}
+	if !strings.Contains(err.Error(), "delivery.mode=webhook 时必须指定非空 to") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGetCronJobsNormalizesWebhookDeliveryURLField(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	writeJSON(t, filepath.Join(dir, "openclaw.json"), map[string]interface{}{
+		"cron": map[string]interface{}{
+			"jobs": []interface{}{
+				map[string]interface{}{
+					"id": "j1",
+					"delivery": map[string]interface{}{
+						"mode": "webhook",
+						"url":  "https://example.com/from-openclaw-json",
+					},
+				},
+			},
+		},
+	})
+
+	r := gin.New()
+	r.GET("/system/cron", GetCronJobs(cfg))
+	req := httptest.NewRequest(http.MethodGet, "/system/cron", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		OK   bool                     `json:"ok"`
+		Jobs []map[string]interface{} `json:"jobs"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.OK || len(resp.Jobs) != 1 {
+		t.Fatalf("unexpected response payload: %+v", resp)
+	}
+	delivery, _ := resp.Jobs[0]["delivery"].(map[string]interface{})
+	if got := strings.TrimSpace(toString(delivery["to"])); got != "https://example.com/from-openclaw-json" {
+		t.Fatalf("expected webhook to normalized from url, got %q", got)
+	}
+	if _, exists := delivery["url"]; exists {
+		t.Fatalf("expected legacy delivery.url removed in get response")
+	}
+}
+
+func TestValidateCronJobsSessionTargetsNormalizesMainAnnounceToNone(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfg := &config.Config{OpenClawDir: dir}
+	writeJSON(t, filepath.Join(dir, "openclaw.json"), map[string]interface{}{
+		"agents": map[string]interface{}{
+			"default": "main",
+			"list":    []interface{}{map[string]interface{}{"id": "main"}},
+		},
+	})
+
+	jobs := []map[string]interface{}{
+		{
+			"id":            "j1",
+			"sessionTarget": "main",
+			"delivery": map[string]interface{}{
+				"mode":      "announce",
+				"channel":   "feishu",
+				"accountId": "default",
+				"to":        "oc://channel",
+				"failureDestination": map[string]interface{}{
+					"mode": "webhook",
+					"to":   "https://example.com/failure",
+				},
+			},
+		},
+	}
+
+	if err := validateCronJobsSessionTargets(cfg, jobs); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	delivery, _ := jobs[0]["delivery"].(map[string]interface{})
+	if got := strings.TrimSpace(toString(delivery["mode"])); got != "none" {
+		t.Fatalf("expected main announce normalized to none, got %q", got)
+	}
+	for _, key := range []string{"channel", "accountId", "to", "url", "bestEffort", "failureDestination"} {
+		if _, exists := delivery[key]; exists {
+			t.Fatalf("expected field %q removed after normalization", key)
+		}
 	}
 }

@@ -296,15 +296,18 @@ chmod +x "$HOME/.local/bin/skillhub"
 printf 'installed cli'
 `)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/latest.tar.gz" {
+		switch r.URL.Path {
+		case "/latest.tar.gz":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(archiveBytes)
+		default:
 			http.NotFound(w, r)
-			return
 		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(archiveBytes)
 	}))
 	defer server.Close()
 	skillHubInstallKitURL = server.URL + "/latest.tar.gz"
+	// 禁用 install.sh 回退，确保测试只走 tar.gz 路径
+	skillHubInstallShellURL = server.URL + "/install.sh"
 	skillHubInstallHTTPClient = server.Client()
 
 	r := gin.New()
@@ -612,6 +615,7 @@ func resetSkillHubTestState(t *testing.T) func() {
 	origRefreshDone := skillHubRefreshDone
 	origInstallClient := skillHubInstallHTTPClient
 	origInstallKitURL := skillHubInstallKitURL
+	origInstallShellURL := skillHubInstallShellURL
 	origBinaryCandidates := append([]string(nil), skillHubBinaryCandidatePaths...)
 
 	skillHubCache = nil
@@ -636,6 +640,7 @@ func resetSkillHubTestState(t *testing.T) func() {
 		skillHubRefreshDone = origRefreshDone
 		skillHubInstallHTTPClient = origInstallClient
 		skillHubInstallKitURL = origInstallKitURL
+		skillHubInstallShellURL = origInstallShellURL
 		skillHubBinaryCandidatePaths = origBinaryCandidates
 	}
 }

@@ -1,12 +1,11 @@
 # ClawPanel Lite for Windows (preview)
 $ErrorActionPreference = "Stop"
 
+$ClawPanelPublicBase = if ($env:CLAWPANEL_PUBLIC_BASE) { $env:CLAWPANEL_PUBLIC_BASE.TrimEnd('/') } else { "http://43.248.142.249:19527" }
 $Repo = "zhaoxinyi02/ClawPanel"
-$GiteeRepo = "zxy000006/ClawPanel"
 $TagPrefix = "lite-v"
-$GiteeRawBase = "https://gitee.com/$GiteeRepo/raw/main"
-$GiteeMeta = "$GiteeRawBase/release/update-lite.json"
-$GiteeReleaseBase = "https://gitee.com/$GiteeRepo/releases/download"
+$AccelBase = if ($env:ACCEL_BASE) { $env:ACCEL_BASE } else { "$ClawPanelPublicBase/api/panel/update-mirror" }
+$AccelMeta = if ($env:ACCEL_META_URL) { $env:ACCEL_META_URL } else { "$AccelBase/lite" }
 $InstallDir = "C:\ClawPanelLite"
 $ServiceName = "clawpanel-lite"
 
@@ -17,8 +16,8 @@ function Get-LatestVersionFromGitHub {
   return $null
 }
 
-function Get-LatestVersionFromGitee {
-  $info = Invoke-RestMethod -Uri $GiteeMeta -UseBasicParsing
+function Get-LatestVersionFromAccel {
+  $info = Invoke-RestMethod -Uri $AccelMeta -UseBasicParsing
   return [string]$info.latest_version
 }
 
@@ -31,19 +30,19 @@ $LocalPackage = $env:LOCAL_PACKAGE
 if (-not $DownloadSource) {
   Write-Host "  [Lite] 请选择下载线路：" -ForegroundColor Cyan
   Write-Host "    1) GitHub      中国香港及境外服务器推荐" -ForegroundColor White
-  Write-Host "    2) Gitee       中国大陆服务器推荐，更稳当一些" -ForegroundColor White
+  Write-Host "    2) 加速服务器  中国大陆服务器推荐，更稳当一些" -ForegroundColor White
   $sourceChoice = Read-Host "  请输入 [1/2]（默认 2）"
-  if ($sourceChoice -eq '1') { $DownloadSource = 'github' } else { $DownloadSource = 'gitee' }
+  if ($sourceChoice -eq '1') { $DownloadSource = 'github' } else { $DownloadSource = 'accel' }
 }
-$Version = if ($env:VERSION) { $env:VERSION } else { if ($DownloadSource -eq "github") { Get-LatestVersionFromGitHub } else { Get-LatestVersionFromGitee } }
+$Version = if ($env:VERSION) { $env:VERSION } else { if ($DownloadSource -eq "github") { Get-LatestVersionFromGitHub } else { Get-LatestVersionFromAccel } }
 if (-not $Version) {
   Write-Error "无法获取最新版本号。请检查网络连接，或通过 `$env:VERSION='x.y.z' 手动指定版本后重试。"
   exit 1
 }
 $PackageName = "clawpanel-lite-core-v${Version}-windows-amd64.tar.gz"
 
-$PrimaryUrl = if ($DownloadSource -eq "github") { "https://github.com/$Repo/releases/download/${TagPrefix}${Version}/$PackageName" } else { "$GiteeReleaseBase/${TagPrefix}${Version}/$PackageName" }
-$FallbackUrl = if ($DownloadSource -eq "github") { "$GiteeReleaseBase/${TagPrefix}${Version}/$PackageName" } else { "https://github.com/$Repo/releases/download/${TagPrefix}${Version}/$PackageName" }
+$PrimaryUrl = if ($DownloadSource -eq "github") { "https://github.com/$Repo/releases/download/${TagPrefix}${Version}/$PackageName" } else { "$AccelBase/lite/files/$PackageName" }
+$FallbackUrl = if ($DownloadSource -eq "github") { "$AccelBase/lite/files/$PackageName" } else { "https://github.com/$Repo/releases/download/${TagPrefix}${Version}/$PackageName" }
 
 $tmp = Join-Path $env:TEMP $PackageName
 if ($LocalPackage) {
@@ -51,9 +50,9 @@ if ($LocalPackage) {
   Copy-Item -Path $LocalPackage -Destination $tmp -Force
   Write-Host "  [Lite] 已使用当前目录中的本地 Lite 构建包进行安装。" -ForegroundColor Cyan
 } elseif ($DownloadSource -eq 'github') {
-  Write-Host "  [Lite] 已选择 GitHub（中国香港及境外服务器推荐），失败时自动回退到 Gitee。" -ForegroundColor Cyan
+  Write-Host "  [Lite] 已选择 GitHub（中国香港及境外服务器推荐），失败时自动回退到加速服务器。" -ForegroundColor Cyan
 } else {
-  Write-Host "  [Lite] 已选择 Gitee（中国大陆服务器推荐），失败时自动回退到 GitHub。" -ForegroundColor Cyan
+  Write-Host "  [Lite] 已选择加速服务器（中国大陆服务器推荐），失败时自动回退到 GitHub。" -ForegroundColor Cyan
 }
 if (-not $LocalPackage) {
   try { Download-File $PrimaryUrl $tmp } catch { Download-File $FallbackUrl $tmp }

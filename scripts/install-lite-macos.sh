@@ -1,12 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
+CLAWPANEL_PUBLIC_BASE="${CLAWPANEL_PUBLIC_BASE:-http://43.248.142.249:19527}"
+CLAWPANEL_PUBLIC_BASE="${CLAWPANEL_PUBLIC_BASE%/}"
 INSTALL_DIR="/opt/clawpanel-lite"
 SERVICE_LABEL="com.clawpanel.lite.service"
 REPO="zhaoxinyi02/ClawPanel"
 TAG_PREFIX="lite-v"
-ACCEL_BASE="http://47.76.58.84:16198/clawpanel"
-ACCEL_META_URL="${ACCEL_BASE}/update-lite.json"
+ACCEL_BASE="${ACCEL_BASE:-${CLAWPANEL_PUBLIC_BASE}/api/panel/update-mirror}"
+ACCEL_META_URL="${ACCEL_META_URL:-${ACCEL_BASE}/lite}"
 GITHUB_RELEASES_API="https://api.github.com/repos/${REPO}/releases?per_page=20"
 
 RED='\033[31m'
@@ -116,11 +118,11 @@ PACKAGE_NAME="clawpanel-lite-core-v${VERSION}-darwin-${ARCH}.tar.gz"
 
 print_banner
 
-PRIMARY_URL="${ACCEL_BASE}/releases/${PACKAGE_NAME}"
+PRIMARY_URL="${ACCEL_BASE}/lite/files/${PACKAGE_NAME}"
 SECONDARY_URL="https://github.com/${REPO}/releases/download/${TAG_PREFIX}${VERSION}/${PACKAGE_NAME}"
 if [[ "$DOWNLOAD_SOURCE" == github ]]; then
   PRIMARY_URL="$SECONDARY_URL"
-  SECONDARY_URL="${ACCEL_BASE}/releases/${PACKAGE_NAME}"
+  SECONDARY_URL="${ACCEL_BASE}/lite/files/${PACKAGE_NAME}"
 fi
 
 TMP_DIR=$(mktemp -d)

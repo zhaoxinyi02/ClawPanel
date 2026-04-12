@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
+import QRCode from 'qrcode';
 import { api } from '../lib/api';
-import { Radio, Wifi, WifiOff, QrCode, Key, Zap, UserCheck, Check, X, Power, Loader2, RefreshCw, LogOut, Sparkles, Download, Package, Wrench, Search, Copy, CheckCircle, AlertTriangle, AlertCircle, Trash2 } from 'lucide-react';
+import { Radio, Wifi, WifiOff, QrCode, Key, Zap, UserCheck, Check, X, Power, Loader2, RefreshCw, LogOut, Sparkles, Download, Package, Wrench, Search, Copy, CheckCircle, AlertTriangle, AlertCircle, Trash2, ChevronDown } from 'lucide-react';
 import InfoTooltip from '../components/InfoTooltip';
 import { useI18n } from '../i18n';
 
@@ -17,12 +18,25 @@ type ChannelConfigField = {
   defaultValue?: string | number | boolean;
   section?: ChannelFieldSection;
   rows?: number;
+  valueFormat?: 'stringArray' | 'jsonObject';
 };
 
 type ChannelDef = {
   id: string; label: string; description: string; type: 'builtin' | 'plugin';
   configFields: ChannelConfigField[];
   loginMethods?: ('qrcode' | 'quick' | 'password')[];
+};
+
+type ChannelCatalogItem = {
+  id: string;
+  label: string;
+  description: string;
+  type: 'builtin' | 'plugin';
+  bundled?: boolean;
+  channels?: string[];
+  envVars?: string[];
+  configSchema?: Record<string, any>;
+  uiHints?: Record<string, any>;
 };
 
 type FeishuDMDiagnosis = {
@@ -57,6 +71,33 @@ type FeishuAuthorizedSenderBucket = {
   senderIds?: string[];
   sourceFiles?: string[];
 };
+
+type OpenClawPairingRequest = {
+  id: string;
+  code: string;
+  createdAt: string;
+  lastSeenAt?: string;
+  meta?: Record<string, string>;
+};
+
+const PAIRING_CAPABLE_CHANNELS = new Set([
+  'telegram',
+  'feishu',
+  'wecom',
+  'whatsapp',
+  'signal',
+  'discord',
+  'slack',
+  'line',
+  'matrix',
+  'zalo',
+  'zalouser',
+  'nextcloud-talk',
+  'synology-chat',
+  'googlechat',
+  'bluebubbles',
+  'imessage',
+]);
 
 function isPlainObject(value: any): value is Record<string, any> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -305,7 +346,132 @@ const FEISHU_FIELD_SECTIONS: Record<Exclude<ChannelFieldSection, 'default'>, { t
   },
 };
 
-const CHANNEL_DEFS: ChannelDef[] = [
+const QQBOT_PRIMARY_FIELDS = new Set(['appId', 'clientSecret', 'appSecret']);
+const CHANNEL_UNSELECTED_ID = '__none__';
+const QQBOT_ADVANCED_FIELD_HELP: Record<string, string> = {
+  allowFrom: '可选。限制允许触发机器人的用户 ID，支持英文逗号、中文逗号或换行分隔。',
+  clientSecretFile: '可选。App Secret 文件路径，通常仅在密钥文件托管场景使用。',
+  defaultAccount: '可选。默认账号标识，多账号路由时用于兜底匹配。',
+  enabled: '开关当前 QQ 官方机器人通道。',
+  name: '可选。面板中的显示名称，不影响 QQ 开放平台实际配置。',
+  systemPrompt: '可选。为该通道覆盖默认系统提示词。',
+  upgradeMode: '可选。升级/兼容模式，通常保持默认。',
+  upgradeUrl: '可选。升级资源地址，通常无需填写。',
+  voiceDirectUploadFormats: '可选。语音直传格式白名单，支持英文逗号、中文逗号或换行分隔。',
+};
+
+function humanizeChannelFieldKey(raw: string): string {
+  const leaf = raw.split('.').pop() || raw;
+  return leaf
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, ch => ch.toUpperCase());
+}
+
+function inferChannelFieldType(key: string, schema: Record<string, any>, uiHint: Record<string, any>): ChannelConfigField['type'] | '' {
+  const type = schema?.type;
+  if (type === 'boolean') return 'toggle';
+  if (type === 'integer' || type === 'number') return 'number';
+  if (Array.isArray(schema?.enum) && schema.enum.length > 0) return 'select';
+  if (type === 'array' && schema?.items?.type === 'string') return 'textarea';
+  if (type !== 'string') return '';
+  if (uiHint?.sensitive) return 'password';
+  if (/(token|secret|password|key)$/i.test(key)) return 'password';
+  if (/(prompt|instructions)$/i.test(key)) return 'textarea';
+  return 'text';
+}
+
+function buildDynamicChannelFields(
+  schema: Record<string, any> | undefined,
+  uiHints: Record<string, any> | undefined,
+  prefix = '',
+  depth = 0,
+): ChannelConfigField[] {
+  const properties = isPlainObject(schema?.properties) ? schema.properties : {};
+  const hints = isPlainObject(uiHints) ? uiHints : {};
+  const fields: ChannelConfigField[] = [];
+  for (const [propKey, rawPropSchema] of Object.entries(properties)) {
+    if (!isPlainObject(rawPropSchema)) continue;
+    if (!prefix && propKey === 'enabled') continue;
+    const fieldKey = prefix ? `${prefix}.${propKey}` : propKey;
+    const uiHint = isPlainObject(hints[fieldKey]) ? hints[fieldKey] : {};
+    const propType = String(rawPropSchema.type || '').trim();
+    if (propType === 'object') {
+      if (depth >= 1) continue;
+      if (!isPlainObject(rawPropSchema.properties) || Object.keys(rawPropSchema.properties).length === 0) continue;
+      fields.push(...buildDynamicChannelFields(rawPropSchema, uiHints, fieldKey, depth + 1));
+      continue;
+    }
+    const fieldType = inferChannelFieldType(fieldKey, rawPropSchema, uiHint);
+    if (!fieldType) continue;
+    const field: ChannelConfigField = {
+      key: fieldKey,
+      label: String(uiHint.label || humanizeChannelFieldKey(fieldKey)),
+      type: fieldType,
+      section: uiHint.advanced ? 'advanced' : 'default',
+    };
+    if (Array.isArray(rawPropSchema.enum) && rawPropSchema.enum.length > 0) {
+      field.options = rawPropSchema.enum.map((item: any) => String(item));
+    }
+    if (uiHint.placeholder) field.placeholder = String(uiHint.placeholder);
+    if (uiHint.help) field.help = String(uiHint.help);
+    if (rawPropSchema.default !== undefined) field.defaultValue = rawPropSchema.default;
+    if (fieldType === 'textarea') {
+      field.rows = /prompt|instructions/i.test(fieldKey) ? 4 : 3;
+      if (propType === 'array' && rawPropSchema?.items?.type === 'string') {
+        field.valueFormat = 'stringArray';
+        if (!field.help) field.help = '支持英文逗号、中文逗号或换行分隔';
+      }
+    }
+    fields.push(field);
+  }
+  return fields;
+}
+
+function mergeChannelDefs(defaultDefs: ChannelDef[], catalogItems: ChannelCatalogItem[]): ChannelDef[] {
+  const merged = new Map<string, ChannelDef>();
+  defaultDefs.forEach(def => {
+    merged.set(def.id, {
+      ...def,
+      configFields: def.configFields.map(field => ({ ...field })),
+      loginMethods: def.loginMethods ? [...def.loginMethods] : undefined,
+    });
+  });
+  catalogItems.forEach(item => {
+    const dynamicFields = buildDynamicChannelFields(item.configSchema, item.uiHints);
+    const existing = merged.get(item.id);
+    if (existing) {
+      const seen = new Set(existing.configFields.map(field => field.key));
+      dynamicFields.forEach(field => {
+        const nextField = { ...field };
+        if (item.id === 'qqbot' && !QQBOT_PRIMARY_FIELDS.has(nextField.key)) {
+          nextField.section = 'advanced';
+          if (!nextField.help && QQBOT_ADVANCED_FIELD_HELP[nextField.key]) {
+            nextField.help = QQBOT_ADVANCED_FIELD_HELP[nextField.key];
+          }
+        }
+        if (!seen.has(nextField.key)) existing.configFields.push(nextField);
+      });
+      existing.label = existing.label || item.label || item.id;
+      existing.description = existing.description || item.description || '';
+      existing.type = existing.type || item.type;
+      return;
+    }
+    merged.set(item.id, {
+      id: item.id,
+      label: item.label || item.id,
+      description: item.description || '',
+      type: item.type,
+      configFields: dynamicFields,
+      loginMethods: item.id === 'openclaw-weixin' ? ['qrcode'] : undefined,
+    });
+  });
+  return Array.from(merged.values());
+}
+
+const DEFAULT_CHANNEL_DEFS: ChannelDef[] = [
   { id: 'qq', label: 'QQ (NapCat)', description: 'QQ个人号，NapCat OneBot11协议', type: 'plugin',
     loginMethods: ['qrcode', 'quick', 'password'],
     configFields: [
@@ -329,14 +495,25 @@ const CHANNEL_DEFS: ChannelDef[] = [
       { key: 'welcome.template', label: '欢迎模板', type: 'text', placeholder: '欢迎 {nickname} 加入本群！' },
     ] },
   { id: 'whatsapp', label: 'WhatsApp', description: 'Baileys QR扫码配对', type: 'builtin', loginMethods: ['qrcode'],
-    configFields: [{ key: 'dmPolicy', label: 'DM策略', type: 'select', options: ['pairing','open','allowlist'] }] },
-  { id: 'telegram', label: 'Telegram', description: 'Telegram Bot 通道插件', type: 'plugin',
+    configFields: [
+      { key: 'dmPolicy', label: 'DM策略', type: 'select', options: ['pairing','open','allowlist'] },
+      { key: 'reactionLevel', label: 'Reaction Level', type: 'select', options: ['off', 'ack', 'minimal', 'extensive'], help: '控制 WhatsApp 预确认和 agent 主动 reaction 的等级。' },
+      { key: 'ackReaction.emoji', label: 'Ack Reaction Emoji', type: 'text', placeholder: '👀', help: '收到消息后立刻发送的预确认 emoji。' },
+      { key: 'ackReaction.direct', label: '私聊 Ack Reaction', type: 'toggle', help: '是否在私聊中发送 ack reaction。' },
+      { key: 'ackReaction.group', label: '群聊 Ack Reaction', type: 'select', options: ['always', 'mentions', 'never'], help: '群聊里何时发送 ack reaction。' },
+    ] },
+  { id: 'telegram', label: 'Telegram', description: 'Telegram Bot 内置通道', type: 'builtin',
     configFields: [
       { key: 'botToken', label: 'Bot Token', type: 'password', placeholder: '123456:ABC-DEF...', help: '从 @BotFather 获取的 Telegram Bot Token' },
       { key: 'dmPolicy', label: '私聊准入策略', type: 'select', options: ['pairing', 'open', 'allowlist'], help: 'pairing = 首次私聊需配对批准；open = 所有私聊直接可用；allowlist = 仅白名单', defaultValue: 'open' },
       { key: 'allowFrom', label: '私聊白名单', type: 'textarea', rows: 3, placeholder: '123456789, 987654321', help: '仅 dmPolicy=allowlist 时生效；支持英文逗号、中文逗号或换行分隔' },
       { key: 'groupPolicy', label: '群聊准入策略', type: 'select', options: ['allowlist', 'open'], help: 'allowlist = 仅允许白名单中的发送者；open = 群内任何人都可触发（通常仍需提及）', defaultValue: 'allowlist' },
       { key: 'groupAllowFrom', label: '群聊白名单', type: 'textarea', rows: 3, placeholder: '123456789, 987654321', help: '仅 groupPolicy=allowlist 时生效；支持英文逗号、中文逗号或换行分隔' },
+      { key: 'reactionNotifications', label: 'Reaction Notifications', type: 'select', options: ['off', 'own', 'all'], help: '控制哪些 Telegram reaction 会转成系统事件。' },
+      { key: 'reactionLevel', label: 'Reaction Level', type: 'select', options: ['off', 'ack', 'minimal', 'extensive'], help: '控制 agent 在 Telegram 里使用 reaction 的范围。' },
+      { key: 'ackReaction', label: 'Ack Reaction Emoji', type: 'text', placeholder: '👀', help: '处理消息时先发送的确认 emoji；留空可禁用。' },
+      { key: 'defaultAccount', label: '默认账号 ID', type: 'text', section: 'advanced', placeholder: 'bot-main', help: '多机器人模式下的默认账号标识；单机器人可留空。' },
+      { key: 'accounts', label: '多机器人账号（JSON）', type: 'textarea', rows: 6, section: 'advanced', valueFormat: 'jsonObject', placeholder: '{\"bot-main\":{\"botToken\":\"123:xxx\",\"enabled\":true},\"bot-backup\":{\"botToken\":\"456:yyy\",\"enabled\":true}}', help: '可选高级配置。用于同时接入多个 Telegram Bot；键名是账号 ID，值为该账号配置。' },
     ] },
   { id: 'discord', label: 'Discord', description: 'Discord Bot API + Gateway', type: 'builtin',
     configFields: [
@@ -359,6 +536,29 @@ const CHANNEL_DEFS: ChannelDef[] = [
     configFields: [
       { key: 'apiUrl', label: 'REST API URL', type: 'text', placeholder: 'http://signal-cli:8080' },
       { key: 'phoneNumber', label: '手机号', type: 'text' },
+      { key: 'reactionNotifications', label: 'Reaction Notifications', type: 'select', options: ['off', 'own', 'all', 'allowlist'], help: '控制哪些 Signal reaction 会变成系统事件。' },
+      { key: 'reactionLevel', label: 'Reaction Level', type: 'select', options: ['off', 'ack', 'minimal', 'extensive'], help: '控制 Signal 的 ack / agent reaction 能力。' },
+    ] },
+  { id: 'feishu', label: '飞书 / Lark', description: 'OpenClaw 内置飞书通道（2026.4.x 起）', type: 'builtin',
+    configFields: [
+      { key: 'appId', label: 'App ID', type: 'text', help: '飞书 / Lark 应用 App ID', section: 'access' },
+      { key: 'appSecret', label: 'App Secret', type: 'password', help: '飞书 / Lark 应用 App Secret', section: 'access' },
+      { key: 'domain', label: '站点域（Domain）', type: 'select', options: ['feishu', 'lark'], help: '国际版 Lark 场景可切到 lark；不确定时保持 feishu', defaultValue: 'feishu', section: 'access' },
+      { key: 'requireMention', label: '群聊是否必须 @', type: 'select', options: ['true', 'false'], help: '仅接受 true / false；open 属于 groupPolicy，不属于本字段', defaultValue: true, section: 'access' },
+      { key: 'groupPolicy', label: '群组准入策略', type: 'select', options: ['open', 'allowlist', 'closed'], help: 'open = 所有群可用；allowlist = 仅白名单；closed = 禁止群聊', defaultValue: 'open', section: 'access' },
+      { key: 'dmPolicy', label: '私聊准入策略', type: 'select', options: ['pairing', 'open', 'allowlist'], help: 'pairing = 需先配对；open = 所有私聊可用；allowlist = 仅白名单', defaultValue: 'open', section: 'access' },
+      { key: 'groupAllowFrom', label: '群聊白名单', type: 'textarea', placeholder: 'oc_xxx, oc_yyy', help: '支持英文逗号、中文逗号或换行分隔；仅 groupPolicy=allowlist 时生效，保存时会写成数组', section: 'access', rows: 3 },
+      { key: 'streaming', label: '流式卡片输出', type: 'toggle', help: '开启后回复以流式卡片形式呈现', section: 'conversation' },
+      { key: 'threadSession', label: '话题独立上下文', type: 'toggle', help: '每个话题拥有独立会话并可并行', section: 'conversation' },
+      { key: 'footer.elapsed', label: '显示耗时页脚', type: 'toggle', section: 'conversation' },
+      { key: 'footer.status', label: '显示状态页脚', type: 'toggle', section: 'conversation' },
+      { key: 'replyInThread', label: '话题内回复', type: 'toggle', help: '优先在话题内回复', section: 'conversation' },
+      { key: 'typingIndicator', label: '输入中提示', type: 'toggle', section: 'conversation' },
+      { key: 'resolveSenderNames', label: '解析发送者名称', type: 'toggle', section: 'conversation' },
+      { key: 'dynamicAgentCreation', label: '动态创建 Agent', type: 'toggle', section: 'conversation' },
+      { key: 'connectionMode', label: '连接模式', type: 'text', placeholder: 'websocket', defaultValue: 'websocket', section: 'advanced' },
+      { key: 'historyLimit', label: '历史消息回放上限', type: 'number', placeholder: '300', defaultValue: 300, section: 'advanced' },
+      { key: 'mediaMaxMb', label: '媒体大小上限（MB）', type: 'number', placeholder: '5', defaultValue: 5, section: 'advanced' },
     ] },
   { id: 'googlechat', label: 'Google Chat', description: 'Google Chat API Webhook', type: 'builtin',
     configFields: [
@@ -370,75 +570,74 @@ const CHANNEL_DEFS: ChannelDef[] = [
       { key: 'serverUrl', label: '服务器URL', type: 'text' },
       { key: 'password', label: '密码', type: 'password' },
     ] },
-  { id: 'webchat', label: 'WebChat', description: 'Gateway WebChat UI (内置)', type: 'builtin', configFields: [] },
-  // Plugin channels
-  { id: 'feishu', label: '飞书 / Lark', description: '飞书机器人 WebSocket (插件)', type: 'plugin',
+  { id: 'imessage', label: 'iMessage', description: 'OpenClaw 内置 iMessage 通道（通常依赖 macOS 主机环境）', type: 'builtin', configFields: [] },
+  { id: 'line', label: 'LINE', description: 'LINE Messaging API（内置）', type: 'builtin',
     configFields: [
-      { key: 'domain', label: '站点域（Domain）', type: 'select', options: ['feishu', 'lark'], help: '国际版 Lark 场景可切到 lark；不确定时保持 feishu', defaultValue: 'feishu', section: 'access' },
-      { key: 'requireMention', label: '群聊是否必须 @', type: 'select', options: ['true', 'false'], help: '仅接受 true / false；open 属于 groupPolicy，不属于本字段', defaultValue: true, section: 'access' },
-      { key: 'groupPolicy', label: '群组准入策略', type: 'select', options: ['open', 'allowlist', 'closed'], help: 'open = 所有群可用；allowlist = 仅白名单；closed = 禁止群聊', defaultValue: 'open', section: 'access' },
-      { key: 'dmPolicy', label: '私聊准入策略', type: 'select', options: ['pairing', 'open', 'allowlist'], help: 'pairing = 需先配对；open = 所有私聊可用；allowlist = 仅白名单', defaultValue: 'open', section: 'access' },
-      { key: 'groupAllowFrom', label: '群聊白名单', type: 'textarea', placeholder: 'oc_xxx, oc_yyy', help: '支持英文逗号、中文逗号或换行分隔；仅 groupPolicy=allowlist 时生效，保存时会写成数组', section: 'access', rows: 3 },
-      { key: 'streaming', label: '流式卡片输出', type: 'toggle', help: '仅飞书官方版支持，开启后回复以流式卡片形式呈现', section: 'conversation' },
-      { key: 'threadSession', label: '话题独立上下文', type: 'toggle', help: '仅飞书官方版支持，每个话题拥有独立会话并可并行', section: 'conversation' },
-      { key: 'footer.elapsed', label: '显示耗时页脚', type: 'toggle', help: '飞书官方文档已明确给出配置命令；其他版本若不识别会直接忽略', section: 'conversation' },
-      { key: 'footer.status', label: '显示状态页脚', type: 'toggle', help: '飞书官方文档已明确给出配置命令；其他版本若不识别会直接忽略', section: 'conversation' },
-      { key: 'replyInThread', label: '话题内回复', type: 'toggle', help: '仅 ClawTeam 版支持，优先在话题内回复', section: 'conversation' },
-      { key: 'typingIndicator', label: '输入中提示', type: 'toggle', help: '仅 ClawTeam 版支持', section: 'conversation' },
-      { key: 'resolveSenderNames', label: '解析发送者名称', type: 'toggle', help: '仅 ClawTeam 版支持，自动解析飞书用户显示名', section: 'conversation' },
-      { key: 'dynamicAgentCreation', label: '动态创建 Agent', type: 'toggle', help: '仅 ClawTeam 版支持，按场景动态创建 Agent', section: 'conversation' },
-      { key: 'connectionMode', label: '连接模式', type: 'text', placeholder: 'websocket', help: 'ClawTeam 版现有配置基线常见为 websocket；官方版若未使用该字段可留空', defaultValue: 'websocket', section: 'advanced' },
-      { key: 'historyLimit', label: '历史消息回放上限', type: 'number', placeholder: '300', help: 'gap analysis 中常见默认值为 300；留空表示交给插件默认', defaultValue: 300, section: 'advanced' },
-      { key: 'mediaMaxMb', label: '媒体大小上限（MB）', type: 'number', placeholder: '5', help: 'gap analysis 中常见默认值为 5；留空表示交给插件默认', defaultValue: 5, section: 'advanced' },
+      { key: 'channelAccessToken', label: 'Channel Access Token', type: 'password' },
+      { key: 'channelSecret', label: 'Channel Secret', type: 'password' },
     ] },
-  { id: 'qqbot', label: 'QQ 官方机器人', description: 'QQ开放平台官方Bot API (插件)', type: 'plugin',
+  { id: 'matrix', label: 'Matrix', description: 'Matrix 协议（内置）', type: 'builtin',
     configFields: [
-      { key: 'appId', label: 'App ID', type: 'text', help: 'QQ 开放平台应用 ID（新版插件只需填写 appId 和 appSecret）' },
+      { key: 'homeserverUrl', label: 'Homeserver URL', type: 'text' },
+      { key: 'accessToken', label: 'Access Token', type: 'password' },
+    ] },
+  { id: 'mattermost', label: 'Mattermost', description: 'Mattermost Bot API + WebSocket（内置）', type: 'builtin',
+    configFields: [
+      { key: 'url', label: '服务器URL', type: 'text' },
+      { key: 'token', label: 'Bot Token', type: 'password' },
+    ] },
+  { id: 'msteams', label: 'Microsoft Teams', description: 'Bot Framework（内置）', type: 'builtin',
+    configFields: [
+      { key: 'appId', label: 'App ID', type: 'text' },
+      { key: 'appPassword', label: 'App Password', type: 'password' },
+    ] },
+  { id: 'nextcloud-talk', label: 'Nextcloud Talk', description: 'OpenClaw 内置 Nextcloud Talk 通道', type: 'builtin', configFields: [] },
+  { id: 'nostr', label: 'Nostr', description: 'OpenClaw 内置 Nostr 通道', type: 'builtin', configFields: [] },
+  { id: 'qa-channel', label: 'QA Channel', description: 'OpenClaw 内置 QA 调试通道', type: 'builtin', configFields: [] },
+  { id: 'qqbot', label: 'QQ 官方机器人', description: 'QQ 开放平台官方 Bot API（内置）', type: 'builtin',
+    configFields: [
+      { key: 'appId', label: 'App ID', type: 'text', help: 'QQ 开放平台应用 ID（新版内置通道只需填写 appId 和 appSecret）' },
       { key: 'clientSecret', label: 'App Secret', type: 'password', help: 'QQ 官方机器人 App Secret' },
     ] },
+  { id: 'synology-chat', label: 'Synology Chat', description: 'OpenClaw 内置 Synology Chat 通道', type: 'builtin', configFields: [] },
+  { id: 'tlon', label: 'Tlon', description: 'OpenClaw 内置 Tlon 通道', type: 'builtin', configFields: [] },
+  { id: 'twitch', label: 'Twitch', description: 'Twitch Chat via IRC（内置）', type: 'builtin',
+    configFields: [
+      { key: 'username', label: '用户名', type: 'text' },
+      { key: 'oauthToken', label: 'OAuth Token', type: 'password' },
+      { key: 'channels', label: '频道', type: 'text', help: '逗号分隔' },
+    ] },
+  { id: 'zalo', label: 'Zalo', description: 'OpenClaw 内置 Zalo 通道', type: 'builtin', configFields: [] },
+  { id: 'webchat', label: 'WebChat', description: 'Gateway WebChat UI (内置)', type: 'builtin', configFields: [] },
+  // Plugin channels
   { id: 'dingtalk', label: '钉钉', description: '钉钉机器人 (插件)', type: 'plugin',
     configFields: [
       { key: 'clientId', label: 'Client ID', type: 'text', help: '钉钉应用 Client ID' },
       { key: 'clientSecret', label: 'Client Secret', type: 'password', help: '钉钉应用 Client Secret' },
     ] },
-  { id: 'wecom', label: '企业微信（智能机器人）', description: '企业微信智能机器人，长连接模式，仅需 Bot ID 与 Secret', type: 'plugin',
+  { id: 'wecom', label: '企业微信（智能机器人）', description: '企业微信智能机器人，支持 URL 回调与长连接两种接入方式', type: 'plugin',
     configFields: [
-      { key: 'botId', label: 'Bot ID', type: 'text', help: '企业微信智能机器人 Bot ID' },
-      { key: 'secret', label: 'Secret', type: 'password', help: '企业微信智能机器人 Secret' },
+      { key: 'connectionMode', label: '连接方式', type: 'select', options: ['callback', 'long-polling'], help: 'callback = URL 回调；long-polling = 长连接', defaultValue: 'callback' },
+      { key: 'token', label: 'Token', type: 'password', help: '企业微信回调配置中的 Token' },
+      { key: 'encodingAESKey', label: 'EncodingAESKey', type: 'password', help: '43 位字符' },
+      { key: 'webhookPath', label: 'Webhook Path', type: 'text', help: '如 /wecom' },
+      { key: 'botId', label: 'Bot ID', type: 'text', help: '长连接模式下使用的 Bot ID' },
+      { key: 'secret', label: 'Secret', type: 'password', help: '长连接模式下使用的 Secret' },
     ] },
   { id: 'wecom-app', label: '企业微信（自建应用）', description: '企业微信自建应用，支持更完整 API 与微信入口', type: 'plugin',
     configFields: [
       { key: 'token', label: 'Token', type: 'password', help: '企业微信回调配置中的 Token' },
-      { key: 'encodingAesKey', label: 'EncodingAESKey', type: 'password', help: '43 位字符' },
+      { key: 'encodingAESKey', label: 'EncodingAESKey', type: 'password', help: '43 位字符' },
       { key: 'corpId', label: 'Corp ID', type: 'text', help: '企业 ID' },
       { key: 'corpSecret', label: 'Corp Secret', type: 'password', help: '应用 Secret' },
       { key: 'agentId', label: 'Agent ID', type: 'text', help: '应用 Agent ID' },
     ] },
-  { id: 'msteams', label: 'Microsoft Teams', description: 'Bot Framework (插件)', type: 'plugin',
+  { id: 'openclaw-weixin', label: '微信（ClawBot）', description: '腾讯官方 WeChat ClawBot 插件，当前重点支持微信私聊', type: 'plugin', loginMethods: ['qrcode'],
     configFields: [
-      { key: 'appId', label: 'App ID', type: 'text' },
-      { key: 'appPassword', label: 'App Password', type: 'password' },
-    ] },
-  { id: 'mattermost', label: 'Mattermost', description: 'Bot API + WebSocket (插件)', type: 'plugin',
-    configFields: [
-      { key: 'url', label: '服务器URL', type: 'text' },
-      { key: 'token', label: 'Bot Token', type: 'password' },
-    ] },
-  { id: 'line', label: 'LINE', description: 'LINE Messaging API (插件)', type: 'plugin',
-    configFields: [
-      { key: 'channelAccessToken', label: 'Channel Access Token', type: 'password' },
-      { key: 'channelSecret', label: 'Channel Secret', type: 'password' },
-    ] },
-  { id: 'matrix', label: 'Matrix', description: 'Matrix 协议 (插件)', type: 'plugin',
-    configFields: [
-      { key: 'homeserverUrl', label: 'Homeserver URL', type: 'text' },
-      { key: 'accessToken', label: 'Access Token', type: 'password' },
-    ] },
-  { id: 'twitch', label: 'Twitch', description: 'Twitch Chat via IRC (插件)', type: 'plugin',
-    configFields: [
-      { key: 'username', label: '用户名', type: 'text' },
-      { key: 'oauthToken', label: 'OAuth Token', type: 'password' },
-      { key: 'channels', label: '频道', type: 'text', help: '逗号分隔' },
+      { key: 'name', label: '账号显示名', type: 'text', help: '可选。作为当前默认账号的显示名称；真正登录凭证由扫码写入本地。' },
+      { key: 'baseUrl', label: 'Base URL', type: 'text', placeholder: 'https://ilinkai.weixin.qq.com', help: '默认可保持官方地址，仅在腾讯侧给出其他入口时调整。' },
+      { key: 'cdnBaseUrl', label: 'CDN Base URL', type: 'text', placeholder: 'https://novac2c.cdn.weixin.qq.com/c2c', help: '媒体上传/下载 CDN 地址；通常保持默认即可。' },
+      { key: 'routeTag', label: 'Route Tag', type: 'number', help: '可选。多入口或灰度路由场景下才需要。' },
     ] },
 ];
 
@@ -453,26 +652,68 @@ const CHANNEL_REQUIRED_FIELDS: Record<string, string[]> = {
   feishu: ['appId', 'appSecret'],
   qqbot: ['appId', 'clientSecret'],
   dingtalk: ['clientId', 'clientSecret'],
-  wecom: ['botId', 'secret'],
-  'wecom-app': ['token', 'encodingAesKey', 'corpId', 'corpSecret', 'agentId'],
+  'wecom': ['token', 'encodingAESKey', 'webhookPath'],
+  'wecom-app': ['token', 'encodingAESKey', 'corpId', 'corpSecret', 'agentId'],
   msteams: ['appId', 'appPassword'],
   mattermost: ['url', 'token'],
   line: ['channelAccessToken', 'channelSecret'],
   matrix: ['homeserverUrl', 'accessToken'],
   twitch: ['username', 'oauthToken', 'channels'],
 };
-// 飞书双版本：读取当前启用的变体
-function getActiveFeishuVariant(ocConfig: any): 'official' | 'clawteam' | null {
-  const entries = ocConfig?.plugins?.entries || {};
-  if (entries['feishu-openclaw-plugin']?.enabled) return 'official';
-  if (entries['feishu']?.enabled) return 'clawteam';
+// 飞书官方版当前仅认可 openclaw-lark，旧 ID 仅做历史兼容清理。
+const FEISHU_OFFICIAL_IDS = ['openclaw-lark'] as const;
+// 所有当前有效的飞书插件 ID（含社区版）。
+const FEISHU_ALL_IDS = ['openclaw-lark', 'feishu'] as const;
+const WECOM_BOT_PLUGIN_IDS = ['wecom-openclaw-plugin', 'wecom'] as const;
+const QQBOT_PLUGIN_IDS = ['qqbot', 'qqbot-community'] as const;
+type QQBotVariant = 'builtin' | 'community';
+
+function getEnabledPluginEntry(entries: Record<string, any>, ids: readonly string[]): string | null {
+  for (const id of ids) {
+    if (entries[id]?.enabled) return id;
+  }
   return null;
 }
 
-// 飞书双版本：获取当前活跃的 plugin entry ID
+function isQQBotPluginInstalled(installedPlugins: any[]) {
+  return installedPlugins.some((p: any) => (QQBOT_PLUGIN_IDS as readonly string[]).includes(p.id));
+}
+
+function getActiveQQBotVariant(ocConfig: any): QQBotVariant {
+  const entries = ocConfig?.plugins?.entries || {};
+  if (entries['qqbot-community']?.enabled) return 'community';
+  if (entries['qqbot']?.enabled) return 'builtin';
+  if (entries['qqbot-community']) return 'community';
+  return 'builtin';
+}
+
+function getWecomConnectionMode(cfg: any): 'callback' | 'long-polling' {
+	const mode = String(cfg?.connectionMode || '').trim().toLowerCase();
+	if (mode === 'long-polling' || mode === 'long_polling' || mode === 'longpolling') return 'long-polling';
+	if (mode === 'callback') return 'callback';
+	if (String(cfg?.botId || '').trim() && String(cfg?.secret || '').trim()) return 'long-polling';
+	return 'callback';
+}
+
+// 飞书版本：读取当前启用的变体
+function getActiveFeishuVariant(ocConfig: any): 'official' | 'clawteam' | null {
+  if (isPlainObject(ocConfig?.channels?.feishu)) return 'official';
+  const entries = ocConfig?.plugins?.entries || {};
+  if (getEnabledPluginEntry(entries, FEISHU_OFFICIAL_IDS)) return 'official';
+  if (entries['feishu']?.enabled) return 'official';
+  return null;
+}
+
+// 飞书版本：获取当前活跃的 plugin entry ID
 function getFeishuPluginEntryId(ocConfig: any): string {
-  const variant = getActiveFeishuVariant(ocConfig);
-  if (variant === 'official') return 'feishu-openclaw-plugin';
+  const entries = ocConfig?.plugins?.entries || {};
+  for (const id of FEISHU_ALL_IDS) {
+    if (entries[id]?.enabled) return id;
+  }
+  // 未启用时返回有 entry 的第一个
+  for (const id of FEISHU_ALL_IDS) {
+    if (entries[id]) return id;
+  }
   return 'feishu';
 }
 
@@ -483,17 +724,74 @@ function isQQPluginInstalled(installedPlugins: any[]) {
 function isQQActuallyInstalled(installedPlugins: any[], qqChannelState: any) {
   return !!(qqChannelState?.pluginInstalled || isQQPluginInstalled(installedPlugins));
 }
+
+function getWecomAppVirtualConfig(ocConfig: any): Record<string, any> {
+  const channels = isPlainObject(ocConfig?.channels) ? ocConfig.channels : {};
+  const wecom = isPlainObject(channels.wecom) ? channels.wecom : {};
+  const agent = isPlainObject(wecom.agent) ? { ...wecom.agent } : {};
+  if (agent.token === undefined && wecom.token !== undefined) {
+    agent.token = wecom.token;
+  }
+  if (agent.encodingAESKey === undefined) {
+    if (wecom.encodingAESKey !== undefined) agent.encodingAESKey = wecom.encodingAESKey;
+    else if (wecom.encodingAesKey !== undefined) agent.encodingAESKey = wecom.encodingAesKey;
+  }
+  if (agent.encodingAESKey === undefined && agent.encodingAesKey !== undefined) {
+    agent.encodingAESKey = agent.encodingAesKey;
+  }
+  const virtual = isPlainObject(channels['wecom-app']) ? channels['wecom-app'] : {};
+  if (virtual.enabled !== undefined) agent.enabled = virtual.enabled;
+  else if (agent.enabled === undefined) agent.enabled = false;
+  return agent;
+}
+
+function isWecomAppEnabled(ocConfig: any): boolean {
+  return !!getWecomAppVirtualConfig(ocConfig).enabled;
+}
+
+function isWecomBuiltinEnabled(ocConfig: any): boolean {
+  const entries = ocConfig?.plugins?.entries || {};
+  const wecomEnabled = !!ocConfig?.channels?.wecom?.enabled || !!getEnabledPluginEntry(entries, WECOM_BOT_PLUGIN_IDS);
+  return wecomEnabled && !isWecomAppEnabled(ocConfig);
+}
 // Determine channel status: 'enabled' (green), 'configured' (red/orange), 'unconfigured' (gray)
-function getChannelStatus(ch: ChannelDef, ocConfig: any): 'enabled' | 'configured' | 'unconfigured' {
+function getChannelStatus(
+  ch: ChannelDef,
+  ocConfig: any,
+  installedPlugins: any[],
+  qqChannelState: any,
+): 'enabled' | 'configured' | 'unconfigured' {
   // wecom-app is backed by channels.wecom.agent
   const chConf = ch.id === 'wecom-app'
-    ? (() => { const w = ocConfig?.channels?.wecom; return isPlainObject(w?.agent) ? { ...w.agent, enabled: w?.enabled } : {}; })()
+    ? getWecomAppVirtualConfig(ocConfig)
     : (ocConfig?.channels?.[ch.id] || {});
   const pluginConf = ocConfig?.plugins?.entries?.[ch.id] || {};
+  const pluginInstalled = ch.id === 'qq'
+    ? isQQActuallyInstalled(installedPlugins, qqChannelState)
+    : ch.id === 'qqbot'
+      ? isQQBotPluginInstalled(installedPlugins)
+    : ch.type === 'plugin'
+      ? (
+          ch.id === 'feishu'
+            ? installedPlugins.some((p: any) => (FEISHU_ALL_IDS as readonly string[]).includes(p.id))
+            : ch.id === 'wecom'
+              ? installedPlugins.some((p: any) => (WECOM_BOT_PLUGIN_IDS as readonly string[]).includes(p.id))
+              : ch.id === 'wecom-app'
+                ? installedPlugins.some((p: any) => p.id === 'wecom' || p.id === 'wecom-app')
+                : installedPlugins.some((p: any) => p.id === ch.id)
+        )
+      : true;
   // 飞书特殊处理：任一变体 enabled 即视为 enabled
-  const isEnabled = ch.id === 'feishu'
-    ? (pluginConf.enabled || ocConfig?.plugins?.entries?.['feishu-openclaw-plugin']?.enabled || chConf.enabled)
-    : (chConf.enabled || pluginConf.enabled);
+  const configuredEnabled = ch.id === 'feishu'
+    ? (pluginConf.enabled || !!getEnabledPluginEntry(ocConfig?.plugins?.entries || {}, FEISHU_OFFICIAL_IDS) || chConf.enabled)
+    : ch.id === 'qqbot'
+      ? (chConf.enabled || !!getEnabledPluginEntry(ocConfig?.plugins?.entries || {}, QQBOT_PLUGIN_IDS))
+    : ch.id === 'wecom-app'
+      ? isWecomAppEnabled(ocConfig)
+      : ch.id === 'wecom'
+        ? isWecomBuiltinEnabled(ocConfig)
+        : (chConf.enabled || pluginConf.enabled);
+  const isEnabled = configuredEnabled && pluginInstalled;
   // Check if any config field has a value
   const hasConfig = ch.configFields.some(f => {
     const v = getNestedValue(chConf, f.key);
@@ -531,14 +829,17 @@ export default function Channels() {
   };
 
   const [status, setStatus] = useState<any>(null);
-  const [selectedChannel, setSelectedChannel] = useState('');
+  const [channelDefs, setChannelDefs] = useState<ChannelDef[]>(DEFAULT_CHANNEL_DEFS);
+  const [selectedChannel, setSelectedChannel] = useState(CHANNEL_UNSELECTED_ID);
   const [ocConfig, setOcConfig] = useState<any>({});
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
   const [requests, setRequests] = useState<any[]>([]);
   // QQ Login state
   const [loginModal, setLoginModal] = useState<'qrcode' | 'quick' | 'password' | null>(null);
+  const [loginChannelId, setLoginChannelId] = useState<string>('');
   const [qrImg, setQrImg] = useState('');
+  const [qrRenderImg, setQrRenderImg] = useState('');
   const [qrLoading, setQrLoading] = useState(false);
   const [quickList, setQuickList] = useState<string[]>([]);
   const [loginUin, setLoginUin] = useState('');
@@ -557,9 +858,17 @@ export default function Channels() {
   const [restarting, setRestarting] = useState(false);
   const [installedPlugins, setInstalledPlugins] = useState<any[]>([]);
   const [installingChannelPlugin, setInstallingChannelPlugin] = useState<string | null>(null);
+  const [openClawWeixinStatus, setOpenClawWeixinStatus] = useState<any>(null);
+  const [openClawWeixinSessionKey, setOpenClawWeixinSessionKey] = useState('');
+  const [loggingOutWeixinAccount, setLoggingOutWeixinAccount] = useState<string | null>(null);
   const [qqChannelState, setQQChannelState] = useState<any>(null);
+  const [pairingRequests, setPairingRequests] = useState<OpenClawPairingRequest[]>([]);
+  const [loadingPairingRequests, setLoadingPairingRequests] = useState(false);
+  const [approvingPairingCode, setApprovingPairingCode] = useState('');
   const [channelDrafts, setChannelDrafts] = useState<Record<string, any>>({});
   const [channelFieldTextDrafts, setChannelFieldTextDrafts] = useState<Record<string, string>>({});
+  const [qqbotAdvancedOpen, setQqbotAdvancedOpen] = useState(false);
+  const [switchingQQBotVariant, setSwitchingQQBotVariant] = useState(false);
   const [feishuAdvancedAccounts, setFeishuAdvancedAccounts] = useState(false);
   const [feishuActiveAccountId, setFeishuActiveAccountId] = useState('default');
   const [feishuNewAccountId, setFeishuNewAccountId] = useState('');
@@ -573,7 +882,7 @@ export default function Channels() {
     if (!value) return '';
     const normalized = value.trim().toLowerCase();
     if (normalized === 'napcat') return 'qq';
-    return CHANNEL_DEFS.some(channel => channel.id === normalized) ? normalized : '';
+    return channelDefs.some(channel => channel.id === normalized) ? normalized : '';
   };
 
   const syncFeishuUiState = useCallback((config: any) => {
@@ -703,6 +1012,21 @@ export default function Channels() {
     api.getQQChannelState().then((r: any) => { if (r.ok) setQQChannelState(r.state || null); }).catch(() => {});
   };
 
+  const loadOpenClawWeixinStatus = () => {
+    api.getOpenClawWeixinStatus().then((r: any) => { if (r.ok) setOpenClawWeixinStatus(r); }).catch(() => {});
+  };
+
+  const loadChannelCatalog = useCallback(() => {
+    api.getChannelCatalog()
+      .then((r: any) => {
+        if (!r.ok) return;
+        const items = (Array.isArray(r.channels) ? (r.channels as ChannelCatalogItem[]) : [])
+          .filter(item => item?.id !== 'qqbot-community' && item?.id !== 'openai' && item?.id !== 'minimax');
+        setChannelDefs(mergeChannelDefs(DEFAULT_CHANNEL_DEFS, items));
+      })
+      .catch(() => {});
+  }, []);
+
   const loadFeishuDmDiagnosis = useCallback(async () => {
     setLoadingFeishuDmDiagnosis(true);
     try {
@@ -720,10 +1044,13 @@ export default function Channels() {
   const isPluginInstalled = (channelId: string) => {
     // 飞书特殊处理：任一版本已安装即视为已安装
     if (channelId === 'feishu') {
-      return installedPlugins.some((p: any) => p.id === 'feishu' || p.id === 'feishu-openclaw-plugin');
+      return installedPlugins.some((p: any) => (FEISHU_ALL_IDS as readonly string[]).includes(p.id));
+    }
+    if (channelId === 'qqbot') {
+      return isQQBotPluginInstalled(installedPlugins);
     }
     if (channelId === 'wecom') {
-      return installedPlugins.some((p: any) => p.id === 'wecom' || p.id === 'wecom-openclaw-plugin');
+      return installedPlugins.some((p: any) => (WECOM_BOT_PLUGIN_IDS as readonly string[]).includes(p.id));
     }
     // 企业微信自建应用：@sunnoy/wecom 插件 id 为 wecom
     if (channelId === 'wecom-app') {
@@ -734,6 +1061,27 @@ export default function Channels() {
   };
 
   const validateChannelBeforeEnable = (channelId: string) => {
+    if (channelId === 'wecom') {
+      const cfg = getEffectiveChannelConfig(channelId);
+      const mode = getWecomConnectionMode(cfg);
+      const required = mode === 'long-polling'
+        ? [
+            ['botId', 'Bot ID'],
+            ['secret', 'Secret'],
+          ]
+        : [
+            ['token', 'Token'],
+            ['encodingAESKey', 'EncodingAESKey'],
+            ['webhookPath', 'Webhook Path'],
+          ];
+      const missing = required
+        .filter(([key]) => !String(getNestedValue(cfg, key) ?? '').trim())
+        .map(([, label]) => label);
+      if (missing.length) {
+        return `企业微信（智能机器人）当前连接方式缺少必填项：${missing.join('、')}`;
+      }
+      return '';
+    }
     const requiredFields = CHANNEL_REQUIRED_FIELDS[channelId] || [];
     if (!requiredFields.length) return '';
     const cfg = getEffectiveChannelConfig(channelId);
@@ -742,9 +1090,9 @@ export default function Channels() {
         const value = key.split('.').reduce((obj: any, part: string) => obj?.[part], cfg);
         return !String(value ?? '').trim();
       })
-      .map(key => CHANNEL_DEFS.find(ch => ch.id === channelId)?.configFields.find(field => field.key === key)?.label || key);
+      .map(key => channelDefs.find(ch => ch.id === channelId)?.configFields.find(field => field.key === key)?.label || key);
     if (missingLabels.length) {
-      const channelLabel = CHANNEL_DEFS.find(ch => ch.id === channelId)?.label || channelId;
+      const channelLabel = channelDefs.find(ch => ch.id === channelId)?.label || channelId;
       if (channelId === 'dingtalk') {
         return '钉钉需要先填写 Client ID 和 Client Secret 才能启用';
       }
@@ -754,6 +1102,7 @@ export default function Channels() {
   };
 
   const reload = () => {
+    loadChannelCatalog();
     api.getStatus().then(r => { if (r.ok) setStatus(r); });
     api.getOpenClawConfig().then(r => {
       if (!r.ok) return;
@@ -765,46 +1114,82 @@ export default function Channels() {
     });
     loadFeishuDmDiagnosis();
     api.getRequests().then(r => { if (r.ok) setRequests(r.requests || []); });
+    loadOpenClawWeixinStatus();
   };
 
-  useEffect(() => { reload(); loadSoftware(); loadNapcatStatus(); loadInstalledPlugins(); loadQQChannelState(); }, []);
+  useEffect(() => {
+    // Batch all initial loads in parallel for faster page load
+    Promise.all([
+      api.getStatus().then(r => { if (r.ok) setStatus(r); }).catch(() => {}),
+      api.getChannelCatalog().then((r: any) => {
+        if (!r.ok) return;
+        const items = Array.isArray(r.channels) ? (r.channels as ChannelCatalogItem[]) : [];
+        setChannelDefs(mergeChannelDefs(DEFAULT_CHANNEL_DEFS, items));
+      }).catch(() => {}),
+      api.getOpenClawConfig().then(r => {
+        if (!r.ok) return;
+        const nextConfig = r.config || {};
+        setOcConfig(nextConfig);
+        setChannelDrafts({});
+        setChannelFieldTextDrafts({});
+        syncFeishuUiState(nextConfig);
+      }).catch(() => {}),
+      loadFeishuDmDiagnosis().catch(() => {}),
+      api.getRequests().then(r => { if (r.ok) setRequests(r.requests || []); }).catch(() => {}),
+      api.getSoftwareList().then(r => { if (r.ok) { setSoftwareList(r.software || []); if (r.platform) setServerPlatform(r.platform); } }).catch(() => {}),
+      api.napcatStatus().then(r => { if (r.ok) setNapcatStatus(r.status); }).catch(() => {}),
+      api.getInstalledPlugins().then((r: any) => { if (r.ok) setInstalledPlugins(r.plugins || []); }).catch(() => {}),
+      api.getQQChannelState().then((r: any) => { if (r.ok) setQQChannelState(r.state || null); }).catch(() => {}),
+      api.getOpenClawWeixinStatus().then((r: any) => { if (r.ok) setOpenClawWeixinStatus(r); }).catch(() => {}),
+    ]).catch(() => {});
+  }, []);
   // 自动选择第一个已启用的渠道（而非硬编码 QQ）
   useEffect(() => {
     if (selectedChannel) return; // 用户已手动选择
-    const firstEnabled = CHANNEL_DEFS.find(ch => {
+      const firstEnabled = channelDefs.find(ch => {
       const chConf = ocConfig?.channels?.[ch.id] || {};
       const pluginConf = ocConfig?.plugins?.entries?.[ch.id] || {};
       if (ch.id === 'feishu') {
-        return chConf.enabled || pluginConf.enabled || ocConfig?.plugins?.entries?.['feishu-openclaw-plugin']?.enabled;
+        return chConf.enabled || pluginConf.enabled || !!getEnabledPluginEntry(ocConfig?.plugins?.entries || {}, FEISHU_OFFICIAL_IDS);
       }
+      if (ch.id === 'qqbot') {
+        return chConf.enabled || pluginConf.enabled || !!getEnabledPluginEntry(ocConfig?.plugins?.entries || {}, QQBOT_PLUGIN_IDS);
+      }
+      if (ch.id === 'wecom-app') return isWecomAppEnabled(ocConfig);
+      if (ch.id === 'wecom') return isWecomBuiltinEnabled(ocConfig);
       return chConf.enabled || pluginConf.enabled;
     });
     if (firstEnabled) setSelectedChannel(firstEnabled.id);
-    else setSelectedChannel('feishu');
-  }, [ocConfig, selectedChannel]);
+    else setSelectedChannel(channelDefs.some(ch => ch.id === 'feishu') ? 'feishu' : (channelDefs[0]?.id || ''));
+  }, [channelDefs, ocConfig, selectedChannel]);
   useEffect(() => {
     if (selectedChannel === 'feishu') syncFeishuUiState(ocConfig);
   }, [selectedChannel, syncFeishuUiState]);
   useEffect(() => {
+    if (selectedChannel !== 'qqbot') setQqbotAdvancedOpen(false);
+  }, [selectedChannel]);
+  useEffect(() => {
     const queryChannel = normalizeChannelQuery(searchParams.get('channel'));
     if (!queryChannel) return;
     setSelectedChannel(prev => prev === queryChannel ? prev : queryChannel);
-  }, [searchParams]);
+  }, [channelDefs, searchParams]);
   // 自动选择第一个已启用的渠道（而非硬编码 QQ）
   useEffect(() => {
     const queryChannel = normalizeChannelQuery(searchParams.get('channel'));
     if (queryChannel || selectedChannel) return;
-    const firstEnabled = CHANNEL_DEFS.find(ch => {
+    const firstEnabled = channelDefs.find(ch => {
       const chConf = ocConfig?.channels?.[ch.id] || {};
       const pluginConf = ocConfig?.plugins?.entries?.[ch.id] || {};
       if (ch.id === 'feishu') {
-        return chConf.enabled || pluginConf.enabled || ocConfig?.plugins?.entries?.['feishu-openclaw-plugin']?.enabled;
+        return chConf.enabled || pluginConf.enabled || !!getEnabledPluginEntry(ocConfig?.plugins?.entries || {}, FEISHU_OFFICIAL_IDS);
       }
+      if (ch.id === 'wecom-app') return isWecomAppEnabled(ocConfig);
+      if (ch.id === 'wecom') return isWecomBuiltinEnabled(ocConfig);
       return chConf.enabled || pluginConf.enabled;
     });
     if (firstEnabled) setSelectedChannel(firstEnabled.id);
-    else setSelectedChannel('feishu');
-  }, [ocConfig, selectedChannel]);
+    else setSelectedChannel(channelDefs.some(ch => ch.id === 'feishu') ? 'feishu' : (channelDefs[0]?.id || ''));
+  }, [channelDefs, ocConfig, selectedChannel]);
   useEffect(() => {
     const timer = setInterval(loadNapcatStatus, 30000);
     return () => clearInterval(timer);
@@ -816,16 +1201,21 @@ export default function Channels() {
     if (isPlainObject(channelDrafts[channelId])) return channelDrafts[channelId];
     // wecom-app is backed by channels.wecom.agent in openclaw.json
     if (channelId === 'wecom-app') {
-      const wecom = ocChannels['wecom'] as any;
-      const agent = isPlainObject(wecom?.agent) ? { ...wecom.agent } : {};
-      if (wecom?.enabled !== undefined) agent['enabled'] = wecom.enabled;
-      return agent;
+      return getWecomAppVirtualConfig(ocConfig);
     }
     if (channelId === 'qqbot' && isPlainObject(ocChannels[channelId])) {
       const cfg = { ...ocChannels[channelId] } as any;
       if (!String(cfg.clientSecret || '').trim() && String(cfg.appSecret || '').trim()) {
         cfg.clientSecret = cfg.appSecret;
       }
+      return cfg;
+    }
+    if (channelId === 'wecom' && isPlainObject(ocChannels[channelId])) {
+      const cfg = { ...ocChannels[channelId] } as any;
+      if (cfg.encodingAESKey === undefined && cfg.encodingAesKey !== undefined) {
+        cfg.encodingAESKey = cfg.encodingAesKey;
+      }
+      cfg.connectionMode = getWecomConnectionMode(cfg);
       return cfg;
     }
     if (isPlainObject(ocChannels[channelId])) return ocChannels[channelId];
@@ -879,6 +1269,17 @@ export default function Channels() {
   const currentConfiguredFeishuDmScope = String(feishuDmDiagnosis?.configuredDmScope || '').trim();
   const currentEffectiveFeishuDmScope = String(feishuDmDiagnosis?.effectiveDmScope || 'main').trim() || 'main';
   const feishuAuthorizedSenders = Array.isArray(feishuDmDiagnosis?.authorizedSenders) ? feishuDmDiagnosis.authorizedSenders : [];
+  const currentWecomConfig = getEffectiveChannelConfig('wecom');
+  const currentWecomMode = getWecomConnectionMode(currentWecomConfig);
+  const currentWecomEntryId = getEnabledPluginEntry(ocPlugins, WECOM_BOT_PLUGIN_IDS) || (ocPlugins['wecom-openclaw-plugin'] ? 'wecom-openclaw-plugin' : (ocPlugins['wecom'] ? 'wecom' : 'wecom-openclaw-plugin'));
+  const currentQQBotVariant = getActiveQQBotVariant(ocConfig);
+  const currentQQBotPluginEntryId = currentQQBotVariant === 'community' ? 'qqbot-community' : 'qqbot';
+
+  const handleWecomModeChange = (mode: 'callback' | 'long-polling') => {
+    updateChannelDraft('wecom', draft => {
+      draft.connectionMode = mode;
+    });
+  };
 
   const handleToggleFeishuAdvancedAccounts = (enabled: boolean) => {
     setFeishuAdvancedAccounts(enabled);
@@ -1011,6 +1412,7 @@ export default function Channels() {
   // Get the merged config for the current channel (supports nested keys like notifications.antiRecall)
   const getFieldValue = (channelId: string, key: string) => {
     const chConf = getEffectiveChannelConfig(channelId);
+    const fieldDef = channelDefs.find(ch => ch.id === channelId)?.configFields.find(field => field.key === key);
     if (channelId === 'qq') {
       if (key === 'rateLimit.wakeProbability') {
         const nested = chConf?.rateLimit?.wakeProbability;
@@ -1031,6 +1433,18 @@ export default function Channels() {
     }
     if (channelId === 'feishu' && key === 'groupAllowFrom') {
       return formatCommaList(chConf?.groupAllowFrom);
+    }
+    if (fieldDef?.valueFormat === 'stringArray') {
+      return formatCommaList(key.split('.').reduce((o: any, k: string) => o?.[k], chConf));
+    }
+    if (fieldDef?.valueFormat === 'jsonObject') {
+      const value = key.split('.').reduce((o: any, k: string) => o?.[k], chConf);
+      if (!isPlainObject(value)) return '';
+      try {
+        return JSON.stringify(value, null, 2);
+      } catch {
+        return '';
+      }
     }
     return key.split('.').reduce((o: any, k: string) => o?.[k], chConf);
   };
@@ -1074,18 +1488,89 @@ export default function Channels() {
         return;
       }
 
+      if (field.valueFormat === 'stringArray') {
+        setNestedValue(draft, field.key, parseDelimitedList(rawValue));
+        return;
+      }
+
+      if (field.valueFormat === 'jsonObject') {
+        try {
+          const parsed = JSON.parse(rawValue);
+          if (isPlainObject(parsed)) {
+            setNestedValue(draft, field.key, parsed);
+          }
+        } catch {
+          // Keep text draft while user is typing invalid/incomplete JSON.
+        }
+        return;
+      }
+
       setNestedValue(draft, field.key, rawValue);
     });
   };
 
   const isChannelEnabled = (channelId: string) => {
     if (channelId === 'feishu') {
-      return ocPlugins[channelId]?.enabled || ocPlugins['feishu-openclaw-plugin']?.enabled || ocChannels[channelId]?.enabled || false;
+      return ocPlugins[channelId]?.enabled || !!getEnabledPluginEntry(ocPlugins, FEISHU_OFFICIAL_IDS) || ocChannels[channelId]?.enabled || false;
     }
+    if (channelId === 'qqbot') {
+      return ocChannels[channelId]?.enabled || !!getEnabledPluginEntry(ocPlugins, QQBOT_PLUGIN_IDS) || false;
+    }
+    if (channelId === 'wecom-app') return isWecomAppEnabled(ocConfig);
+    if (channelId === 'wecom') return isWecomBuiltinEnabled(ocConfig);
     return ocChannels[channelId]?.enabled || ocPlugins[channelId]?.enabled || false;
   };
 
-  const currentDef = CHANNEL_DEFS.find(c => c.id === selectedChannel);
+  const currentDef = selectedChannel === CHANNEL_UNSELECTED_ID ? undefined : channelDefs.find(c => selectedChannel === c.id || selectedChannel.startsWith(c.id + ":"));
+  const qqbotPrimaryFields = currentDef?.id === 'qqbot'
+    ? currentDef.configFields.filter(field => field.key === 'appId' || field.key === 'clientSecret')
+    : [];
+  const qqbotAdvancedFields = currentDef?.id === 'qqbot'
+    ? currentDef.configFields.filter(field => field.key !== 'appId' && field.key !== 'clientSecret')
+    : [];
+  const currentLoginChannelId = loginChannelId || currentDef?.id || '';
+  const currentLoginChannel = channelDefs.find(channel => channel.id === currentLoginChannelId) || currentDef;
+  const openClawWeixinAccounts = Array.isArray(openClawWeixinStatus?.accounts) ? openClawWeixinStatus.accounts : [];
+  const currentChannelSupportsPairing = !!currentDef && currentDef.id !== 'openclaw-weixin' && (
+    PAIRING_CAPABLE_CHANNELS.has(currentDef.id) ||
+    currentDef.configFields.some(field => field.key === 'dmPolicy')
+  );
+  const currentChannelPairingEnabled = !!currentDef && currentChannelSupportsPairing && String(getEffectiveChannelConfig(currentDef.id)?.dmPolicy || '').trim() === 'pairing';
+
+  const resolvePairingAccountId = useCallback((channelId: string) => {
+    const cfg = getEffectiveChannelConfig(channelId);
+    if (channelId === 'feishu') {
+      return feishuAdvancedAccounts ? pickFeishuDefaultAccount(cfg) : pickFeishuDefaultAccount(cfg);
+    }
+    return String(cfg?.defaultAccount || '').trim();
+  }, [feishuAdvancedAccounts, channelDrafts, ocConfig]);
+
+  const loadPairingRequests = useCallback(async (channelId: string, accountId?: string) => {
+    if (!channelId) {
+      setPairingRequests([]);
+      return;
+    }
+    setLoadingPairingRequests(true);
+    try {
+      const r = await api.getOpenClawPairingRequests(channelId, accountId);
+      if (r?.ok) {
+        setPairingRequests(Array.isArray(r.requests) ? r.requests : []);
+      } else {
+        setPairingRequests([]);
+      }
+    } catch {
+      setPairingRequests([]);
+    } finally {
+      setLoadingPairingRequests(false);
+    }
+  }, []);
+  useEffect(() => {
+    if (!currentDef || !currentChannelPairingEnabled) {
+      setPairingRequests([]);
+      return;
+    }
+    loadPairingRequests(currentDef.id, resolvePairingAccountId(currentDef.id) || undefined);
+  }, [currentDef, currentChannelPairingEnabled, loadPairingRequests, resolvePairingAccountId]);
 
   const syncSelectedChannel = (channelId: string) => {
     setSelectedChannel(channelId);
@@ -1111,7 +1596,7 @@ export default function Channels() {
       const mutexId = WECOM_MUTEX[channelId];
       if (newEnabled && mutexId && isChannelEnabled(mutexId)) {
         await api.toggleChannel(mutexId, false);
-        await api.updatePlugin('wecom', { enabled: false });
+        await api.updatePlugin(currentWecomEntryId, { enabled: false });
       }
       const r = await api.toggleChannel(channelId, newEnabled);
       if (r.ok) {
@@ -1127,11 +1612,38 @@ export default function Channels() {
     } catch (err) { setMsg(t.common.operationFailed + ': ' + String(err)); setTimeout(() => setMsg(''), 3000); }
   };
 
+  const applyStructuredFieldDrafts = (channelId: string, channelData: any) => {
+    const def = channelDefs.find(ch => ch.id === channelId);
+    if (!def) return;
+    for (const field of def.configFields) {
+      const draftKey = `${channelId}:${field.key}`;
+      const raw = channelFieldTextDrafts[draftKey];
+      if (raw === undefined) continue;
+      if (field.valueFormat !== 'jsonObject') continue;
+      const trimmed = raw.trim();
+      if (!trimmed) {
+        deleteNestedValue(channelData, field.key);
+        continue;
+      }
+      let parsed: any;
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        throw new Error(`${field.label} 不是合法 JSON`);
+      }
+      if (!isPlainObject(parsed)) {
+        throw new Error(`${field.label} 需要是 JSON 对象`);
+      }
+      setNestedValue(channelData, field.key, parsed);
+    }
+  };
+
   const handleSave = async () => {
     if (!currentDef) return;
     setSaving(true); setMsg('');
     try {
       const chData: any = deepClone(getEffectiveChannelConfig(currentDef.id));
+      applyStructuredFieldDrafts(currentDef.id, chData);
       if (currentDef.id === 'feishu' && currentFeishuRequireMentionInvalid) {
         throw new Error(`requireMention 仅支持 true/false，当前值为 ${JSON.stringify(currentFeishuRequireMentionRaw)}`);
       }
@@ -1145,15 +1657,19 @@ export default function Channels() {
       const mutexId = WECOM_MUTEX[currentDef.id];
       if (enabledState && mutexId && isChannelEnabled(mutexId)) {
         await api.toggleChannel(mutexId, false);
-        await api.updatePlugin('wecom', { enabled: false });
+        await api.updatePlugin(currentWecomEntryId, { enabled: false });
       }
       // 飞书特殊处理：保存时操作当前活跃变体的 plugin entry
       if (currentDef.id === 'feishu') {
         const entryId = getFeishuPluginEntryId(ocConfig);
         await api.updatePlugin(entryId, { enabled: enabledState });
+      } else if (currentDef.id === 'qqbot') {
+        await api.updatePlugin(currentQQBotPluginEntryId, { enabled: enabledState });
+      } else if (currentDef.id === 'wecom') {
+        await api.updatePlugin(currentWecomEntryId, { enabled: enabledState });
       } else if (currentDef.id === 'wecom-app') {
         // wecom-app 复用 wecom 插件，操作 wecom entry 而非创建无效的 wecom-app entry
-        await api.updatePlugin('wecom', { enabled: enabledState });
+        await api.updatePlugin(currentWecomEntryId, { enabled: enabledState });
       } else if (currentDef.type === 'plugin') {
         await api.updatePlugin(currentDef.id, { enabled: enabledState });
       }
@@ -1183,31 +1699,86 @@ export default function Channels() {
       setTimeout(() => setMsg(''), 5000);
     } catch (err) { setMsg('切换失败: ' + String(err)); setTimeout(() => setMsg(''), 3000); }
   };
-
-  // === QQ Login handlers ===
-  const handleQRLogin = async () => {
-    setLoginModal('qrcode'); setQrImg(''); setQrLoading(true); setLoginMsg('');
+  const handleSwitchQQBotVariant = async (variant: QQBotVariant) => {
+    if (variant === currentQQBotVariant || switchingQQBotVariant) return;
+    setSwitchingQQBotVariant(true);
     try {
+      const r = await api.switchQQBotVariant(variant);
+      if (r?.ok) {
+        setMsg(r.message || 'QQ å®˜æ–¹æœºå™¨äººç‰ˆæœ¬å·²åˆ‡æ¢');
+      } else {
+        setMsg(r?.error || 'QQ å®˜æ–¹æœºå™¨äººç‰ˆæœ¬åˆ‡æ¢å¤±è´¥');
+      }
+      reload();
+      setTimeout(() => setMsg(''), 5000);
+    } catch (err) {
+      setMsg('QQ å®˜æ–¹æœºå™¨äººç‰ˆæœ¬åˆ‡æ¢å¤±è´¥: ' + String(err));
+      setTimeout(() => setMsg(''), 5000);
+    } finally {
+      setSwitchingQQBotVariant(false);
+    }
+  };
+  // === QQ Login handlers ===
+  const handleQRLogin = async (channelId = currentDef?.id || selectedChannel) => {
+    setLoginChannelId(channelId);
+    setLoginModal('qrcode');
+    setQrImg('');
+    setQrLoading(true);
+    setLoginMsg('');
+    try {
+      if (channelId === 'openclaw-weixin') {
+        const r = await api.startOpenClawWeixinQRCode({
+          force: true,
+          sessionKey: openClawWeixinSessionKey || undefined,
+        });
+        if (r.ok && r.qrcodeUrl) {
+          setQrImg(r.qrcodeUrl);
+          setOpenClawWeixinSessionKey(String(r.sessionKey || ''));
+          startQrPolling('openclaw-weixin', String(r.sessionKey || ''));
+        } else {
+          setLoginMsg(r.message || r.error || '获取微信二维码失败');
+        }
+        return;
+      }
+
       const r = await api.napcatGetQRCode();
       if (r.ok && r.data?.qrcode) {
         setQrImg(r.data.qrcode);
-        startQrPolling();
+        startQrPolling('qq');
       } else if (r.message?.includes('Logined') || r.data?.message?.includes('Logined')) {
         setLoginMsg('QQ 已登录，无需重复登录');
       } else {
         setLoginMsg(r.message || r.data?.message || r.error || '获取二维码失败');
       }
-    } catch (err) { setLoginMsg('获取二维码失败: ' + String(err)); }
-    finally { setQrLoading(false); }
+    } catch (err) {
+      setLoginMsg((channelId === 'openclaw-weixin' ? '获取微信二维码失败: ' : '获取二维码失败: ') + String(err));
+    } finally {
+      setQrLoading(false);
+    }
   };
 
   const handleRefreshQR = async () => {
     setQrLoading(true); setLoginMsg('');
     try {
+      if (currentLoginChannelId === 'openclaw-weixin') {
+        const r = await api.startOpenClawWeixinQRCode({
+          force: true,
+          sessionKey: openClawWeixinSessionKey || undefined,
+        });
+        if (r.ok && r.qrcodeUrl) {
+          setQrImg(r.qrcodeUrl);
+          setOpenClawWeixinSessionKey(String(r.sessionKey || ''));
+          startQrPolling('openclaw-weixin', String(r.sessionKey || ''));
+        } else {
+          setLoginMsg(r.message || r.error || '刷新失败');
+        }
+        return;
+      }
+
       const r = await api.napcatRefreshQRCode();
       if (r.ok && r.data?.qrcode) {
         setQrImg(r.data.qrcode);
-        startQrPolling();
+        startQrPolling('qq');
       } else {
         setLoginMsg(r.data?.message || '刷新失败');
       }
@@ -1311,6 +1882,26 @@ export default function Channels() {
     }
   };
 
+  const handleOpenClawWeixinLogout = async (accountId: string) => {
+    if (!confirm(`确定要退出微信账号 ${accountId} 吗？退出后需要重新扫码登录。`)) return;
+    setLoggingOutWeixinAccount(accountId);
+    try {
+      const r = await api.logoutOpenClawWeixin(accountId);
+      if (r.ok) {
+        setMsg(r.message || '微信账号已退出');
+        loadOpenClawWeixinStatus();
+        reload();
+      } else {
+        setMsg(r.error || '退出登录失败');
+      }
+    } catch (err) {
+      setMsg('退出登录失败: ' + String(err));
+    } finally {
+      setLoggingOutWeixinAccount(null);
+      setTimeout(() => setMsg(''), 5000);
+    }
+  };
+
   const handleDiagnose = async (repair: boolean) => {
     setDiagnosing(true);
     setDiagnoseResult(null);
@@ -1327,10 +1918,42 @@ export default function Channels() {
   };
 
   // QR code polling: check login status every 3s after QR is shown
-  const startQrPolling = () => {
+  const startQrPolling = (channelId: string, sessionKey?: string) => {
     stopQrPolling();
     qrPollRef.current = setInterval(async () => {
       try {
+        if (channelId === 'openclaw-weixin') {
+          const activeSessionKey = sessionKey || openClawWeixinSessionKey;
+          if (!activeSessionKey) return;
+          const r = await api.waitOpenClawWeixinQRCode(activeSessionKey, 30000);
+          if (!r.ok) {
+            setLoginMsg(r.error || '微信登录状态检查失败');
+            return;
+          }
+          if (r.connected) {
+            stopQrPolling();
+            setLoginMsg(`✅ ${r.message || '微信连接成功'}`);
+            loadOpenClawWeixinStatus();
+            reload();
+            setTimeout(() => {
+              setLoginModal(null);
+              setOpenClawWeixinSessionKey('');
+            }, 1500);
+            return;
+          }
+          if (r.status === 'scaned') {
+            setLoginMsg('已扫码，请在微信里确认登录');
+            return;
+          }
+          if (r.status === 'expired') {
+            stopQrPolling();
+            setLoginMsg('二维码已过期，请刷新');
+            return;
+          }
+          if (r.message) setLoginMsg(r.message);
+          return;
+        }
+
         const r = await api.napcatLoginStatus();
         if (r.ok && r.data?.isLogin) {
           stopQrPolling();
@@ -1353,8 +1976,45 @@ export default function Channels() {
   // Cleanup polling on unmount or modal close
   useEffect(() => {
     if (!loginModal) stopQrPolling();
+    if (!loginModal) {
+      setLoginChannelId('');
+      setOpenClawWeixinSessionKey('');
+      setQrRenderImg('');
+    }
     return () => stopQrPolling();
   }, [loginModal]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const renderQRCode = async () => {
+      if (!qrImg) {
+        setQrRenderImg('');
+        return;
+      }
+      if (currentLoginChannelId !== 'openclaw-weixin') {
+        setQrRenderImg(qrImg);
+        return;
+      }
+      try {
+        const dataUrl = await QRCode.toDataURL(qrImg, {
+          width: 192,
+          margin: 1,
+        });
+        if (!cancelled) setQrRenderImg(dataUrl);
+      } catch {
+        if (!cancelled) {
+          setQrRenderImg('');
+          setLoginMsg('微信二维码生成失败，请刷新后重试');
+        }
+      }
+    };
+
+    renderQRCode();
+    return () => {
+      cancelled = true;
+    };
+  }, [qrImg, currentLoginChannelId]);
 
   const handleApprove = async (flag: string) => {
     await api.approveRequest(flag);
@@ -1364,15 +2024,32 @@ export default function Channels() {
     await api.rejectRequest(flag);
     setRequests(prev => prev.filter(r => r.flag !== flag));
   };
+  const handleApprovePairingCode = async (channelId: string, code: string, accountId?: string) => {
+    setApprovingPairingCode(code);
+    try {
+      const r = await api.approveOpenClawPairingRequest({ channelId, code, accountId });
+      if (r?.ok) {
+        setMsg(`已批准 ${channelDefs.find(ch => ch.id === channelId)?.label || channelId} 配对请求 ${code}`);
+        await loadPairingRequests(channelId, accountId);
+      } else {
+        setMsg(r?.error || '批准 pairing code 失败');
+      }
+    } catch (err) {
+      setMsg('批准 pairing code 失败: ' + String(err));
+    } finally {
+      setApprovingPairingCode('');
+      setTimeout(() => setMsg(''), 5000);
+    }
+  };
 
   // Sort channels: enabled first, then configured, then unconfigured
-  const sortedBuiltin = CHANNEL_DEFS.filter(c => c.type === 'builtin').sort((a, b) => {
+  const sortedBuiltin = channelDefs.filter(c => c.type === 'builtin').sort((a, b) => {
     const order = { enabled: 0, configured: 1, unconfigured: 2 };
-    return order[getChannelStatus(a, ocConfig)] - order[getChannelStatus(b, ocConfig)];
+    return order[getChannelStatus(a, ocConfig, installedPlugins, qqChannelState)] - order[getChannelStatus(b, ocConfig, installedPlugins, qqChannelState)];
   });
-  const sortedPlugin = CHANNEL_DEFS.filter(c => c.type === 'plugin').sort((a, b) => {
+  const sortedPlugin = channelDefs.filter(c => c.type === 'plugin').sort((a, b) => {
     const order = { enabled: 0, configured: 1, unconfigured: 2 };
-    return order[getChannelStatus(a, ocConfig)] - order[getChannelStatus(b, ocConfig)];
+    return order[getChannelStatus(a, ocConfig, installedPlugins, qqChannelState)] - order[getChannelStatus(b, ocConfig, installedPlugins, qqChannelState)];
   });
 
   const currentFeishuAllowlistEntries = parseDelimitedList(currentFeishuGroupAllowFrom);
@@ -1388,7 +2065,7 @@ export default function Channels() {
       : field.options;
     const fieldHelp = channelId === 'feishu' && field.key === 'requireMention'
       ? currentFeishuRequireMentionHelp
-      : field.help;
+      : (field.help || (channelId === 'qqbot' ? QQBOT_ADVANCED_FIELD_HELP[field.key] : ''));
     const currentVal = channelId === 'feishu' && field.key === 'requireMention'
       ? currentFeishuRequireMentionValue
       : rawCurrentVal;
@@ -1457,7 +2134,7 @@ export default function Channels() {
                   ? 'border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-100'
                   : 'border-gray-200 dark:border-gray-800 text-gray-400'}`}
             >
-              <option value="">{defaultHint ? `未配置（默认 ${defaultHint}）` : '未配置'}</option>
+              <option value="">{defaultHint ? t.channels.notConfiguredWithDefault.replace('{value}', defaultHint) : t.common.notConfigured}</option>
               {fieldOptions?.map(opt => (
                 <option key={opt} value={opt}>{opt}</option>
               ))}
@@ -1469,7 +2146,7 @@ export default function Channels() {
             rows={field.rows || 3}
             value={textareaValue}
             onChange={e => handleFieldDraftChange(channelId, field, e.target.value)}
-            placeholder={field.placeholder || '未配置'}
+            placeholder={field.placeholder || t.common.notConfigured}
             className={`w-full px-3.5 py-2 text-sm border rounded-lg bg-white dark:bg-gray-900 transition-all focus:ring-2 focus:ring-violet-100 dark:focus:ring-violet-900/30 focus:border-violet-500 outline-none resize-y
               ${hasExplicitValue
                 ? 'border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-100'
@@ -1482,7 +2159,7 @@ export default function Channels() {
               type={field.type === 'password' ? 'password' : field.type === 'number' ? 'number' : 'text'}
               value={currentVal ?? ''}
               onChange={e => handleFieldDraftChange(channelId, field, e.target.value)}
-              placeholder={field.placeholder || '未配置'}
+              placeholder={field.placeholder || t.common.notConfigured}
               className={`w-full px-3.5 py-2 text-sm border rounded-lg bg-white dark:bg-gray-900 transition-all focus:ring-2 focus:ring-violet-100 dark:focus:ring-violet-900/30 focus:border-violet-500 outline-none
                 ${hasExplicitValue
                   ? 'border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-100'
@@ -1502,7 +2179,7 @@ export default function Channels() {
 
         {defaultHint && (
           <p className="mt-1 text-[11px] text-gray-400">
-            未显式设置时默认：<span className="font-mono">{defaultHint}</span>
+            {t.channels.defaultWhenUnset.replace('{value}', defaultHint)}
           </p>
         )}
         {channelId === 'feishu' && field.key === 'groupAllowFrom' && (
@@ -1549,7 +2226,7 @@ export default function Channels() {
               <h3 className="text-[10px] font-semibold text-gray-400 mb-2 px-2 uppercase tracking-wide">{t.channels.builtinChannels}</h3>
               <div className="space-y-1">
                 {sortedBuiltin.map(ch => {
-                  const st = getChannelStatus(ch, ocConfig);
+                  const st = getChannelStatus(ch, ocConfig, installedPlugins, qqChannelState);
                   return (
                     <button key={ch.id} onClick={() => syncSelectedChannel(ch.id)}
                       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm transition-all duration-200 group ${
@@ -1576,7 +2253,7 @@ export default function Channels() {
                 <h3 className="text-[10px] font-semibold text-gray-400 mb-2 px-2 uppercase tracking-wide">{t.channels.pluginChannels}</h3>
                 <div className="space-y-1">
                   {sortedPlugin.map(ch => {
-                    const st = getChannelStatus(ch, ocConfig);
+                    const st = getChannelStatus(ch, ocConfig, installedPlugins, qqChannelState);
                     return (
                       <button key={ch.id} onClick={() => syncSelectedChannel(ch.id)}
                         className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm transition-all duration-200 group ${
@@ -1603,6 +2280,20 @@ export default function Channels() {
 
         {/* Channel config */}
         <div className="lg:col-span-3 space-y-6">
+          {!currentDef && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-10 md:p-14">
+              <div className="mx-auto max-w-xl text-center space-y-4">
+                <div className="mx-auto w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/40 text-blue-500 flex items-center justify-center">
+                  <Radio size={24} />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">请选择左侧通道开始配置</h3>
+                <p className="text-sm text-gray-500 leading-relaxed">
+                  这里会显示对应通道的连接状态、登录入口和参数配置。建议先配置基础凭证，再按需展开高级选项。
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* QQ plugin not installed overlay */}
           {currentDef && currentDef.id === 'qq' && !isQQActuallyInstalled(installedPlugins, qqChannelState) && (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 text-center space-y-4">
@@ -1716,10 +2407,10 @@ export default function Channels() {
                     <div className="flex items-center gap-3">
                       <h3 className="font-bold text-base text-gray-900 dark:text-white">{currentDef.label} {t.channels.config}</h3>
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                        getChannelStatus(currentDef, ocConfig) === 'enabled' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400' :
-                        getChannelStatus(currentDef, ocConfig) === 'configured' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400' :
+                        getChannelStatus(currentDef, ocConfig, installedPlugins, qqChannelState) === 'enabled' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400' :
+                        getChannelStatus(currentDef, ocConfig, installedPlugins, qqChannelState) === 'configured' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400' :
                         'bg-gray-100 dark:bg-gray-800 text-gray-500'
-                      }`}>{statusLabel(getChannelStatus(currentDef, ocConfig))}</span>
+                      }`}>{statusLabel(getChannelStatus(currentDef, ocConfig, installedPlugins, qqChannelState))}</span>
                     </div>
                     <p className="text-xs text-gray-500 mt-1">{currentDef.description}</p>
                   </div>
@@ -1739,7 +2430,7 @@ export default function Channels() {
                   {currentDef.loginMethods && currentDef.loginMethods.length > 0 && (
                     <div className="flex items-center gap-2 border-l border-gray-200 dark:border-gray-700 pl-3 ml-1">
                       {currentDef.loginMethods.includes('qrcode') && (
-                        <button onClick={handleQRLogin} className={`${modern ? 'page-modern-accent px-3 py-1.5 text-xs' : 'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors'}`}>
+                        <button onClick={() => handleQRLogin(currentDef.id)} className={`${modern ? 'page-modern-accent px-3 py-1.5 text-xs' : 'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors'}`}>
                           <QrCode size={14} />{t.channels.qrLogin}
                         </button>
                       )}
@@ -1760,10 +2451,10 @@ export default function Channels() {
                           </button>
                           <button onClick={handleRestartNapcat} disabled={restarting} className={`${modern ? 'page-modern-warn px-3 py-1.5 text-xs' : 'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/50 disabled:opacity-50 transition-colors'}`}>
                             {restarting ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                            {restarting ? '重启中...' : '重启NapCat'}
+                            {restarting ? t.channels.restartingNapcat : t.channels.restartNapcat}
                           </button>
                           <button onClick={handleDeleteQQChannel} className={`${modern ? 'page-modern-danger px-3 py-1.5 text-xs' : 'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors'}`}>
-                            <Trash2 size={14} />删除QQ通道
+                            <Trash2 size={14} />{t.channels.deleteQQChannel}
                           </button>
                         </>
                       )}
@@ -1790,11 +2481,11 @@ export default function Channels() {
                       }`} />
                       <div>
                         <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                          {napcatStatus.status === 'online' ? '🟢 NapCat 在线' :
-                           napcatStatus.status === 'reconnecting' ? '🟡 正在重连...' :
-                           napcatStatus.status === 'login_expired' ? '🟠 登录已失效' :
-                           napcatStatus.status === 'stopped' ? '🔴 容器已停止' :
-                           '🔴 NapCat 离线'}
+                          {napcatStatus.status === 'online' ? t.channels.napcatStatusOnline :
+                           napcatStatus.status === 'reconnecting' ? t.channels.napcatStatusReconnecting :
+                           napcatStatus.status === 'login_expired' ? t.channels.napcatStatusLoginExpired :
+                           napcatStatus.status === 'stopped' ? t.channels.napcatStatusStopped :
+                           t.channels.napcatStatusOffline}
                         </span>
                         {napcatStatus.qqId && (
                           <span className="ml-2 text-xs text-gray-500">
@@ -1806,19 +2497,19 @@ export default function Channels() {
                     <div className="flex items-center gap-2">
                       {napcatStatus.autoReconnect && (
                         <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
-                          自动重连 {napcatStatus.reconnectCount > 0 ? `(${napcatStatus.reconnectCount}/${napcatStatus.maxReconnect})` : '已启用'}
+                          {t.channels.autoReconnect} {napcatStatus.reconnectCount > 0 ? `(${napcatStatus.reconnectCount}/${napcatStatus.maxReconnect})` : t.channels.autoReconnectEnabled}
                         </span>
                       )}
                       {(napcatStatus.status === 'offline' || napcatStatus.status === 'stopped') && (
                         <button onClick={handleReconnect} disabled={reconnecting}
                           className={`${modern ? 'page-modern-accent px-2.5 py-1 text-[11px]' : 'flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-lg bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-900/50 disabled:opacity-50 transition-colors'}`}>
                           <RefreshCw size={11} className={reconnecting ? 'animate-spin' : ''} />
-                          {reconnecting ? '重连中...' : '手动重连'}
+                          {reconnecting ? t.channels.reconnecting : t.channels.manualReconnect}
                         </button>
                       )}
                       <button onClick={() => { setShowReconnectLogs(!showReconnectLogs); if (!showReconnectLogs) loadReconnectLogs(); }}
                         className="text-[11px] text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors underline">
-                        {showReconnectLogs ? '收起日志' : '重连日志'}
+                        {showReconnectLogs ? t.channels.hideReconnectLogs : t.channels.showReconnectLogs}
                       </button>
                     </div>
                   </div>
@@ -1915,53 +2606,17 @@ export default function Channels() {
                 </div>
               )}
 
-              {/* 飞书双版本选择器 */}
+              {/* 飞书内置通道提示 */}
               {currentDef.id === 'feishu' && (
                 <div className="rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-900/10 p-4 space-y-3">
-                  <div className="text-sm font-semibold text-gray-900 dark:text-white">当前飞书通道版本</div>
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <label className={`flex-1 flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
-                      getActiveFeishuVariant(ocConfig) === 'official'
-                        ? 'border-violet-500 bg-violet-100/50 dark:bg-violet-900/20'
-                        : 'border-gray-200 dark:border-gray-700 hover:border-violet-300 dark:hover:border-violet-600'
-                    }`}>
-                      <input type="radio" name="feishu-variant" value="official"
-                        checked={getActiveFeishuVariant(ocConfig) === 'official'}
-                        onChange={() => handleSwitchFeishuVariant('official')}
-                        className="mt-0.5 accent-violet-600" />
-                      <div>
-                        <div className="text-sm font-medium text-gray-900 dark:text-white">飞书官方版</div>
-                        <div className="text-[11px] text-gray-500 mt-0.5">
-                          支持用户身份授权、文档/日历/任务操作、流式卡片、话题独立上下文，需要先
-                          <a
-                            href="https://bytedance.larkoffice.com/docx/MFK7dDFLFoVlOGxWCv5cTXKmnMh"
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-violet-700 underline decoration-violet-400 underline-offset-2 hover:text-violet-800 dark:text-violet-300 dark:hover:text-violet-200"
-                          >
-                            手动安装飞书官方插件
-                          </a>
-                        </div>
-                      </div>
-                    </label>
-                    <label className={`flex-1 flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
-                      getActiveFeishuVariant(ocConfig) === 'clawteam'
-                        ? 'border-violet-500 bg-violet-100/50 dark:bg-violet-900/20'
-                        : 'border-gray-200 dark:border-gray-700 hover:border-violet-300 dark:hover:border-violet-600'
-                    }`}>
-                      <input type="radio" name="feishu-variant" value="clawteam"
-                        checked={getActiveFeishuVariant(ocConfig) === 'clawteam'}
-                        onChange={() => handleSwitchFeishuVariant('clawteam')}
-                        className="mt-0.5 accent-violet-600" />
-                      <div>
-                        <div className="text-sm font-medium text-gray-900 dark:text-white">ClawTeam 社区版</div>
-                        <div className="text-[11px] text-gray-500 mt-0.5">社区维护的基础飞书通道插件，支持话题回复、输入提示等</div>
-                      </div>
-                    </label>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white">当前飞书接入模式</div>
+                  <div className="rounded-lg border border-violet-200/70 dark:border-violet-700/50 bg-white/70 dark:bg-slate-900/40 px-4 py-3 space-y-1.5">
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">OpenClaw 内置飞书通道</div>
+                    <div className="text-[11px] text-gray-500 leading-relaxed">
+                      本机当前 OpenClaw 版本已直接内置 <span className="font-mono">feishu</span> 通道，默认不再需要额外安装飞书插件。
+                      面板仍会兼容旧的历史配置，但新部署建议直接按内置通道方式管理。
+                    </div>
                   </div>
-                  {!getActiveFeishuVariant(ocConfig) && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">未检测到已启用的飞书插件，请选择一个版本并启用</p>
-                  )}
                 </div>
               )}
 
@@ -2039,7 +2694,7 @@ export default function Channels() {
                   {!feishuAdvancedAccounts ? (
                     <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
                       <div>
-                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white">单账号凭证</h4>
+                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white">QQBot 通道版本</h4>
                         <p className="text-xs text-gray-500 mt-1 leading-relaxed">
                           {currentFeishuHasStoredAccounts
                             ? `当前仍保留 ${currentFeishuAccounts.length} 个账号；仅默认账号视图只会编辑默认账号 ${currentFeishuDefaultAccount || 'default'}，其他账号会继续保留，但保存时会自动标记为 enabled=false。`
@@ -2455,9 +3110,195 @@ export default function Channels() {
               {currentDef.id === 'telegram' && String(getEffectiveChannelConfig('telegram')?.dmPolicy || 'pairing') === 'pairing' && (
                 <div className="rounded-lg border border-amber-200 dark:border-amber-800/40 bg-amber-50/80 dark:bg-amber-900/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-300 leading-relaxed space-y-1.5">
                   <div className="font-semibold text-amber-900 dark:text-amber-100">Telegram 当前处于配对模式</div>
-                  <div>首次私聊机器人时，OpenClaw 会返回 pairing code；当前面板还没有 Telegram 配对审批页。</div>
-                  <div>可在服务器执行 <span className="font-mono">openclaw pairing list telegram</span> 查看待审批请求，再执行 <span className="font-mono">openclaw pairing approve telegram &lt;code&gt;</span> 完成授权。</div>
+                  <div>首次私聊机器人时，OpenClaw 会返回 pairing code；现在可以直接在上方“统一配对审批”里查看并批准。</div>
+                  <div>如果需要排查底层状态，仍可在服务器执行 <span className="font-mono">openclaw pairing list telegram</span> 与 <span className="font-mono">openclaw pairing approve telegram &lt;code&gt;</span>。</div>
                   <div>如果你不想走配对流程，可把“私聊准入策略”改成 <span className="font-mono">open</span>。</div>
+                </div>
+              )}
+
+              {currentDef.id === 'openclaw-weixin' && (
+                <div className="rounded-lg border border-blue-200 dark:border-blue-800/40 bg-blue-50/80 dark:bg-blue-900/10 px-4 py-3 text-xs text-blue-700 dark:text-blue-300 leading-relaxed space-y-1.5">
+                  <div className="font-semibold text-blue-900 dark:text-blue-100">腾讯官方微信通道接入步骤</div>
+                  <div>现在可以直接在面板里生成登录二维码；底层仍然使用 OpenClaw 官方微信通道的扫码登录流程。</div>
+                  <div>建议顺序：先安装插件并启用，再点击上方“二维码登录”完成扫码，确认后面板会自动刷新账号状态。</div>
+                  <div>如果你准备接多个微信账号，建议再执行 <span className="font-mono">openclaw config set session.dmScope per-account-channel-peer</span>，避免不同账号私聊上下文串线。</div>
+                </div>
+              )}
+
+              {currentDef.id === 'openclaw-weixin' && (
+                <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">{'\u5fae\u4fe1\u767b\u5f55\u72b6\u6001'}</h4>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                        {'\u5728\u8fd9\u91cc\u5237\u65b0\u626b\u7801\u4e0e\u8d26\u53f7\u72b6\u6001\uff0c\u627e\u4e0d\u5230\u4e8c\u7ef4\u7801\u65f6\u53ef\u4ee5\u91cd\u65b0\u751f\u6210\u3002'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => loadOpenClawWeixinStatus()}
+                        className={`${modern ? 'page-modern-action px-3 py-1.5 text-xs' : 'flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors'}`}
+                      >
+                        <RefreshCw size={12} />
+                        刷新状态
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleQRLogin('openclaw-weixin')}
+                        className={`${modern ? 'page-modern-accent px-3 py-1.5 text-xs' : 'flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors'}`}
+                      >
+                        <QrCode size={12} />
+                        新增登录
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-4 gap-3">
+                    <div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-900/30 px-3 py-3">
+                      <div className="text-[11px] text-gray-500 dark:text-gray-400">插件安装</div>
+                      <div className={`mt-1 text-sm font-semibold ${openClawWeixinStatus?.pluginInstalled ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                        {openClawWeixinStatus?.pluginInstalled ? '已安装' : '未安装'}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-900/30 px-3 py-3">
+                      <div className="text-[11px] text-gray-500 dark:text-gray-400">插件启用</div>
+                      <div className={`mt-1 text-sm font-semibold ${openClawWeixinStatus?.enabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                        {openClawWeixinStatus?.enabled ? '已启用' : '未启用'}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-900/30 px-3 py-3">
+                      <div className="text-[11px] text-gray-500 dark:text-gray-400">已登录账号</div>
+                      <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{openClawWeixinAccounts.length}</div>
+                    </div>
+                    <div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-900/30 px-3 py-3">
+                      <div className="text-[11px] text-gray-500 dark:text-gray-400">待处理登录</div>
+                      <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{Number(openClawWeixinStatus?.pendingLogins || 0)}</div>
+                    </div>
+                  </div>
+
+                  {openClawWeixinAccounts.length > 0 ? (
+                    <div className="space-y-3">
+                      {openClawWeixinAccounts.map((account: any) => (
+                        <div key={account.accountId} className="rounded-xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900/40 px-4 py-4">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                                  {account.name || account.accountId}
+                                </div>
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${account.configured ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300' : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'}`}>
+                                  {account.configured ? '已登录' : '未完成'}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${account.enabled ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
+                                  {account.enabled ? '启用中' : '已禁用'}
+                                </span>
+                              </div>
+                              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
+                                <div>账号 ID：<span className="font-mono text-gray-700 dark:text-gray-200">{account.accountId}</span></div>
+                                <div>用户 ID：<span className="font-mono text-gray-700 dark:text-gray-200">{account.userId || '-'}</span></div>
+                                <div className="md:col-span-2">Base URL：<span className="font-mono text-gray-700 dark:text-gray-200 break-all">{account.baseUrl || '-'}</span></div>
+                                <div className="md:col-span-2">CDN：<span className="font-mono text-gray-700 dark:text-gray-200 break-all">{account.cdnBaseUrl || '-'}</span></div>
+                                <div>最近保存：<span className="font-mono text-gray-700 dark:text-gray-200">{account.savedAt || '-'}</span></div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleQRLogin('openclaw-weixin')}
+                                className={`${modern ? 'page-modern-accent px-3 py-1.5 text-xs' : 'flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors'}`}
+                              >
+                                <RefreshCw size={12} />
+                                重新扫码
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenClawWeixinLogout(String(account.accountId || ''))}
+                                disabled={loggingOutWeixinAccount === account.accountId}
+                                className={`${modern ? 'page-modern-danger px-3 py-1.5 text-xs' : 'flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 disabled:opacity-50 transition-colors'}`}
+                              >
+                                {loggingOutWeixinAccount === account.accountId ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />}
+                                退出登录
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-gray-200 dark:border-gray-700 px-4 py-5 text-xs text-gray-500 dark:text-gray-400">
+                      当前还没有已登录的微信账号。点击上方“新增登录”即可在面板里生成二维码并扫码接入。
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {currentDef && currentChannelPairingEnabled && (
+                <div className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50/60 dark:bg-amber-900/10 p-4 space-y-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <h4 className="text-sm font-semibold text-amber-900 dark:text-amber-100">统一配对审批</h4>
+                      <p className="mt-1 text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+                        当前通道启用了 <span className="font-mono">dmPolicy=pairing</span>。用户首次私聊时会先拿到 pairing code，需要在这里批准后才能继续对话。
+                        {resolvePairingAccountId(currentDef.id) ? <> 当前按账号 <span className="font-mono">{resolvePairingAccountId(currentDef.id)}</span> 过滤。</> : null}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => loadPairingRequests(currentDef.id, resolvePairingAccountId(currentDef.id) || undefined)}
+                      disabled={loadingPairingRequests}
+                      className={`${modern ? 'page-modern-action px-3 py-1.5 text-xs' : 'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-white/80 dark:bg-gray-900/40 text-amber-800 dark:text-amber-200 border border-amber-200/80 dark:border-amber-800/40 hover:bg-white dark:hover:bg-gray-900 disabled:opacity-50 transition-colors'}`}
+                    >
+                      {loadingPairingRequests ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                      刷新待审批
+                    </button>
+                  </div>
+
+                  {pairingRequests.length > 0 ? (
+                    <div className="space-y-3">
+                      {pairingRequests.map(request => (
+                        <div key={`${request.code}:${request.id}`} className="rounded-xl border border-amber-200/80 dark:border-amber-800/30 bg-white/80 dark:bg-gray-950/20 px-4 py-4">
+                          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                                  配对码 <span className="font-mono">{request.code}</span>
+                                </div>
+                                <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                                  待审批
+                                </span>
+                              </div>
+                              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
+                                <div>发送者：<span className="font-mono text-gray-700 dark:text-gray-200 break-all">{request.id}</span></div>
+                                <div>创建时间：<span className="font-mono text-gray-700 dark:text-gray-200">{request.createdAt || '-'}</span></div>
+                                {request.lastSeenAt && (
+                                  <div>最近出现：<span className="font-mono text-gray-700 dark:text-gray-200">{request.lastSeenAt}</span></div>
+                                )}
+                                {Object.entries(request.meta || {}).map(([key, value]) => (
+                                  <div key={key}>
+                                    {key}：<span className="font-mono text-gray-700 dark:text-gray-200 break-all">{String(value || '-')}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleApprovePairingCode(currentDef.id, request.code, resolvePairingAccountId(currentDef.id) || undefined)}
+                              disabled={approvingPairingCode === request.code}
+                              className={`${modern ? 'page-modern-accent px-3 py-1.5 text-xs' : 'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 transition-colors'}`}
+                            >
+                              {approvingPairingCode === request.code ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
+                              批准配对
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-amber-200/80 dark:border-amber-800/30 px-4 py-5 text-xs text-amber-700 dark:text-amber-300">
+                      {loadingPairingRequests ? '正在加载待审批 pairing 请求…' : '当前没有待审批的 pairing code。'}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -2465,7 +3306,7 @@ export default function Channels() {
                 <div className="rounded-lg border border-amber-200 dark:border-amber-800/40 bg-amber-50/80 dark:bg-amber-900/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-300 leading-relaxed space-y-1.5">
                   <div className="font-semibold text-amber-900 dark:text-amber-100">飞书当前处于配对模式</div>
                   <div>首次私聊机器人时，OpenClaw 会返回 pairing code。Lite 版保存有凭证时会优先写成免配对模式；如果你看到这里，重新保存一次配置通常就会改成免配对。</div>
-                  <div>若仍需手动审批，可在服务器执行 <span className="font-mono">clawlite-openclaw pairing list feishu</span> 查看待审批请求，再执行 <span className="font-mono">clawlite-openclaw pairing approve feishu &lt;code&gt;</span> 完成授权。</div>
+                  <div>现在可以直接在上方“统一配对审批”中查看并批准请求；只有在需要排查底层文件时才需要回 CLI。</div>
                 </div>
               )}
 
@@ -2479,13 +3320,76 @@ export default function Channels() {
                 <div className="rounded-lg border border-amber-200 dark:border-amber-800/40 bg-amber-50/80 dark:bg-amber-900/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-300 leading-relaxed space-y-1.5">
                   <div className="font-semibold text-amber-900 dark:text-amber-100">企业微信当前处于配对模式</div>
                   <div>Lite 版保存 Bot ID 和 Secret 时会优先写成免配对模式；如果你看到这里，重新保存一次配置通常就会改成免配对。</div>
-                  <div>若仍需手动审批，可在服务器执行 <span className="font-mono">clawlite-openclaw pairing list wecom</span> 查看待审批请求，再执行 <span className="font-mono">clawlite-openclaw pairing approve wecom &lt;code&gt;</span> 完成授权。</div>
+                  <div>现在可以直接在上方“统一配对审批”中查看并批准请求；只有在需要排查底层文件时才需要回 CLI。</div>
+                </div>
+              )}
+
+              {currentDef.id === 'wecom' && (
+                <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
+                  <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">连接方式</h4>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                        企业微信智能机器人支持两种接入方式：
+                        <span className="font-medium"> 使用 URL 回调 </span>
+                        与
+                        <span className="font-medium"> 使用长连接 </span>。
+                        现在可在同一页面切换，已填写的另一种方式配置会继续保留。
+                      </p>
+                      <a
+                        href="https://open.work.weixin.qq.com/help2/pc/cat?doc_id=21661"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-flex text-xs text-sky-600 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300"
+                      >
+                        查看企业微信官方配置指引
+                      </a>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 xl:w-[620px]">
+                      <button
+                        type="button"
+                        onClick={() => handleWecomModeChange('long-polling')}
+                        className={`rounded-xl border p-4 text-left transition ${currentWecomMode === 'long-polling' ? 'border-sky-500 bg-sky-50/80 dark:bg-sky-950/20 shadow-sm' : 'border-gray-200 dark:border-gray-700 hover:border-sky-300 dark:hover:border-sky-700 bg-white dark:bg-gray-900'}`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-gray-900 dark:text-white">使用长连接</div>
+                            <div className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">无需公网域名或固定回调 URL，配置 Bot ID 和 Secret 即可建立长连接。</div>
+                          </div>
+                          <div className={`mt-1 h-4 w-4 rounded-full border ${currentWecomMode === 'long-polling' ? 'border-sky-500 bg-sky-500' : 'border-gray-300 dark:border-gray-600'}`}>
+                            <div className={`m-[3px] h-2 w-2 rounded-full bg-white ${currentWecomMode === 'long-polling' ? 'opacity-100' : 'opacity-0'}`} />
+                          </div>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleWecomModeChange('callback')}
+                        className={`rounded-xl border p-4 text-left transition ${currentWecomMode === 'callback' ? 'border-sky-500 bg-sky-50/80 dark:bg-sky-950/20 shadow-sm' : 'border-gray-200 dark:border-gray-700 hover:border-sky-300 dark:hover:border-sky-700 bg-white dark:bg-gray-900'}`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-gray-900 dark:text-white">使用 URL 回调</div>
+                            <div className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">通过回调 URL 接收消息并返回结果，适合已有域名、反向代理或公网入口的部署方式。</div>
+                          </div>
+                          <div className={`mt-1 h-4 w-4 rounded-full border ${currentWecomMode === 'callback' ? 'border-sky-500 bg-sky-500' : 'border-gray-300 dark:border-gray-600'}`}>
+                            <div className={`m-[3px] h-2 w-2 rounded-full bg-white ${currentWecomMode === 'callback' ? 'opacity-100' : 'opacity-0'}`} />
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-sky-100 dark:border-sky-900/40 bg-sky-50/70 dark:bg-sky-950/10 px-4 py-3 text-xs text-sky-700 dark:text-sky-300 leading-relaxed">
+                    {currentWecomMode === 'long-polling'
+                      ? <>当前为 <span className="font-semibold">长连接</span> 模式。保存时会写入 <span className="font-mono">botId</span> 和 <span className="font-mono">secret</span>，并优先按免配对模式处理。</>
+                      : <>当前为 <span className="font-semibold">URL 回调</span> 模式。保存时会写入 <span className="font-mono">token</span>、<span className="font-mono">encodingAESKey</span> 和 <span className="font-mono">webhookPath</span>。</>}
+                  </div>
                 </div>
               )}
 
               <form
                 id="channel-config-form"
-                className={currentDef.id === 'feishu' ? 'space-y-4' : 'grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5'}
+                className={currentDef.id === 'feishu' || currentDef.id === 'wecom' || currentDef.id === 'qqbot' ? 'space-y-4' : 'grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5'}
                 onSubmit={e => { e.preventDefault(); handleSave(); }}
               >
                 {currentDef.id === 'feishu'
@@ -2512,8 +3416,96 @@ export default function Channels() {
                         </div>
                       );
                     })
+                  : currentDef.id === 'wecom'
+                    ? (
+                      <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
+                        <div>
+                          <h4 className="text-sm font-semibold text-gray-900 dark:text-white">API 配置</h4>
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                            {currentWecomMode === 'long-polling'
+                              ? '使用 SDK 启动长连接，配置 Bot ID 和 Secret 即可连接企业微信智能机器人。'
+                              : '使用企业微信回调地址接收消息并返回结果，需要填写 Token、EncodingAESKey 与 Webhook Path。'}
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
+                          {currentDef.configFields
+                            .filter(field => field.key !== 'connectionMode')
+                            .filter(field => currentWecomMode === 'long-polling'
+                              ? ['botId', 'secret'].includes(field.key)
+                              : ['token', 'encodingAESKey', 'webhookPath'].includes(field.key))
+                            .map(field => renderConfigField(currentDef.id, field))}
+                        </div>
+                      </div>
+                    )
+                  : currentDef.id === 'qqbot'
+                    ? (
+                      <div className="space-y-4">
+                        <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4">
+                          <div className="flex items-center justify-between gap-4 flex-wrap">
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">{'QQBot \u901a\u9053\u7248\u672c'}</h4>
+                              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">{'\u53ef\u5728\u5185\u7f6e\u7248\u4e0e\u793e\u533a\u7248\u4e4b\u95f4\u5207\u6362\uff0c\u5207\u6362\u540e\u4f1a\u81ea\u52a8\u542f\u7528\u5f53\u524d\u7248\u672c\u5e76\u5173\u95ed\u53e6\u4e00\u4e2a\u3002'}</p>
+                            </div>
+                            <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-1">
+                              <button
+                                type="button"
+                                onClick={() => handleSwitchQQBotVariant('builtin')}
+                                disabled={switchingQQBotVariant}
+                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${currentQQBotVariant === 'builtin'
+                                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+                              >
+                                {'\u5185\u7f6e\u7248'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSwitchQQBotVariant('community')}
+                                disabled={switchingQQBotVariant}
+                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${currentQQBotVariant === 'community'
+                                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+                              >
+                                {'\u793e\u533a\u7248'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+                          {qqbotPrimaryFields.map(field => renderConfigField(currentDef.id, field))}
+                        </div>
+                        <div className="rounded-xl border border-blue-100 dark:border-blue-900/40 bg-blue-50/60 dark:bg-blue-950/20 px-4 py-3 text-xs text-blue-700 dark:text-blue-300 leading-relaxed">
+                          {'\u5b98\u65b9 QQBot \u65e5\u5e38\u53ea\u9700\u8981\u914d\u7f6e '}
+                          <span className="font-mono">App ID</span>
+                          {' \u548c '}
+                          <span className="font-mono">App Secret</span>
+                          {' \u5373\u53ef\u8fd0\u884c\uff1b\u5176\u4f59\u517c\u5bb9\u5b57\u6bb5\u8bf7\u6309\u9700\u5728\u9ad8\u7ea7\u9009\u9879\u4e2d\u5f00\u542f\u3002'}
+                        </div>
+                        {qqbotAdvancedFields.length > 0 && (
+                          <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
+                            <button
+                              type="button"
+                              onClick={() => setQqbotAdvancedOpen(prev => !prev)}
+                              className="w-full flex items-center justify-between gap-3 text-left"
+                            >
+                              <div>
+                                <h4 className="text-sm font-semibold text-gray-900 dark:text-white">高级配置（兼容与定制）</h4>
+                                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                                  仅在你明确需要路由控制、兼容老配置或调试场景时再修改。
+                                </p>
+                              </div>
+                              <ChevronDown size={16} className={`text-gray-400 transition-transform ${qqbotAdvancedOpen ? 'rotate-180' : ''}`} />
+                            </button>
+                            {qqbotAdvancedOpen && (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 pt-2 border-t border-gray-100 dark:border-gray-700">
+                                {qqbotAdvancedFields.map(field => renderConfigField(currentDef.id, field))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
                   : currentDef.configFields.map(field => renderConfigField(currentDef.id, field))}
-              </form>
+               </form>
 
               {currentDef.configFields.length === 0 && (
                 <div className="py-12 flex flex-col items-center justify-center text-gray-400 border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-xl">
@@ -2570,15 +3562,15 @@ export default function Channels() {
         </div>
       </div>
 
-      {/* QQ Login Modal */}
+      {/* Channel Login Modal */}
       {loginModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setLoginModal(null)}>
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden transform transition-all border border-gray-100 dark:border-gray-800" onClick={e => e.stopPropagation()}>
             <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between bg-gray-50/50 dark:bg-gray-900">
               <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                {loginModal === 'qrcode' && <><QrCode size={18} className="text-blue-500" /> QQ {t.channels.qrLogin}</>}
-                {loginModal === 'quick' && <><Zap size={18} className="text-emerald-500" /> QQ {t.channels.quickLogin}</>}
-                {loginModal === 'password' && <><Key size={18} className="text-amber-500" /> QQ {t.channels.passwordLogin}</>}
+                {loginModal === 'qrcode' && <><QrCode size={18} className="text-blue-500" /> {currentLoginChannel?.label || '渠道'} {t.channels.qrLogin}</>}
+                {loginModal === 'quick' && <><Zap size={18} className="text-emerald-500" /> {currentLoginChannel?.label || 'QQ'} {t.channels.quickLogin}</>}
+                {loginModal === 'password' && <><Key size={18} className="text-amber-500" /> {currentLoginChannel?.label || 'QQ'} {t.channels.passwordLogin}</>}
               </h3>
               <button onClick={() => setLoginModal(null)} className={`${modern ? 'page-modern-action p-1.5' : 'p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors'}`}>
                 <X size={18} />
@@ -2599,14 +3591,16 @@ export default function Channels() {
                     <div className="w-48 h-48 flex items-center justify-center bg-gray-50 dark:bg-gray-800 rounded-lg">
                       <Loader2 size={24} className="animate-spin text-gray-400" />
                     </div>
-                  ) : qrImg ? (
-                    <img src={qrImg.startsWith('data:') ? qrImg : `data:image/png;base64,${qrImg}`} alt="QR Code" className="w-48 h-48 rounded-lg border border-gray-200 dark:border-gray-700" />
+                  ) : qrRenderImg ? (
+                    <img src={qrRenderImg.startsWith('data:') || qrRenderImg.startsWith('http') ? qrRenderImg : `data:image/png;base64,${qrRenderImg}`} alt="QR Code" className="w-48 h-48 rounded-lg border border-gray-200 dark:border-gray-700" />
                   ) : (
                     <div className="w-48 h-48 flex items-center justify-center bg-gray-50 dark:bg-gray-800 rounded-lg text-xs text-gray-400">
                       {t.channels.cannotLoadQR}
                     </div>
                   )}
-                  <p className="text-xs text-gray-500">{t.channels.scanQR}</p>
+                  <p className="text-xs text-gray-500">
+                    {currentLoginChannelId === 'openclaw-weixin' ? '使用微信扫描二维码，并在手机上确认登录。' : t.channels.scanQR}
+                  </p>
                   <button onClick={handleRefreshQR} disabled={qrLoading}
                     className={`${modern ? 'page-modern-accent px-3 py-1.5 text-xs' : 'flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'}`}>
                     <RefreshCw size={12} className={qrLoading ? 'animate-spin' : ''} />{t.channels.refreshQR}

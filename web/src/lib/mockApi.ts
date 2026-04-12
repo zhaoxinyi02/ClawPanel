@@ -32,9 +32,45 @@ const FAKE_CLAWHUB_SKILLS = [
 let mockSkillHubCliInstalled = false;
 
 const FAKE_CRON_JOBS = [
-  { id: 'cron_1', name: '每日早报', enabled: true, schedule: { kind: 'cron', expr: '0 8 * * *' }, agentId: 'main', sessionTarget: 'main', wakeMode: 'now', payload: { kind: 'text', text: '请生成今日早报，包含科技、AI、财经要闻', deliver: true, channel: 'qq' }, state: { lastRunAtMs: Date.now() - 86400000, lastStatus: 'ok' }, createdAtMs: Date.now() - 604800000 },
-  { id: 'cron_2', name: '系统健康检查', enabled: true, schedule: { kind: 'every', everyMs: 1800000 }, agentId: 'main', sessionTarget: 'isolated', wakeMode: 'now', payload: { kind: 'text', text: '检查系统状态并报告', deliver: false }, state: { lastRunAtMs: Date.now() - 1800000, lastStatus: 'ok' }, createdAtMs: Date.now() - 1209600000 },
-  { id: 'cron_3', name: '周报生成', enabled: false, schedule: { kind: 'cron', expr: '0 18 * * 5' }, agentId: 'main', sessionTarget: 'main', wakeMode: 'now', payload: { kind: 'text', text: '生成本周工作总结', deliver: true, channel: 'qq' }, state: {}, createdAtMs: Date.now() - 2592000000 },
+  {
+    id: 'cron_1',
+    name: '每日早报',
+    enabled: true,
+    schedule: { kind: 'cron', expr: '0 8 * * *' },
+    agentId: 'main',
+    sessionTarget: 'main',
+    wakeMode: 'now',
+    payload: { kind: 'systemEvent', text: '请生成今日早报，包含科技、AI、财经要闻' },
+    delivery: { mode: 'announce', channel: 'feishu', accountId: 'default' },
+    state: { lastRunAtMs: Date.now() - 86400000, lastStatus: 'ok', lastDeliveryStatus: 'delivered' },
+    createdAtMs: Date.now() - 604800000,
+  },
+  {
+    id: 'cron_2',
+    name: '系统健康检查',
+    enabled: true,
+    schedule: { kind: 'every', everyMs: 1800000 },
+    agentId: 'main',
+    sessionTarget: 'isolated',
+    wakeMode: 'now',
+    payload: { kind: 'agentTurn', message: '检查系统状态并报告' },
+    delivery: { mode: 'webhook', to: 'https://example.com/webhook/health' },
+    state: { lastRunAtMs: Date.now() - 1800000, lastStatus: 'ok', lastDeliveryStatus: 'delivered' },
+    createdAtMs: Date.now() - 1209600000,
+  },
+  {
+    id: 'cron_3',
+    name: '周报生成',
+    enabled: false,
+    schedule: { kind: 'cron', expr: '0 18 * * 5' },
+    agentId: 'main',
+    sessionTarget: 'main',
+    wakeMode: 'now',
+    payload: { kind: 'systemEvent', text: '生成本周工作总结' },
+    delivery: { mode: 'none' },
+    state: {},
+    createdAtMs: Date.now() - 2592000000,
+  },
 ];
 
 const FAKE_AGENTS = {
@@ -149,7 +185,30 @@ const FAKE_CONFIG: any = {
       'openai': { baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-demo-***', api: 'openai-completions', models: ['gpt-4o', 'gpt-4o-mini'] },
     },
   },
-  agents: { defaults: { model: { primary: 'deepseek/deepseek-chat' } } },
+  cron: {
+    enabled: true,
+    store: '',
+    maxConcurrentRuns: 4,
+    retry: { maxAttempts: 3, backoffMs: [30000, 60000, 300000] },
+    runLog: { maxBytes: 2097152, keepLines: 2000 },
+    failureAlert: { enabled: false, after: 1, cooldownMs: 60000, mode: 'announce' },
+    failureDestination: { mode: 'webhook', to: 'https://example.com/hooks/cron-failure' },
+    webhook: 'https://example.com/hooks/cron',
+    webhookToken: 'demo-cron-token',
+  },
+  agents: {
+    defaults: {
+      model: { primary: 'deepseek/deepseek-chat' },
+      heartbeat: {
+        every: '30m',
+        target: 'none',
+        ackMaxChars: 300,
+        lightContext: true,
+        includeReasoning: false,
+        prompt: '请执行轻量状态检查并在需要时输出简要确认。',
+      },
+    },
+  },
   channels: {
     qq: { enabled: true, ownerQQ: '123456789' },
     feishu: {
@@ -275,6 +334,18 @@ const INITIAL_FAKE_SESSION_MESSAGES: Record<string, FakeSessionMessage[]> = {
   'work:sess-3': [
     { id: 'sess-3-u1', role: 'user', content: '请生成本周工作总结。', timestamp: new Date(Date.now() - 3600000).toISOString() },
     { id: 'sess-3-a1', role: 'assistant', content: '已根据本周会话记录生成总结草稿。', timestamp: new Date(Date.now() - 3540000).toISOString() },
+  ],
+};
+
+const FAKE_SESSION_USAGE = {
+  summary: {
+    today: { input: 18200, output: 6400, cacheRead: 2100, cacheWrite: 0, totalTokens: 26700, totalCost: 0.1432, requests: 18, sessions: 5 },
+    last7d: { input: 142800, output: 52100, cacheRead: 18400, cacheWrite: 0, totalTokens: 213300, totalCost: 1.0248, requests: 136, sessions: 19 },
+    last30d: { input: 596300, output: 214900, cacheRead: 73300, cacheWrite: 0, totalTokens: 884500, totalCost: 4.3891, requests: 562, sessions: 41 },
+  },
+  agents: [
+    { agentId: 'main', today: { input: 14100, output: 5100, cacheRead: 1600, cacheWrite: 0, totalTokens: 20800, totalCost: 0.1085, requests: 13, sessions: 3 }, last7d: { input: 101400, output: 36600, cacheRead: 12800, cacheWrite: 0, totalTokens: 150800, totalCost: 0.7212, requests: 92, sessions: 11 }, last30d: { input: 438200, output: 157300, cacheRead: 51100, cacheWrite: 0, totalTokens: 646600, totalCost: 3.1842, requests: 397, sessions: 24 } },
+    { agentId: 'work', today: { input: 4100, output: 1300, cacheRead: 500, cacheWrite: 0, totalTokens: 5900, totalCost: 0.0347, requests: 5, sessions: 2 }, last7d: { input: 41400, output: 15500, cacheRead: 5600, cacheWrite: 0, totalTokens: 62500, totalCost: 0.3036, requests: 44, sessions: 8 }, last30d: { input: 158100, output: 57600, cacheRead: 22200, cacheWrite: 0, totalTokens: 237900, totalCost: 1.2049, requests: 165, sessions: 17 } },
   ],
 };
 
@@ -494,7 +565,11 @@ function findFakeSessionsById(sessionId: string, agentId?: string) {
 }
 
 export const mockApi = {
-  login: async (_token: string) => { await delay(500); return { ok: true, token: 'demo-token' }; },
+  login: async (token: string) => {
+    await delay(500);
+    if (token !== 'clawpanel') return { ok: false, token: '' };
+    return { ok: true, token: 'demo-token' };
+  },
   changePassword: async (_old: string, _new: string) => { await delay(300); return { ok: true }; },
   getStatus: async () => {
     await delay(100);
@@ -775,8 +850,10 @@ export const mockApi = {
   toggleSkill: async (_id: string, _enabled: boolean) => { await delay(200); return { ok: true }; },
   getEvents: async () => { await delay(200); return { ok: true, events: FAKE_LOGS }; },
   clearEvents: async () => { await delay(100); return { ok: true }; },
-  getTasks: async () => { await delay(80); return { ok: true, tasks: [] }; },
-  getTaskDetail: async (_id: string) => { await delay(80); return { ok: true, task: null }; },
+  getOpenClawTasks: async () => { await delay(80); return { ok: true, tasks: [], allTasks: [], taskPressure: { total: 0, active: 0, failures: 0, visible: 0, byStatus: {}, byRuntime: {}, updatedAt: Date.now() } }; },
+  getOpenClawTaskDetail: async (_id: string) => { await delay(80); return { ok: true, task: null }; },
+  getPanelTasks: async () => { await delay(80); return { ok: true, tasks: [] }; },
+  getPanelTaskDetail: async (_id: string) => { await delay(80); return { ok: true, task: null }; },
 
   // --- Plugin Center ---
   getPluginList: async () => { await delay(200); return { ok: true, plugins: JSON.parse(JSON.stringify(FAKE_PLUGINS)) }; },
@@ -837,6 +914,18 @@ export const mockApi = {
     saveDemoState(DEMO_SESSION_MESSAGES_STORAGE_KEY, fakeSessionMessages);
     return { ok: true };
   },
+  getSessionUsage: async (_agent?: string) => {
+    await delay(160);
+    if (!_agent || _agent === 'all') {
+      return { ok: true, ...JSON.parse(JSON.stringify(FAKE_SESSION_USAGE)) };
+    }
+    const agents = FAKE_SESSION_USAGE.agents.filter(item => item.agentId === _agent);
+    const empty = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, totalCost: 0, requests: 0, sessions: 0 };
+    const summary = agents[0]
+      ? { today: agents[0].today, last7d: agents[0].last7d, last30d: agents[0].last30d }
+      : { today: empty, last7d: empty, last30d: empty };
+    return { ok: true, summary: JSON.parse(JSON.stringify(summary)), agents: JSON.parse(JSON.stringify(agents)) };
+  },
 
   // --- Software & OpenClaw Instances ---
   getSoftwareList: async () => { await delay(300); return { ok: true, software: [{ id: 'openclaw', name: 'OpenClaw', version: '4.2.1', installed: true }, { id: 'napcat', name: 'NapCat', version: '2.5.0', installed: true }, { id: 'node', name: 'Node.js', version: 'v20.11.0', installed: true }] }; },
@@ -858,18 +947,87 @@ export const mockApi = {
 
   // --- NapCat Advanced ---
   napcatRestart: async () => { await delay(500); return { ok: true }; },
-  napcatStatus: async () => { await delay(100); return { ok: true, connected: true, selfId: '2854196310', nickname: 'Demo Bot' }; },
+  napcatStatus: async () => {
+    await delay(100);
+    return {
+      ok: true,
+      status: {
+        status: 'online',
+        qqId: '2854196310',
+        qqNickname: 'OpenClaw Demo Bot',
+        autoReconnect: true,
+        reconnectCount: 0,
+        maxReconnect: 3,
+        containerRunning: true,
+        wsConnected: true,
+        httpAvailable: true,
+        qqLoggedIn: true,
+      },
+    };
+  },
   napcatReconnectLogs: async () => { await delay(200); return { ok: true, logs: [] }; },
   napcatReconnect: async () => { await delay(500); return { ok: true }; },
   napcatMonitorConfig: async (_data: any) => { await delay(200); return { ok: true }; },
   napcatDiagnose: async (_repair?: boolean) => { await delay(2000); return { ok: true, results: [{ id: 'napcat-conn', label: '连接状态', status: 'pass' }] }; },
 
   // --- QQ Channel ---
-  getQQChannelState: async () => { await delay(200); return { ok: true, state: 'not_configured' }; },
+  getQQChannelState: async () => {
+    await delay(200);
+    return {
+      ok: true,
+      state: {
+        pluginInstalled: true,
+        napcatInstalled: true,
+        channelConfigured: true,
+        enabled: true,
+      },
+    };
+  },
   setupQQChannel: async () => { await delay(1000); return { ok: true }; },
   repairQQChannel: async () => { await delay(1000); return { ok: true }; },
   cleanupQQChannel: async () => { await delay(500); return { ok: true }; },
   deleteQQChannel: async () => { await delay(500); return { ok: true }; },
+
+  // --- OpenClaw Weixin ---
+  getOpenClawWeixinStatus: async () => {
+    await delay(160);
+    return {
+      ok: true,
+      pluginInstalled: true,
+      pluginEnabled: true,
+      pendingLoginCount: 0,
+      accounts: [
+        {
+          accountId: 'wechat-demo',
+          name: '演示微信号',
+          status: 'online',
+        },
+      ],
+    };
+  },
+  startOpenClawWeixinQRCode: async (_data?: { force?: boolean; sessionKey?: string; accountId?: string }) => {
+    await delay(260);
+    return {
+      ok: true,
+      sessionKey: 'demo-weixin-session',
+      loginUrl: 'https://example.com/demo-weixin-login',
+      qrcode: '',
+    };
+  },
+  waitOpenClawWeixinQRCode: async (sessionKey: string, _timeoutMs = 35000) => {
+    await delay(400);
+    return {
+      ok: true,
+      sessionKey,
+      status: 'waiting',
+      loginUrl: 'https://example.com/demo-weixin-login',
+      qrcode: '',
+    };
+  },
+  logoutOpenClawWeixin: async (_accountId?: string) => {
+    await delay(260);
+    return { ok: true };
+  },
 
   // --- Misc ---
   checkModelHealth: async (_baseUrl: string, _apiKey: string, _apiType: string, _modelId?: string) => { await delay(1500); return { ok: true, healthy: true, latencyMs: 320, model: _modelId || 'default' }; },
@@ -929,6 +1087,14 @@ export const mockApi = {
     }
     fakePanelChatSessions = [session, ...fakePanelChatSessions.filter(item => item.id !== id)];
     return { ok: true, session, participants: JSON.parse(JSON.stringify(participants)), messages: JSON.parse(JSON.stringify(fakePanelChatMessages[id])), reply: botMessages[botMessages.length - 1]?.content || '' };
+  },
+  cancelPanelChatMessage: async (id: string) => {
+    await delay(80);
+    const session = fakePanelChatSessions.find(item => item.id === id);
+    if (!session) return { ok: false, error: 'not found' };
+    session.processing = false;
+    session.updatedAt = Date.now();
+    return { ok: true, canceled: true, session };
   },
   deletePanelChatSession: async (id: string) => {
     await delay(150);

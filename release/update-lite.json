@@ -1,11 +1,11 @@
 {
-  "latest_version": "0.1.10",
-  "release_time": "2026-03-13T00:20:00+08:00",
-  "release_note": "## ClawPanel Lite v0.1.10\n\n- 修复 Lite 首次安装后 OpenClaw 不自动启动的根因（openclaw.json 鸡生蛋问题）\n- 放宽 daemon fork 检测超时，解决冷启动 gateway 初始化慢导致离线的问题\n- crash-restart 增加退避上限，避免 gateway 崩溃时无限重启\n- 默认关闭 memory slot，降低 gateway OOM 风险",
+  "latest_version": "0.3.3",
+  "release_time": "2026-04-12T23:10:00+08:00",
+  "release_note": "## ClawPanel Lite v0.3.3\n\n- 修复 Telegram 多实例通道（telegram:*）定义匹配异常\n- AI 助手补齐最小化/最大化窗口控制，优化关闭交互\n- 修复面板会话运行时与主会话目录间的消息读取回退，提升会话稳定性",
   "download_urls": {
-    "linux_amd64": "http://47.76.58.84:16198/clawpanel/releases/clawpanel-lite-core-v0.1.10-linux-amd64.tar.gz",
-    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.1.10/clawpanel-lite-core-v0.1.10-darwin-amd64.tar.gz",
-    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.1.10/clawpanel-lite-core-v0.1.10-darwin-arm64.tar.gz"
+    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.3/clawpanel-lite-core-v0.3.3-linux-amd64.tar.gz",
+    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.3/clawpanel-lite-core-v0.3.3-darwin-amd64.tar.gz",
+    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.3/clawpanel-lite-core-v0.3.3-darwin-arm64.tar.gz"
   },
   "major_change": false,
   "change_warning": ""

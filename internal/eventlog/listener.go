@@ -257,6 +257,9 @@ func normalizeOneBotID(v interface{}) string {
 		}
 		return fmt.Sprintf("%.0f", n)
 	case float32:
+		if math.IsNaN(float64(n)) || math.IsInf(float64(n), 0) {
+			return ""
+		}
 		return fmt.Sprintf("%.0f", n)
 	case int, int8, int16, int32, int64:
 		return fmt.Sprintf("%d", n)

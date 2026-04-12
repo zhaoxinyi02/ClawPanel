@@ -356,6 +356,21 @@ func (c *Config) GetAdminToken() string {
 	return c.AdminToken
 }
 
+// SetOpenClawWork 修改 OpenClaw 工作区路径
+func (c *Config) SetOpenClawWork(path string) {
+	c.mu.Lock()
+	c.OpenClawWork = path
+	c.mu.Unlock()
+	c.Save()
+}
+
+// GetOpenClawWork 获取 OpenClaw 工作区路径
+func (c *Config) GetOpenClawWork() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.OpenClawWork
+}
+
 // getDataDir 获取数据目录（与可执行文件同目录）
 func getDataDir() string {
 	if v := os.Getenv("CLAWPANEL_DATA"); v != "" {

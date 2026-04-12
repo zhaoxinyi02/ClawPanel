@@ -4,11 +4,13 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/zhaoxinyi02/ClawPanel/internal/config"
@@ -37,6 +39,83 @@ func TestResolvePluginInstallStrategyUsesExplicitNpmSource(t *testing.T) {
 
 	if strategy.kind != "npm" || strategy.target != "@openclaw/custom" {
 		t.Fatalf("expected explicit npm strategy, got %#v", strategy)
+	}
+}
+
+func TestResolvePluginInstallStrategyUsesDownloadWhenQQBotIsBundled(t *testing.T) {
+	t.Parallel()
+
+	strategy := resolvePluginInstallStrategy(&RegistryPlugin{
+		PluginMeta:    PluginMeta{ID: "qqbot"},
+		GitURL:        "https://github.com/zhaoxinyi02/ClawPanel-Plugins.git",
+		InstallSubDir: "official/qqbot",
+	}, "")
+
+	if strategy.kind != "download" {
+		t.Fatalf("expected bundled qqbot to avoid preferred npm fallback, got %#v", strategy)
+	}
+}
+
+func TestBuiltInOfficialChannelPluginSkipsQQBotFallback(t *testing.T) {
+	t.Parallel()
+
+	plugin := builtInOfficialChannelPlugin("qqbot")
+	if plugin != nil {
+		t.Fatalf("expected no qqbot fallback metadata once qqbot is bundled, got %#v", plugin)
+	}
+}
+
+func TestBuiltInOfficialChannelPluginProvidesOpenClawWeixinFallback(t *testing.T) {
+	t.Parallel()
+
+	plugin := builtInOfficialChannelPlugin("openclaw-weixin")
+	if plugin == nil {
+		t.Fatal("expected openclaw-weixin fallback metadata")
+	}
+	if plugin.ID != "openclaw-weixin" {
+		t.Fatalf("unexpected plugin id: %q", plugin.ID)
+	}
+	if plugin.NpmPackage != "@tencent-weixin/openclaw-weixin" {
+		t.Fatalf("unexpected openclaw-weixin npm package: %q", plugin.NpmPackage)
+	}
+
+	strategy := resolvePluginInstallStrategy(plugin, "")
+	if strategy.kind != "npm" || strategy.target != "@tencent-weixin/openclaw-weixin@latest" {
+		t.Fatalf("expected openclaw-weixin fallback to use preferred npm spec, got %#v", strategy)
+	}
+}
+
+func TestBuiltInOfficialChannelPluginUnknownReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	if plugin := builtInOfficialChannelPlugin("unknown-plugin"); plugin != nil {
+		t.Fatalf("expected nil fallback metadata, got %#v", plugin)
+	}
+}
+
+func TestInstallRecognizesTgzAsArchive(t *testing.T) {
+	t.Parallel()
+
+	url := "https://raw.githubusercontent.com/zhaoxinyi02/ClawPanel-Plugins/main/official/qqbot/qqbot-1.2.2.tgz"
+	if !(strings.HasSuffix(url, ".zip") || strings.HasSuffix(url, ".tar.gz") || strings.HasSuffix(url, ".tgz")) {
+		t.Fatalf("expected tgz url to be treated as archive")
+	}
+}
+
+func TestNormalizeNpmPackageName(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"@sliverp/qqbot@latest":          "@sliverp/qqbot",
+		"@openclaw/feishu":               "@openclaw/feishu",
+		"left-pad@1.3.0":                 "left-pad",
+		"@openclaw-china/wecom-app@next": "@openclaw-china/wecom-app",
+	}
+
+	for input, want := range tests {
+		if got := normalizeNpmPackageName(input); got != want {
+			t.Fatalf("normalizeNpmPackageName(%q) = %q, want %q", input, got, want)
+		}
 	}
 }
 
@@ -610,6 +689,48 @@ func TestScanInstalledPluginsIsReadOnly(t *testing.T) {
 	}
 }
 
+func TestScanInstalledPluginsPrunesMissingStateEntries(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	openClawDir := filepath.Join(dir, "openclaw")
+	if err := os.MkdirAll(openClawDir, 0o755); err != nil {
+		t.Fatalf("mkdir openclaw dir: %v", err)
+	}
+	pluginsDir := filepath.Join(dir, "extensions")
+	if err := os.MkdirAll(pluginsDir, 0o755); err != nil {
+		t.Fatalf("mkdir plugins dir: %v", err)
+	}
+
+	configFile := filepath.Join(dir, "plugins.json")
+	m := &Manager{
+		cfg: &config.Config{OpenClawDir: openClawDir},
+		plugins: map[string]*InstalledPlugin{
+			"ghost-plugin": {
+				PluginMeta: PluginMeta{ID: "ghost-plugin", Name: "Ghost Plugin"},
+				Dir:        filepath.Join(pluginsDir, "ghost-plugin"),
+				Source:     "local",
+			},
+		},
+		pluginsDir: pluginsDir,
+		configFile: configFile,
+	}
+
+	m.scanInstalledPlugins()
+
+	if _, ok := m.plugins["ghost-plugin"]; ok {
+		t.Fatalf("expected missing plugin state entry to be pruned")
+	}
+
+	raw, err := os.ReadFile(configFile)
+	if err != nil {
+		t.Fatalf("read pruned plugins.json: %v", err)
+	}
+	if string(raw) != "{}" {
+		t.Fatalf("expected pruned plugins.json to be empty object, got %s", string(raw))
+	}
+}
+
 // TestReconcilePluginStatesWritesDeferredChanges verifies that
 // reconcilePluginStates writes the manifest and config files for flagged
 // plugins and clears the flags afterwards.
@@ -796,8 +917,8 @@ func TestUpdatePreservesChannelConfigWhenRegistryReinstallFails(t *testing.T) {
 		t.Fatalf("mkdir plugin dir: %v", err)
 	}
 	data, _ := json.Marshal(map[string]interface{}{
-		"id":          "feishu",
-		"name":        "Feishu",
+		"id":          "sample-plugin",
+		"name":        "Sample Plugin",
 		"version":     "1.0.0",
 		"description": "installed plugin",
 	})
@@ -807,7 +928,7 @@ func TestUpdatePreservesChannelConfigWhenRegistryReinstallFails(t *testing.T) {
 
 	seed := map[string]interface{}{
 		"channels": map[string]interface{}{
-			"feishu": map[string]interface{}{
+			"sample-plugin": map[string]interface{}{
 				"enabled":   true,
 				"appId":     "cli_xxx",
 				"appSecret": "secret_xxx",
@@ -815,10 +936,10 @@ func TestUpdatePreservesChannelConfigWhenRegistryReinstallFails(t *testing.T) {
 		},
 		"plugins": map[string]interface{}{
 			"entries": map[string]interface{}{
-				"feishu": map[string]interface{}{"enabled": true},
+				"sample-plugin": map[string]interface{}{"enabled": true},
 			},
 			"installs": map[string]interface{}{
-				"feishu": map[string]interface{}{"installPath": pluginDir},
+				"sample-plugin": map[string]interface{}{"installPath": pluginDir},
 			},
 		},
 	}
@@ -829,13 +950,13 @@ func TestUpdatePreservesChannelConfigWhenRegistryReinstallFails(t *testing.T) {
 
 	m := &Manager{
 		cfg:        &config.Config{OpenClawDir: openClawDir},
-		plugins:    map[string]*InstalledPlugin{"feishu": {PluginMeta: PluginMeta{ID: "feishu", Name: "Feishu"}, Source: "npm", Dir: pluginDir}},
-		registry:   &Registry{Plugins: []RegistryPlugin{{PluginMeta: PluginMeta{ID: "feishu", Name: "Feishu", Version: "2.0.0"}, DownloadURL: server.URL + "/plugin.zip"}}},
+		plugins:    map[string]*InstalledPlugin{"sample-plugin": {PluginMeta: PluginMeta{ID: "sample-plugin", Name: "Sample Plugin"}, Source: "npm", Dir: pluginDir}},
+		registry:   &Registry{Plugins: []RegistryPlugin{{PluginMeta: PluginMeta{ID: "sample-plugin", Name: "Sample Plugin", Version: "2.0.0"}, DownloadURL: server.URL + "/plugin.zip"}}},
 		pluginsDir: pluginsDir,
 		configFile: filepath.Join(dir, "plugins.json"),
 	}
 
-	if err := m.Update("feishu"); err == nil {
+	if err := m.Update("sample-plugin"); err == nil {
 		t.Fatalf("expected registry reinstall failure to be returned")
 	}
 
@@ -844,29 +965,30 @@ func TestUpdatePreservesChannelConfigWhenRegistryReinstallFails(t *testing.T) {
 		t.Fatalf("ReadOpenClawJSON: %v", err)
 	}
 	channels, _ := saved["channels"].(map[string]interface{})
-	if _, ok := channels["feishu"]; !ok {
+	if _, ok := channels["sample-plugin"]; !ok {
 		t.Fatalf("expected channel config to survive failed update, got %#v", channels)
 	}
-	if _, ok := m.plugins["feishu"]; ok {
+	if _, ok := m.plugins["sample-plugin"]; ok {
 		t.Fatalf("expected failed update to leave plugin uninstalled until a fresh install succeeds")
 	}
 
 	validServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/zip")
 		_, _ = w.Write(makePluginArchive(t, map[string]interface{}{
-			"id":          "feishu",
-			"name":        "Feishu",
+			"id":          "sample-plugin",
+			"name":        "Sample Plugin",
 			"version":     "2.0.0",
 			"description": "updated plugin",
 		}))
 	}))
 	defer validServer.Close()
 
-	m.registry.Plugins[0].DownloadURL = validServer.URL + "/plugin.zip"
-	if err := m.Install("feishu", ""); err != nil {
+	archiveURL := validServer.URL + "/plugin.zip"
+	m.registry.Plugins[0].DownloadURL = archiveURL
+	if err := m.Install("sample-plugin", archiveURL); err != nil {
 		t.Fatalf("expected fresh install after failed update to succeed, got %v", err)
 	}
-	if _, ok := m.plugins["feishu"]; !ok {
+	if _, ok := m.plugins["sample-plugin"]; !ok {
 		t.Fatalf("expected plugin to be installable again after failed update")
 	}
 }
@@ -979,6 +1101,87 @@ func TestCopyDirRejectsSymlink(t *testing.T) {
 
 	if err := copyDir(src, dst); err == nil {
 		t.Fatalf("expected symlinked file to be rejected")
+	}
+}
+
+func TestInstallFromGitReportsMissingGitClearly(t *testing.T) {
+	oldLookPath := gitLookPath
+	oldRunner := gitCloneRunner
+	defer func() {
+		gitLookPath = oldLookPath
+		gitCloneRunner = oldRunner
+	}()
+
+	gitLookPath = func(file string) (string, error) {
+		return "", errors.New("not found")
+	}
+	gitCloneRunner = func(gitURL, dest string) ([]byte, error) {
+		t.Fatalf("git clone should not run when git is missing")
+		return nil, nil
+	}
+
+	m := &Manager{}
+	err := m.installFromGit("https://example.invalid/repo.git", filepath.Join(t.TempDir(), "plugin"))
+	if err == nil || !strings.Contains(err.Error(), "未检测到 Git，请先安装 Git 后再重试") {
+		t.Fatalf("expected missing git hint, got %v", err)
+	}
+}
+
+func TestInstallFromGitRetriesTransientTLSFailure(t *testing.T) {
+	oldLookPath := gitLookPath
+	oldRunner := gitCloneRunner
+	defer func() {
+		gitLookPath = oldLookPath
+		gitCloneRunner = oldRunner
+	}()
+
+	gitLookPath = func(file string) (string, error) {
+		return "/usr/bin/git", nil
+	}
+
+	attempts := 0
+	gitCloneRunner = func(gitURL, dest string) ([]byte, error) {
+		attempts++
+		if attempts < 3 {
+			return []byte("error: RPC failed; curl 56 GnuTLS recv error (-9): Error decoding the received TLS packet.\nfatal: early EOF"), errors.New("exit status 128")
+		}
+		return []byte("ok"), nil
+	}
+
+	m := &Manager{}
+	if err := m.installFromGit("https://example.invalid/repo.git", filepath.Join(t.TempDir(), "plugin")); err != nil {
+		t.Fatalf("expected transient clone failure to recover, got %v", err)
+	}
+	if attempts != 3 {
+		t.Fatalf("expected 3 attempts, got %d", attempts)
+	}
+}
+
+func TestRepoArchiveURLsForGitHub(t *testing.T) {
+	urls := repoArchiveURLs("https://github.com/zhaoxinyi02/ClawPanel-Plugins.git")
+	if len(urls) < 2 {
+		t.Fatalf("expected github archive candidates, got %#v", urls)
+	}
+	if urls[0] != "https://codeload.github.com/zhaoxinyi02/ClawPanel-Plugins/zip/refs/heads/main" {
+		t.Fatalf("unexpected primary archive url: %q", urls[0])
+	}
+}
+
+func TestFlattenExtractedArchiveRootMovesSingleTopLevelDir(t *testing.T) {
+	root := t.TempDir()
+	archiveRoot := filepath.Join(root, "repo-main")
+	if err := os.MkdirAll(filepath.Join(archiveRoot, "official", "qqbot"), 0o755); err != nil {
+		t.Fatalf("mkdir archive root: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(archiveRoot, "official", "qqbot", "plugin.json"), []byte(`{"id":"qqbot"}`), 0o644); err != nil {
+		t.Fatalf("write plugin file: %v", err)
+	}
+
+	if err := flattenExtractedArchiveRoot(root); err != nil {
+		t.Fatalf("flatten archive root failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "official", "qqbot", "plugin.json")); err != nil {
+		t.Fatalf("expected flattened plugin file, got %v", err)
 	}
 }
 

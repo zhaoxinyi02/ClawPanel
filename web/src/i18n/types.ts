@@ -51,6 +51,7 @@ export interface Translations {
     subtitle: string;
     passwordLabel: string;
     passwordPlaceholder: string;
+    demoPasswordHint: string;
     loginButton: string;
     loggingIn: string;
     wrongPassword: string;
@@ -121,6 +122,18 @@ export interface Translations {
     days: string;
   };
 
+  // Message Center
+  messageCenter: {
+    title: string;
+    noTasks: string;
+    logLines: string;
+    statusPending: string;
+    statusRunning: string;
+    statusSuccess: string;
+    statusFailed: string;
+    statusCanceled: string;
+  };
+
   // Activity Log
   activityLog: {
     title: string;
@@ -181,6 +194,22 @@ export interface Translations {
     passwordLabel: string;
     passwordPlaceholder: string;
     cannotLoadQR: string;
+    notConfiguredWithDefault: string;
+    defaultWhenUnset: string;
+    restartNapcat: string;
+    restartingNapcat: string;
+    deleteQQChannel: string;
+    napcatStatusOnline: string;
+    napcatStatusReconnecting: string;
+    napcatStatusLoginExpired: string;
+    napcatStatusStopped: string;
+    napcatStatusOffline: string;
+    autoReconnect: string;
+    autoReconnectEnabled: string;
+    manualReconnect: string;
+    reconnecting: string;
+    showReconnectLogs: string;
+    hideReconnectLogs: string;
     // Requests
     pendingRequests: string;
     groupRequest: string;

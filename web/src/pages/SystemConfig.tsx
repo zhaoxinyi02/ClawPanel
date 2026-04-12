@@ -22,18 +22,129 @@ const KNOWN_PROVIDERS: { id: string; name: string; nameZh?: string; baseUrl: str
   { id: 'zhipu', name: 'Zhipu AI', nameZh: '智谱清言（GLM）', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKeyUrl: 'https://open.bigmodel.cn/usercenter/apikeys', models: ['glm-4-plus', 'glm-4', 'glm-4-flash', 'glm-4v-plus'], category: 'cn' },
   { id: 'yi', name: 'Yi / Lingyiwanwu', nameZh: '零一万物', baseUrl: 'https://api.lingyiwanwu.com/v1', apiKeyUrl: 'https://platform.lingyiwanwu.com/apikeys', models: ['yi-large', 'yi-medium', 'yi-small', 'yi-vision'], category: 'cn' },
   { id: 'minimax', name: 'MiniMax', nameZh: 'MiniMax', baseUrl: 'https://api.minimaxi.com/anthropic/v1', apiType: 'anthropic-messages', apiKeyUrl: 'https://platform.minimaxi.com/user-center/basic-information/interface-key', models: ['MiniMax-M2.5'], category: 'cn' },
+  { id: 'moonshot', name: 'Moonshot / Kimi', nameZh: 'Moonshot / Kimi', baseUrl: 'https://api.moonshot.ai/v1', apiKeyUrl: 'https://platform.moonshot.ai/console/api-keys', models: ['kimi-k2.5', 'kimi-k2', 'kimi-latest'], category: 'cn' },
   { id: 'spark', name: 'Spark', nameZh: '星火（讯飞）', baseUrl: 'https://spark-api-open.xf-yun.com/v1', apiKeyUrl: 'https://console.xfyun.cn/services/bm35', models: ['spark-pro-128k', 'spark-lite', 'spark-max'], category: 'cn' },
   // === 国际主流 ===
-  { id: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', apiKeyUrl: 'https://platform.openai.com/api-keys', models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1', 'o1-mini', 'o3-mini'], category: 'intl' },
-  { id: 'anthropic', name: 'Anthropic', baseUrl: 'https://api.anthropic.com/v1', apiType: 'anthropic-messages', apiKeyUrl: 'https://console.anthropic.com/settings/keys', models: ['claude-sonnet-4-5', 'claude-haiku-3-5', 'claude-3-opus'], category: 'intl' },
-  { id: 'google', name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta', apiType: 'google-generative-ai', apiKeyUrl: 'https://aistudio.google.com/app/apikey', models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'], category: 'intl' },
-  { id: 'xai', name: 'xAI (Grok)', baseUrl: 'https://api.x.ai/v1', apiKeyUrl: 'https://console.x.ai/', models: ['grok-3', 'grok-3-mini', 'grok-2'], category: 'intl' },
+  { id: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', apiKeyUrl: 'https://platform.openai.com/api-keys', models: ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5.4-pro', 'gpt-4o'], category: 'intl' },
+  { id: 'openai-codex', name: 'OpenAI Codex', baseUrl: 'https://api.openai.com/v1', apiType: 'openai-codex-responses', apiKeyUrl: 'https://platform.openai.com/api-keys', models: ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.3-codex-spark'], category: 'intl' },
+  { id: 'anthropic', name: 'Anthropic', baseUrl: 'https://api.anthropic.com/v1', apiType: 'anthropic-messages', apiKeyUrl: 'https://console.anthropic.com/settings/keys', models: ['claude-sonnet-4.6', 'claude-opus-4.6', 'claude-haiku-4.5'], category: 'intl' },
+  { id: 'google', name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta', apiType: 'google-generative-ai', apiKeyUrl: 'https://aistudio.google.com/app/apikey', models: ['gemini-3.1-pro', 'gemini-3.1-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-pro'], category: 'intl' },
+  { id: 'xai', name: 'xAI (Grok)', baseUrl: 'https://api.x.ai/v1', apiKeyUrl: 'https://console.x.ai/', models: ['grok-4', 'grok-4-fast', 'grok-3'], category: 'intl' },
   { id: 'groq', name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', apiKeyUrl: 'https://console.groq.com/keys', models: ['llama-3.3-70b-versatile', 'mixtral-8x7b-32768', 'gemma2-9b-it'], category: 'intl' },
+  { id: 'mistral', name: 'Mistral', baseUrl: 'https://api.mistral.ai/v1', apiKeyUrl: 'https://console.mistral.ai/api-keys', models: ['mistral-medium-latest', 'mistral-small-latest', 'codestral-latest'], category: 'intl' },
+  { id: 'cerebras', name: 'Cerebras', baseUrl: 'https://api.cerebras.ai/v1', apiKeyUrl: 'https://cloud.cerebras.ai/platform/api-keys', models: ['llama-4-scout-17b-16e-instruct', 'qwen-3-coder-480b', 'qwen-3-235b-a22b-instruct-2507'], category: 'intl' },
+  { id: 'ollama', name: 'Ollama', baseUrl: 'http://127.0.0.1:11434/v1', apiType: 'ollama', apiKeyUrl: 'https://ollama.com/signin', models: ['qwen3:32b', 'llama3.3:70b', 'deepseek-r1:32b'], category: 'intl' },
   // === 聚合平台 ===
   { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', apiKeyUrl: 'https://openrouter.ai/keys', models: ['anthropic/claude-sonnet-4-5', 'openai/gpt-4o', 'google/gemini-2.5-pro', 'deepseek/deepseek-r1'], category: 'agg' },
   { id: 'together', name: 'Together AI', baseUrl: 'https://api.together.xyz/v1', apiKeyUrl: 'https://api.together.xyz/settings/api-keys', models: ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'Qwen/Qwen2.5-72B-Instruct-Turbo'], category: 'agg' },
   { id: 'nvidia', name: 'NVIDIA NIM', baseUrl: 'https://integrate.api.nvidia.com/v1', apiKeyUrl: 'https://build.nvidia.com/models', models: ['meta/llama-3.1-405b-instruct', 'minimaxai/minimax-m2.1'], category: 'agg' },
+  { id: 'fireworks', name: 'Fireworks AI', baseUrl: 'https://api.fireworks.ai/inference/v1', apiKeyUrl: 'https://fireworks.ai/account/api-keys', models: ['accounts/fireworks/models/llama-v3p1-70b-instruct', 'accounts/fireworks/models/qwen3-235b-a22b'], category: 'agg' },
 ];
+
+const WEB_SEARCH_PROVIDERS = [
+  'brave', 'duckduckgo', 'exa', 'firecrawl', 'gemini', 'grok', 'kimi', 'minimax', 'ollama', 'perplexity', 'searxng', 'tavily',
+] as const;
+
+const WEB_SEARCH_PROVIDER_CONFIG: Record<string, {
+  label: string;
+  credentialPath?: string;
+  credentialLabel?: string;
+  credentialPlaceholder?: string;
+  extraFields?: CfgField[];
+}> = {
+  brave: {
+    label: 'Brave Search',
+    credentialPath: 'plugins.entries.brave.config.webSearch.apiKey',
+    credentialLabel: 'Brave API Key',
+    credentialPlaceholder: 'BRAVE_API_KEY',
+    extraFields: [
+      { path: 'plugins.entries.brave.config.webSearch.mode', label: 'Brave 模式', type: 'select', options: ['search', 'llm-context'] },
+    ],
+  },
+  duckduckgo: {
+    label: 'DuckDuckGo',
+    extraFields: [
+      { path: 'plugins.entries.duckduckgo.config.webSearch.region', label: 'DuckDuckGo 区域', type: 'text', placeholder: 'us-en' },
+    ],
+  },
+  exa: {
+    label: 'Exa',
+    credentialPath: 'plugins.entries.exa.config.webSearch.apiKey',
+    credentialLabel: 'Exa API Key',
+    credentialPlaceholder: 'EXA_API_KEY',
+    extraFields: [
+      { path: 'plugins.entries.exa.config.webSearch.searchType', label: 'Exa Search Type', type: 'select', options: ['auto', 'neural', 'keyword'] },
+    ],
+  },
+  firecrawl: {
+    label: 'Firecrawl',
+    credentialPath: 'plugins.entries.firecrawl.config.webSearch.apiKey',
+    credentialLabel: 'Firecrawl API Key',
+    credentialPlaceholder: 'FIRECRAWL_API_KEY',
+    extraFields: [
+      { path: 'plugins.entries.firecrawl.config.webSearch.baseUrl', label: 'Firecrawl Base URL', type: 'text', placeholder: 'https://api.firecrawl.dev' },
+    ],
+  },
+  gemini: {
+    label: 'Gemini',
+    credentialPath: 'plugins.entries.google.config.webSearch.apiKey',
+    credentialLabel: 'Gemini API Key',
+    credentialPlaceholder: 'GEMINI_API_KEY',
+    extraFields: [
+      { path: 'plugins.entries.google.config.webSearch.model', label: 'Gemini 搜索模型', type: 'text', placeholder: 'gemini-2.5-flash' },
+    ],
+  },
+  grok: {
+    label: 'Grok',
+    credentialPath: 'plugins.entries.xai.config.webSearch.apiKey',
+    credentialLabel: 'xAI API Key',
+    credentialPlaceholder: 'XAI_API_KEY',
+  },
+  kimi: {
+    label: 'Kimi / Moonshot',
+    credentialPath: 'plugins.entries.moonshot.config.webSearch.apiKey',
+    credentialLabel: 'Moonshot API Key',
+    credentialPlaceholder: 'KIMI_API_KEY / MOONSHOT_API_KEY',
+    extraFields: [
+      { path: 'plugins.entries.moonshot.config.webSearch.baseUrl', label: 'Moonshot Base URL', type: 'text', placeholder: 'https://api.moonshot.ai/v1' },
+      { path: 'plugins.entries.moonshot.config.webSearch.model', label: 'Kimi 搜索模型', type: 'text', placeholder: 'kimi-k2.5' },
+    ],
+  },
+  minimax: {
+    label: 'MiniMax Search',
+    credentialPath: 'plugins.entries.minimax.config.webSearch.apiKey',
+    credentialLabel: 'MiniMax Search Key',
+    credentialPlaceholder: 'MINIMAX_CODE_PLAN_KEY',
+    extraFields: [
+      { path: 'plugins.entries.minimax.config.webSearch.region', label: 'MiniMax 区域', type: 'select', options: ['global', 'cn'] },
+    ],
+  },
+  ollama: {
+    label: 'Ollama Web Search',
+  },
+  perplexity: {
+    label: 'Perplexity',
+    credentialPath: 'plugins.entries.perplexity.config.webSearch.apiKey',
+    credentialLabel: 'Perplexity / OpenRouter Key',
+    credentialPlaceholder: 'PERPLEXITY_API_KEY / OPENROUTER_API_KEY',
+    extraFields: [
+      { path: 'plugins.entries.perplexity.config.webSearch.baseUrl', label: 'Perplexity Base URL', type: 'text', placeholder: 'https://api.perplexity.ai' },
+      { path: 'plugins.entries.perplexity.config.webSearch.model', label: 'Perplexity 模型', type: 'text', placeholder: 'sonar' },
+    ],
+  },
+  searxng: {
+    label: 'SearXNG',
+    credentialPath: 'plugins.entries.searxng.config.webSearch.baseUrl',
+    credentialLabel: 'SearXNG Base URL',
+    credentialPlaceholder: 'http://localhost:8888',
+  },
+  tavily: {
+    label: 'Tavily',
+    credentialPath: 'plugins.entries.tavily.config.webSearch.apiKey',
+    credentialLabel: 'Tavily API Key',
+    credentialPlaceholder: 'TAVILY_API_KEY',
+  },
+};
 
 type ConfigTab = 'models' | 'identity' | 'general' | 'version' | 'env' | 'health';
 type ConfigDiffItem = { path: string; before: string; after: string };
@@ -155,6 +266,28 @@ function formatConfigList(value: any): string {
   return '';
 }
 
+function getExpandStateStorageKey(raw: string): string {
+  return `clawpanel:system-config:expand:${raw.replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]+/g, '-').toLowerCase()}`;
+}
+
+function readPersistedExpandState(storageKey: string, fallback = true): boolean {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (raw == null) return fallback;
+    return raw === '1';
+  } catch {
+    return fallback;
+  }
+}
+
+function writePersistedExpandState(storageKey: string, next: boolean) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(storageKey, next ? '1' : '0');
+  } catch {}
+}
+
 const TOOL_GOVERNANCE_PRESETS: Record<ToolProfilePreset, { label: string; help: string }> = {
   minimal: {
     label: 'Minimal',
@@ -233,8 +366,39 @@ export default function SystemConfig() {
   const [originConfig, setOriginConfig] = useState<any>({});
   const [diffItems, setDiffItems] = useState<ConfigDiffItem[]>([]);
   const [showDiffPreview, setShowDiffPreview] = useState(false);
+  const [expandedModel, setExpandedModel] = useState<string | null>(null);
+  const [showAgentDefaultsModal, setShowAgentDefaultsModal] = useState(false);
+  const [workspacePath, setWorkspacePath] = useState('');
+  const [workspacePathLoading, setWorkspacePathLoading] = useState(false);
+  const [workspacePathSaving, setWorkspacePathSaving] = useState(false);
+  const [providerIdDrafts, setProviderIdDrafts] = useState<Record<string, string>>({});
+
+  const providers = config?.models?.providers || {};
+  const providerIds = Object.keys(providers);
+  const primaryModelRaw = config?.agents?.defaults?.model;
+  const primaryModel = typeof primaryModelRaw === 'string' ? primaryModelRaw : (primaryModelRaw?.primary || '');
 
   useEffect(() => { loadConfig(); }, []);
+  useEffect(() => {
+    setProviderIdDrafts((prev) => {
+      const next: Record<string, string> = {};
+      const prevKeys = Object.keys(prev);
+      let changed = prevKeys.length !== providerIds.length;
+      for (const pid of providerIds) {
+        next[pid] = prev[pid] ?? pid;
+        if (!(pid in prev)) changed = true;
+      }
+      if (!changed) {
+        for (const key of prevKeys) {
+          if (!(key in next)) {
+            changed = true;
+            break;
+          }
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [providerIds.join('\u0000')]);
   useEffect(() => {
     const nextTab = searchParams.get('tab');
     if (nextTab && ['models', 'identity', 'general', 'version', 'env', 'health'].includes(nextTab)) {
@@ -250,10 +414,31 @@ export default function SystemConfig() {
         const next = r.config || {};
         setConfig(next);
         setOriginConfig(cloneConfig(next));
+        setProviderIdDrafts({});
       }
     }
     catch {} finally { setLoading(false); }
   };
+
+  const loadWorkspacePathFn = async () => {
+    setWorkspacePathLoading(true);
+    try {
+      const r = await api.getWorkspacePath();
+      if (r.ok) setWorkspacePath(r.path || '');
+    } catch {} finally { setWorkspacePathLoading(false); }
+  };
+
+  const saveWorkspacePathFn = async () => {
+    setWorkspacePathSaving(true);
+    try {
+      const r = await api.setWorkspacePath(workspacePath);
+      if (r.ok) { setMsg(i18n.common.success); }
+      else { setMsg('保存失败'); }
+    } catch { setMsg('保存失败'); }
+    finally { setWorkspacePathSaving(false); setTimeout(() => setMsg(''), 3000); }
+  };
+
+  useEffect(() => { loadWorkspacePathFn(); }, []);
 
   const loadVersion = async () => {
     const [v, b] = await Promise.all([api.getSystemVersion(), api.getBackups()]);
@@ -337,6 +522,10 @@ export default function SystemConfig() {
   const getVal = (path: string): any => {
     const value = path.split('.').reduce((o: any, k: string) => o?.[k], config);
     if (path === 'tools.sessions.visibility') return normalizeSessionVisibility(value);
+    if (path === 'cron.retry.backoffMs') {
+      if (Array.isArray(value)) return JSON.stringify(value);
+      return value;
+    }
     return value;
   };
   const syncAllowedModels = (draft: any) => {
@@ -379,9 +568,99 @@ export default function SystemConfig() {
       cur[keys[keys.length - 1]] = value;
     });
   };
+  const currentWebSearchProvider = String(getVal('tools.web.search.provider') || '').trim();
+  const webSearchProviderMeta = WEB_SEARCH_PROVIDER_CONFIG[currentWebSearchProvider] || null;
+  const agentDefaultsFields: CfgField[] = [
+    {
+      path: 'agents.defaults.contextTokens',
+      label: '默认上下文 Token 预算',
+      type: 'number',
+      placeholder: '200000',
+      help: 'OpenClaw 会再与模型真实 contextWindow 取更小值；留空表示不在面板里显式覆盖。',
+      integer: true,
+      min: 1,
+    },
+    { path: 'agents.defaults.maxConcurrent', label: '最大并发', type: 'number', placeholder: '4', integer: true, min: 1 },
+    {
+      path: 'agents.defaults.skipBootstrap',
+      label: '跳过 Bootstrap 文件',
+      type: 'toggle',
+      help: '对应官方 agents.defaults.skipBootstrap；开启后不会自动补齐 BOOTSTRAP.md 等引导文件。',
+    },
+    {
+      path: 'agents.defaults.bootstrapMaxChars',
+      label: '单文件 Bootstrap 上限',
+      type: 'number',
+      placeholder: '20000',
+      help: '对应 agents.defaults.bootstrapMaxChars，用于限制单个核心文件注入上下文的最大字符数。',
+      integer: true,
+      min: 1,
+    },
+    {
+      path: 'agents.defaults.bootstrapTotalMaxChars',
+      label: '总 Bootstrap 上限',
+      type: 'number',
+      placeholder: '150000',
+      help: '对应 agents.defaults.bootstrapTotalMaxChars，用于限制全部 bootstrap 文件总注入量。',
+      integer: true,
+      min: 1,
+    },
+    {
+      path: 'agents.defaults.compaction.mode',
+      label: '压缩模式',
+      type: 'select',
+      options: ['default', 'safeguard'],
+      help: 'default 为常规裁剪；safeguard 会更保守地压缩工具结果。',
+    },
+    {
+      path: 'agents.defaults.compaction.maxHistoryShare',
+      label: '历史占比上限',
+      type: 'number',
+      placeholder: '0.5',
+      help: '控制历史消息最多可占上下文预算的比例。',
+      min: 0,
+      max: 1,
+    },
+  ];
 
   const normalizeConfigForSave = (input: any) => {
     const clone = cloneConfig(input || {});
+    const currentProviders = clone?.models?.providers;
+    if (currentProviders && typeof currentProviders === 'object' && !Array.isArray(currentProviders)) {
+      const currentIds = Object.keys(currentProviders);
+      if (currentIds.length > 0) {
+        const renamedProviders: Record<string, any> = {};
+        let primaryRenameFrom = '';
+        let primaryRenameTo = '';
+        const currentPrimaryRaw = clone?.agents?.defaults?.model;
+        const currentPrimary = typeof currentPrimaryRaw === 'string'
+          ? currentPrimaryRaw
+          : (currentPrimaryRaw?.primary || '');
+        for (const pid of currentIds) {
+          const nextId = (providerIdDrafts[pid] ?? pid).trim();
+          if (!nextId) throw new Error('服务商 ID 不能为空');
+          if (renamedProviders[nextId]) throw new Error(`服务商 ID "${nextId}" 重复`);
+          renamedProviders[nextId] = currentProviders[pid];
+          if (!primaryRenameFrom && nextId !== pid && currentPrimary.startsWith(pid + '/')) {
+            primaryRenameFrom = pid;
+            primaryRenameTo = nextId;
+          }
+        }
+        clone.models.providers = renamedProviders;
+        if (primaryRenameFrom && primaryRenameTo) {
+          if (!clone.agents) clone.agents = {};
+          if (!clone.agents.defaults || typeof clone.agents.defaults !== 'object') clone.agents.defaults = {};
+          const defaults = clone.agents.defaults;
+          const model = defaults.model;
+          if (typeof model === 'string') {
+            defaults.model = primaryRenameTo + model.slice(primaryRenameFrom.length);
+          } else if (model && typeof model === 'object' && !Array.isArray(model)) {
+            defaults.model = { ...model, primary: primaryRenameTo + currentPrimary.slice(primaryRenameFrom.length) };
+          }
+        }
+      }
+    }
+
     const defaults = clone?.agents?.defaults;
     if (defaults && typeof defaults === 'object') {
       const model = defaults.model;
@@ -436,13 +715,112 @@ export default function SystemConfig() {
       }
     }
 
+    const cron = clone?.cron;
+    if (cron && typeof cron === 'object' && !Array.isArray(cron)) {
+      if (typeof cron.store === 'string') {
+        const store = cron.store.trim();
+        if (!store || store === 'file' || store === 'sqlite') delete cron.store;
+        else cron.store = store;
+      }
+
+      if (cron.retry && typeof cron.retry === 'object' && !Array.isArray(cron.retry)) {
+        const backoffRaw = cron.retry.backoffMs;
+        if (typeof backoffRaw === 'string') {
+          const trimmed = backoffRaw.trim();
+          if (!trimmed) {
+            delete cron.retry.backoffMs;
+          } else {
+            let parsedList: number[] | null = null;
+            try {
+              const parsed = JSON.parse(trimmed);
+              if (Array.isArray(parsed)) parsedList = parsed.map((item: any) => Number(item));
+            } catch {}
+            if (!parsedList) {
+              parsedList = trimmed.split(/[,\s]+/).filter(Boolean).map(item => Number(item));
+            }
+            if (
+              parsedList.length === 0 ||
+              parsedList.some(item => !Number.isFinite(item) || item < 0 || !Number.isInteger(item))
+            ) {
+              throw new Error('Cron 重试退避毫秒数组格式无效，应为非负整数数组');
+            }
+            cron.retry.backoffMs = parsedList.map(item => Math.floor(item));
+          }
+        } else if (typeof backoffRaw === 'number') {
+          if (Number.isFinite(backoffRaw) && backoffRaw >= 0) cron.retry.backoffMs = [Math.floor(backoffRaw)];
+          else delete cron.retry.backoffMs;
+        } else if (Array.isArray(backoffRaw)) {
+          const parsedList = backoffRaw.map((item: any) => Number(item));
+          if (
+            parsedList.length === 0 ||
+            parsedList.some(item => !Number.isFinite(item) || item < 0 || !Number.isInteger(item))
+          ) {
+            throw new Error('Cron 重试退避毫秒数组格式无效，应为非负整数数组');
+          }
+          cron.retry.backoffMs = parsedList.map(item => Math.floor(item));
+        }
+      }
+
+      if (typeof cron.failureAlert === 'boolean') {
+        cron.failureAlert = { enabled: cron.failureAlert };
+      } else if (cron.failureAlert && (typeof cron.failureAlert !== 'object' || Array.isArray(cron.failureAlert))) {
+        delete cron.failureAlert;
+      }
+
+      if (cron.failureAlert && typeof cron.failureAlert === 'object' && !Array.isArray(cron.failureAlert)) {
+        if (typeof cron.failureAlert.mode === 'string') {
+          const mode = cron.failureAlert.mode.trim();
+          if (mode === 'announce' || mode === 'webhook') cron.failureAlert.mode = mode;
+          else delete cron.failureAlert.mode;
+        }
+        if (typeof cron.failureAlert.accountId === 'string') {
+          const accountId = cron.failureAlert.accountId.trim();
+          if (accountId) cron.failureAlert.accountId = accountId;
+          else delete cron.failureAlert.accountId;
+        }
+      }
+
+      if (typeof cron.failureDestination === 'string') {
+        const to = cron.failureDestination.trim();
+        if (to) cron.failureDestination = { to };
+        else delete cron.failureDestination;
+      } else if (
+        cron.failureDestination &&
+        (typeof cron.failureDestination !== 'object' || Array.isArray(cron.failureDestination))
+      ) {
+        delete cron.failureDestination;
+      }
+
+      if (cron.failureDestination && typeof cron.failureDestination === 'object' && !Array.isArray(cron.failureDestination)) {
+        for (const key of ['channel', 'to', 'accountId']) {
+          if (typeof cron.failureDestination[key] === 'string') {
+            const trimmed = cron.failureDestination[key].trim();
+            if (trimmed) cron.failureDestination[key] = trimmed;
+            else delete cron.failureDestination[key];
+          }
+        }
+        if (typeof cron.failureDestination.mode === 'string') {
+          const mode = cron.failureDestination.mode.trim();
+          if (mode === 'announce' || mode === 'webhook') cron.failureDestination.mode = mode;
+          else delete cron.failureDestination.mode;
+        }
+      }
+    }
+
     const numericFields: CfgField[] = [
       { path: 'session.maintenance.maxEntries', label: '会话条目上限', type: 'number', integer: true, min: 1 },
       { path: 'agents.defaults.contextTokens', label: '默认上下文 Token 预算', type: 'number', integer: true, min: 1 },
       { path: 'agents.defaults.maxConcurrent', label: '最大并发', type: 'number', integer: true, min: 1 },
       { path: 'agents.defaults.compaction.maxHistoryShare', label: '历史占比上限', type: 'number', min: 0, max: 1 },
+      { path: 'agents.defaults.heartbeat.ackMaxChars', label: 'Heartbeat 最大确认字符数', type: 'number', integer: true, min: 0 },
       { path: 'gateway.port', label: '端口', type: 'number', integer: true, min: 1, max: 65535 },
       { path: 'session.agentToAgent.maxPingPongTurns', label: '最大来回委托轮次', type: 'number', integer: true, min: 1 },
+      { path: 'cron.maxConcurrentRuns', label: 'Cron 最大并发任务', type: 'number', integer: true, min: 1 },
+      { path: 'cron.retry.maxAttempts', label: 'Cron 最大重试次数', type: 'number', integer: true, min: 1 },
+      { path: 'cron.failureAlert.after', label: 'Cron 失败告警阈值', type: 'number', integer: true, min: 1 },
+      { path: 'cron.failureAlert.cooldownMs', label: 'Cron 失败告警冷却毫秒', type: 'number', integer: true, min: 0 },
+      { path: 'cron.runLog.maxBytes', label: 'Cron 运行日志最大字节', type: 'number', integer: true, min: 1 },
+      { path: 'cron.runLog.keepLines', label: 'Cron 运行日志保留行数', type: 'number', integer: true, min: 1 },
     ];
     for (const field of numericFields) {
       const error = validateNumericFieldValue(readConfigValue(clone, field.path), field);
@@ -477,6 +855,7 @@ export default function SystemConfig() {
       const normalized = normalizeConfigForSave(config);
       await api.updateOpenClawConfig(normalized);
       setConfig(normalized);
+      setProviderIdDrafts({});
       setMsg(i18n.sysConfig.saveSuccess);
       setOriginConfig(cloneConfig(normalized));
       setShowDiffPreview(false);
@@ -491,7 +870,18 @@ export default function SystemConfig() {
   };
 
   const handleSave = async () => {
-    const diff = buildConfigDiff(originConfig || {}, config || {});
+    let normalized: any;
+    try {
+      normalized = normalizeConfigForSave(config);
+    } catch (err) {
+      setMsg(i18n.sysConfig.saveFailed + ': ' + String(err));
+      setTimeout(() => setMsg(''), 4000);
+      return;
+    }
+    if (JSON.stringify(normalized) !== JSON.stringify(config)) {
+      setConfig(normalized);
+    }
+    const diff = buildConfigDiff(originConfig || {}, normalized || {});
     if (diff.length === 0) {
       setMsg('未检测到配置变更');
       setTimeout(() => setMsg(''), 3000);
@@ -526,10 +916,6 @@ export default function SystemConfig() {
   };
 
   if (loading) return <div className="text-center py-12 text-gray-400 text-xs">{i18n.common.loading}</div>;
-
-  const providers = config?.models?.providers || {};
-  const primaryModelRaw = config?.agents?.defaults?.model;
-  const primaryModel = typeof primaryModelRaw === 'string' ? primaryModelRaw : (primaryModelRaw?.primary || '');
 
   return (
     <div className={`space-y-6 ${modern ? 'page-modern' : ''}`}>
@@ -695,24 +1081,14 @@ export default function SystemConfig() {
                           <Brain size={18} />
                         </div>
                       <div className="flex items-baseline gap-2">
-                        <input value={pid} onChange={e => {
-                          const newId = e.target.value;
-                          if (!newId || newId === pid) return;
-                          updateConfig((clone: any) => {
-                          clone.models.providers[newId] = clone.models.providers[pid];
-                          delete clone.models.providers[pid];
-                          const modelCfg = clone.agents?.defaults?.model;
-                          const primary = typeof modelCfg === 'string' ? modelCfg : (modelCfg?.primary || '');
-                          if (primary.startsWith(pid + '/')) {
-                            if (!clone.agents) clone.agents = {};
-                            if (!clone.agents.defaults || typeof clone.agents.defaults !== 'object') clone.agents.defaults = {};
-                            if (!clone.agents.defaults.model || typeof clone.agents.defaults.model !== 'object' || Array.isArray(clone.agents.defaults.model)) {
-                              clone.agents.defaults.model = {};
-                            }
-                            clone.agents.defaults.model.primary = newId + primary.slice(pid.length);
+                        <input value={providerIdDrafts[pid] ?? pid} onChange={e => {
+                          setProviderIdDrafts(prev => ({ ...prev, [pid]: e.target.value }));
+                        }} onKeyDown={e => {
+                          if (e.key === 'Escape') {
+                            setProviderIdDrafts(prev => ({ ...prev, [pid]: pid }));
+                            e.currentTarget.blur();
                           }
-                          });
-                        }} className="text-base font-bold bg-transparent border-b border-dashed border-gray-300 dark:border-gray-600 focus:border-blue-500 outline-none px-1 py-0.5 min-w-[120px] transition-colors text-gray-900 dark:text-white" title="点击编辑 Provider ID" />
+                        }} className="text-base font-bold bg-transparent border-b border-dashed border-gray-300 dark:border-gray-600 focus:border-blue-500 outline-none px-1 py-0.5 min-w-[120px] transition-colors text-gray-900 dark:text-white" title="输入后在保存时生效，按 Esc 可撤销当前修改" />
                         {prov.models?.length > 0 && <span className="text-xs text-gray-400 font-medium px-2 py-0.5 bg-gray-50 dark:bg-gray-800 rounded-full">{prov.models.length} 模型</span>}
                       </div>
                     </div>
@@ -772,6 +1148,40 @@ export default function SystemConfig() {
                       <input value={prov._note || ''} onChange={e => setVal(`models.providers.${pid}._note`, e.target.value)}
                         placeholder="例: 公司账号 / 个人测试" className="w-full px-3.5 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50/50 dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" />
                     </div>
+                    <div className="col-span-2">
+                      <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">自定义请求头 (Custom Headers)</label>
+                      <div className="space-y-2">
+                        {Object.entries(prov.headers || {}).map(([hk, hv]) => (
+                          <div key={hk} className="flex gap-2 items-center">
+                            <input value={hk} readOnly className="w-1/3 px-2.5 py-1.5 text-xs font-mono border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400" />
+                            <input value={String(hv)} onChange={e => {
+                              updateConfig((clone: any) => {
+                                if (!clone.models.providers[pid].headers) clone.models.providers[pid].headers = {};
+                                clone.models.providers[pid].headers[hk] = e.target.value;
+                              });
+                            }} className="flex-1 px-2.5 py-1.5 text-xs font-mono border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" />
+                            <button onClick={() => {
+                              updateConfig((clone: any) => {
+                                if (clone.models.providers[pid].headers) {
+                                  delete clone.models.providers[pid].headers[hk];
+                                  if (Object.keys(clone.models.providers[pid].headers).length === 0) delete clone.models.providers[pid].headers;
+                                }
+                              });
+                            }} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"><Trash2 size={14} /></button>
+                          </div>
+                        ))}
+                        <button onClick={() => {
+                          const key = prompt('Header name (e.g. X-Custom-Header):');
+                          if (!key?.trim()) return;
+                          updateConfig((clone: any) => {
+                            if (!clone.models.providers[pid].headers) clone.models.providers[pid].headers = {};
+                            clone.models.providers[pid].headers[key.trim()] = '';
+                          });
+                        }} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 border-dashed hover:border-solid transition-all flex items-center gap-1.5">
+                          <Plus size={12} /> 添加请求头
+                        </button>
+                      </div>
+                    </div>
                   </div>
                   <ProviderHealthCheck pid={pid} prov={prov} />
 
@@ -789,40 +1199,203 @@ export default function SystemConfig() {
                             clone.models.providers[pid].models = models;
                           });
                         };
+                        const modelKey = `${pid}-${idx}`;
+                        const isExpanded = expandedModel === modelKey;
                         return (
-                        <div key={idx} className="p-3 rounded-xl bg-[linear-gradient(145deg,rgba(255,255,255,0.76),rgba(239,246,255,0.56))] dark:bg-[linear-gradient(145deg,rgba(12,24,42,0.8),rgba(30,64,175,0.08))] border border-blue-100/70 dark:border-blue-800/20 space-y-3 group hover:border-blue-200 dark:hover:border-blue-800/40 transition-colors backdrop-blur-xl">
-                          <div className="flex items-center gap-3">
-                            <div className="p-1.5 rounded-xl bg-white/80 dark:bg-slate-800/70 shadow-sm text-blue-500 border border-blue-100/60 dark:border-slate-700/60">
-                              <Box size={14} />
-                            </div>
+                        <div key={idx} className="space-y-0">
+                          {/* Tier 1: Compact row */}
+                          <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-white/60 dark:bg-slate-800/60 border border-gray-100 dark:border-gray-700/50 group hover:border-blue-200 dark:hover:border-blue-700/50 transition-colors">
+                            <Box size={12} className="text-blue-500 shrink-0" />
                             <input value={mObj.id || ''} onChange={e => updateModel('id', e.target.value)}
-                              placeholder="模型 ID" className="flex-1 px-2 py-1 text-sm font-mono font-medium bg-transparent border-b border-transparent focus:border-blue-500 outline-none transition-colors" />
+                              placeholder="model-id" className="flex-1 text-sm font-mono bg-transparent border-none outline-none min-w-0 text-gray-900 dark:text-white placeholder-gray-400" />
+                            <span className="text-[10px] text-gray-400 shrink-0 font-mono" title="Context Window">{mObj.contextWindow ? `${Math.round(mObj.contextWindow / 1000)}k` : '-'}</span>
+                            <span className="text-[10px] text-gray-400 shrink-0 font-mono" title="Max Tokens">{mObj.maxTokens ? `${Math.round(mObj.maxTokens / 1000)}k` : '-'}</span>
+                            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${mObj.reasoning ? 'bg-blue-500' : 'bg-gray-300'}`} title={mObj.reasoning ? 'Reasoning: ON' : 'Reasoning: OFF'} />
+                            <button onClick={() => setExpandedModel(isExpanded ? null : modelKey)} className="p-1 text-gray-400 hover:text-blue-500 transition-colors" title="Advanced config">
+                              {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                            </button>
                             <button onClick={() => {
                               updateConfig((clone: any) => {
                                 clone.models.providers[pid].models.splice(idx, 1);
                               });
-                            }} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={14} /></button>
+                            }} className="p-1 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all" title="Delete model"><Trash2 size={14} /></button>
                           </div>
-                          <div className="grid grid-cols-3 gap-3 pl-9">
-                            <div>
-                              <label className="text-[10px] text-gray-400 font-medium block mb-1">Context Window</label>
-                              <input type="number" value={mObj.contextWindow ?? ''} onChange={e => updateModel('contextWindow', e.target.value ? Number(e.target.value) : undefined)}
-                                placeholder="128k" className="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-800 font-mono focus:border-blue-500 outline-none" />
+                          {/* Tier 2: Advanced panel */}
+                          {isExpanded && (
+                          <div className="ml-6 mt-2 p-4 rounded-xl bg-gray-50/80 dark:bg-gray-900/50 border border-gray-100 dark:border-gray-800 space-y-4 animate-in fade-in slide-in-from-top-2 duration-150">
+                            {/* Basic fields */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                              <div>
+                                <label className="text-[10px] text-gray-400 font-medium block mb-1">Context Window</label>
+                                <input type="number" value={mObj.contextWindow ?? ''} onChange={e => updateModel('contextWindow', e.target.value ? Number(e.target.value) : undefined)}
+                                  placeholder="128000" className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-gray-400 font-medium block mb-1">Max Tokens</label>
+                                <input type="number" value={mObj.maxTokens ?? ''} onChange={e => updateModel('maxTokens', e.target.value ? Number(e.target.value) : undefined)}
+                                  placeholder="8192" className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-gray-400 font-medium block mb-1">推理模型 (Reasoning)</label>
+                                <button onClick={() => updateModel('reasoning', !mObj.reasoning)}
+                                  className={`w-full px-2 py-1.5 text-xs rounded-lg border transition-colors text-left flex items-center gap-1.5 ${mObj.reasoning ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500'}`}>
+                                  <div className={`w-2 h-2 rounded-full ${mObj.reasoning ? 'bg-blue-500' : 'bg-gray-300'}`} />
+                                  {mObj.reasoning ? '是' : '否'}
+                                </button>
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-gray-400 font-medium block mb-1">输入模态 (Input)</label>
+                                <div className="flex gap-2">
+                                  {['text', 'image'].map(mod => {
+                                    const inputs: string[] = mObj.input || ['text'];
+                                    const checked = inputs.includes(mod);
+                                    return (
+                                      <label key={mod} className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 cursor-pointer">
+                                        <input type="checkbox" checked={checked} onChange={() => {
+                                          const current: string[] = mObj.input || ['text'];
+                                          const next = checked ? current.filter((i: string) => i !== mod) : [...current, mod];
+                                          updateModel('input', next.length > 0 ? next : ['text']);
+                                        }} className="rounded border-gray-300 text-blue-500 focus:ring-blue-500/30 w-3 h-3" />
+                                        {mod}
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
                             </div>
+
+                            {/* Cost section */}
                             <div>
-                              <label className="text-[10px] text-gray-400 font-medium block mb-1">Max Tokens</label>
-                              <input type="number" value={mObj.maxTokens ?? ''} onChange={e => updateModel('maxTokens', e.target.value ? Number(e.target.value) : undefined)}
-                                placeholder="8k" className="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-800 font-mono focus:border-blue-500 outline-none" />
+                              <label className="text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wider block mb-2">费用 (Cost) — $/1M tokens</label>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                {[
+                                  { key: 'input', label: 'Input' },
+                                  { key: 'output', label: 'Output' },
+                                  { key: 'cacheRead', label: 'Cache Read' },
+                                  { key: 'cacheWrite', label: 'Cache Write' },
+                                ].map(cf => (
+                                  <div key={cf.key}>
+                                    <label className="text-[10px] text-gray-400 font-medium block mb-1">{cf.label}</label>
+                                    <input type="number" step="0.01" min="0" value={(mObj.cost as any)?.[cf.key] ?? ''} onChange={e => {
+                                      const cost = { ...(mObj.cost || {}), [cf.key]: e.target.value ? Number(e.target.value) : undefined };
+                                      const hasCosts = Object.keys(cost).some(k => (cost as any)[k] !== undefined);
+                                      updateModel('cost', hasCosts ? cost : undefined);
+                                    }} placeholder="0.00" className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                                  </div>
+                                ))}
+                              </div>
                             </div>
+
+                            {/* Model-level headers */}
                             <div>
-                              <label className="text-[10px] text-gray-400 font-medium block mb-1">推理模型</label>
-                              <button onClick={() => updateModel('reasoning', !mObj.reasoning)}
-                                className={`w-full px-2 py-1 text-xs rounded border transition-colors text-left flex items-center gap-1.5 ${mObj.reasoning ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500'}`}>
-                                <div className={`w-2 h-2 rounded-full ${mObj.reasoning ? 'bg-blue-500' : 'bg-gray-300'}`}></div>
-                                {mObj.reasoning ? '是' : '否'}
-                              </button>
+                              <label className="text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wider block mb-2">模型请求头 (Model Headers)</label>
+                              <div className="space-y-2">
+                                {Object.entries(mObj.headers || {}).map(([hk, hv]) => (
+                                  <div key={hk} className="flex gap-2 items-center">
+                                    <input value={hk} readOnly className="w-1/3 px-2 py-1.5 text-xs font-mono border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400" />
+                                    <input value={String(hv)} onChange={e => {
+                                      const headers = { ...(mObj.headers || {}), [hk]: e.target.value };
+                                      updateModel('headers', headers);
+                                    }} className="flex-1 px-2 py-1.5 text-xs font-mono border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" />
+                                    <button onClick={() => {
+                                      const headers = { ...(mObj.headers || {}) };
+                                      delete headers[hk];
+                                      updateModel('headers', Object.keys(headers).length > 0 ? headers : undefined);
+                                    }} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"><Trash2 size={14} /></button>
+                                  </div>
+                                ))}
+                                <button onClick={() => {
+                                  const key = prompt('Header name:');
+                                  if (!key?.trim()) return;
+                                  const headers = { ...(mObj.headers || {}), [key.trim()]: '' };
+                                  updateModel('headers', headers);
+                                }} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 border-dashed hover:border-solid transition-all flex items-center gap-1.5">
+                                  <Plus size={12} /> 添加请求头
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Compatibility flags */}
+                            <div>
+                              <label className="text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wider block mb-2">兼容性 (Compatibility)</label>
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                {[
+                                  { key: 'supportsDeveloperRole', label: 'Developer Role' },
+                                  { key: 'supportsReasoningEffort', label: 'Reasoning Effort' },
+                                  { key: 'supportsTools', label: 'Tools' },
+                                  { key: 'supportsStrictMode', label: 'Strict Mode' },
+                                  { key: 'supportsStore', label: 'Store' },
+                                  { key: 'supportsUsageInStreaming', label: 'Usage in Streaming' },
+                                  { key: 'requiresToolResultName', label: 'Requires Tool Result Name' },
+                                  { key: 'requiresAssistantAfterToolResult', label: 'Requires Asst After Tool' },
+                                  { key: 'requiresThinkingAsText', label: 'Requires Thinking as Text' },
+                                  { key: 'requiresMistralToolIds', label: 'Requires Mistral Tool IDs' },
+                                ].map(flag => {
+                                  const compat = mObj.compat || {};
+                                  const val = (compat as any)[flag.key]; // undefined=default, true, false
+                                  // Tri-state: gray(default/unset) → green(true) → red(false) → gray
+                                  const cycleCompat = () => {
+                                    const c = { ...(mObj.compat || {}) };
+                                    if (val === undefined || val === null) {
+                                      (c as any)[flag.key] = true;
+                                    } else if (val === true) {
+                                      (c as any)[flag.key] = false;
+                                    } else {
+                                      delete (c as any)[flag.key];
+                                    }
+                                    const hasKeys = Object.keys(c).some(k => (c as any)[k] !== undefined);
+                                    updateModel('compat', hasKeys ? c : undefined);
+                                  };
+                                  const colorClass = val === true
+                                    ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-300'
+                                    : val === false
+                                    ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800/50 text-red-700 dark:text-red-300'
+                                    : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400';
+                                  const dotClass = val === true ? 'bg-emerald-500' : val === false ? 'bg-red-500' : 'bg-gray-300';
+                                  return (
+                                    <button key={flag.key} onClick={cycleCompat} className={`px-2.5 py-1.5 text-[11px] rounded-lg border transition-colors text-left flex items-center gap-1.5 ${colorClass}`}>
+                                      <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotClass}`} />
+                                      {flag.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <div className="grid grid-cols-2 gap-3 mt-3">
+                                <div>
+                                  <label className="text-[10px] text-gray-400 font-medium block mb-1">maxTokensField</label>
+                                  <div className="relative">
+                                    <select value={(mObj.compat as any)?.maxTokensField || ''} onChange={e => {
+                                      const c = { ...(mObj.compat || {}), maxTokensField: e.target.value || undefined };
+                                      const hasKeys = Object.keys(c).some(k => (c as any)[k] !== undefined);
+                                      updateModel('compat', hasKeys ? c : undefined);
+                                    }} className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 appearance-none cursor-pointer">
+                                      <option value="">默认 (auto)</option>
+                                      <option value="max_completion_tokens">max_completion_tokens</option>
+                                      <option value="max_tokens">max_tokens</option>
+                                    </select>
+                                    <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="text-[10px] text-gray-400 font-medium block mb-1">thinkingFormat</label>
+                                  <div className="relative">
+                                    <select value={(mObj.compat as any)?.thinkingFormat || ''} onChange={e => {
+                                      const c = { ...(mObj.compat || {}), thinkingFormat: e.target.value || undefined };
+                                      const hasKeys = Object.keys(c).some(k => (c as any)[k] !== undefined);
+                                      updateModel('compat', hasKeys ? c : undefined);
+                                    }} className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 appearance-none cursor-pointer">
+                                      <option value="">默认 (auto)</option>
+                                      <option value="openai">openai</option>
+                                      <option value="zai">zai</option>
+                                      <option value="qwen">qwen</option>
+                                    </select>
+                                    <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                  </div>
+                                </div>
+                              </div>
                             </div>
                           </div>
+                          )}
                         </div>
                         );
                       })}
@@ -860,116 +1433,174 @@ export default function SystemConfig() {
       {/* === Identity & Messages Tab === */}
       {tab === 'identity' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-200">
-          {/* Login password display + change */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-5 space-y-3">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-xl bg-blue-100/80 dark:bg-blue-900/20 text-blue-600 border border-blue-100/70 dark:border-blue-800/30">
-                  <Key size={16} />
+          <div className={`${modern ? 'page-modern-panel p-6' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-6'} space-y-5`}>
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-2xl bg-blue-100/80 dark:bg-blue-900/20 text-blue-600 border border-blue-100/70 dark:border-blue-800/30">
+                    <Key size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900 dark:text-white">管理后台登录与身份入口</h3>
+                    <p className="text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                      这里把查看当前登录密码、修改密码，以及身份页的基本说明收进一个入口，避免顶部像几块独立拼图一样散开。
+                    </p>
+                  </div>
                 </div>
-                <h3 className="text-sm font-bold text-gray-900 dark:text-white">管理后台登录密码</h3>
               </div>
-              <AdminPasswordField token={adminToken} onCopy={() => { setMsg('密码已复制'); setTimeout(() => setMsg(''), 2000); }} />
-              <p className="text-xs text-gray-500 flex items-center gap-1.5">
-                <span className="w-1 h-1 rounded-full bg-gray-400"></span>
-                此密码在 .env 文件中的 ADMIN_TOKEN 配置
-              </p>
+              <div className="flex flex-wrap gap-2 text-[11px]">
+                <span className="rounded-full border border-gray-200 dark:border-gray-700 px-3 py-1 text-gray-500 dark:text-gray-400">
+                  文档数 {identityDocs.length}
+                </span>
+                <span className="rounded-full border border-gray-200 dark:border-gray-700 px-3 py-1 text-gray-500 dark:text-gray-400">
+                  当前 {selectedIdentityDoc?.name || '未选择'}
+                </span>
+              </div>
             </div>
-            <ChangePasswordSection />
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-6">
-              <CfgSection title="身份设置" icon={Users} fields={[
-                { path: 'ui.assistant.name', label: '助手名称', type: 'text' as const, placeholder: 'OpenClaw' },
-                { path: 'ui.assistant.avatar', label: '助手头像', type: 'text' as const, placeholder: 'emoji或URL' },
-                { path: 'ui.seamColor', label: '主题色', type: 'text' as const, placeholder: '#7c3aed' },
-              ]} getVal={getVal} setVal={setVal} />
-              
-              <CfgSection title="消息配置" icon={MessageSquare} fields={[
-                { path: 'messages.responsePrefix', label: '回复前缀', type: 'text' as const, placeholder: '[OpenClaw]' },
-                { path: 'session.maintenance.maxEntries', label: '会话条目上限', type: 'number' as const, placeholder: '2000', integer: true, min: 1 },
-                { path: 'messages.ackReactionScope', label: '确认反应范围', type: 'select' as const, options: ['all', 'group-mentions', 'group-all', 'direct', 'off', 'none'] },
-              ]} getVal={getVal} setVal={setVal} />
-            </div>
-            
-            <div className="space-y-6">
-              <CfgSection
-                title="Agent 默认设置"
-                icon={Brain}
-                description="这里控制所有 Agent 共享的默认上下文预算；当前 OpenClaw schema 不支持单 Agent 级 contextTokens / compaction 覆盖。"
-                defaultExpanded
-                fields={[
-                  {
-                    path: 'agents.defaults.contextTokens',
-                    label: '默认上下文 Token 预算',
-                    type: 'number' as const,
-                    placeholder: '200000',
-                    help: 'OpenClaw 会再与模型真实 contextWindow 取更小值；留空表示不在面板里显式覆盖。',
-                    integer: true,
-                    min: 1,
-                  },
-                  { path: 'agents.defaults.maxConcurrent', label: '最大并发', type: 'number' as const, placeholder: '4', integer: true, min: 1 },
-                  {
-                    path: 'agents.defaults.skipBootstrap',
-                    label: '跳过 Bootstrap 文件',
-                    type: 'toggle' as const,
-                    help: '对应官方 agents.defaults.skipBootstrap；开启后不会自动补齐 BOOTSTRAP.md 等引导文件。',
-                  },
-                  {
-                    path: 'agents.defaults.bootstrapMaxChars',
-                    label: '单文件 Bootstrap 上限',
-                    type: 'number' as const,
-                    placeholder: '20000',
-                    help: '对应 agents.defaults.bootstrapMaxChars，用于限制单个核心文件注入上下文的最大字符数。',
-                    integer: true,
-                    min: 1,
-                  },
-                  {
-                    path: 'agents.defaults.bootstrapTotalMaxChars',
-                    label: '总 Bootstrap 上限',
-                    type: 'number' as const,
-                    placeholder: '150000',
-                    help: '对应 agents.defaults.bootstrapTotalMaxChars，用于限制全部 bootstrap 文件总注入量。',
-                    integer: true,
-                    min: 1,
-                  },
-                  {
-                    path: 'agents.defaults.compaction.mode',
-                    label: '压缩模式',
-                    type: 'select' as const,
-                    options: ['default', 'safeguard'],
-                    help: 'default 为常规裁剪；safeguard 会更保守地压缩工具结果。',
-                  },
-                  {
-                    path: 'agents.defaults.compaction.maxHistoryShare',
-                    label: '历史占比上限',
-                    type: 'number' as const,
-                    placeholder: '0.5',
-                    help: '控制历史消息最多可占上下文预算的比例。',
-                    min: 0,
-                    max: 1,
-                  },
-                ]}
-                getVal={getVal}
-                setVal={setVal}
-              />
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,0.95fr),minmax(0,1.05fr)] gap-5">
+              <div className="space-y-4">
+                <div className="rounded-[24px] border border-blue-100/80 dark:border-blue-900/40 bg-[linear-gradient(145deg,rgba(255,255,255,0.92),rgba(239,246,255,0.7))] dark:bg-[linear-gradient(145deg,rgba(12,24,42,0.84),rgba(30,64,175,0.12))] p-5 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-500/80">当前登录凭证</div>
+                      <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">管理后台登录密码</div>
+                    </div>
+                    <div className="rounded-full border border-blue-200/70 dark:border-blue-800/40 px-3 py-1 text-[11px] text-blue-600 dark:text-blue-300">
+                      `.env` / `ADMIN_TOKEN`
+                    </div>
+                  </div>
+                  <AdminPasswordField token={adminToken} onCopy={() => { setMsg('密码已复制'); setTimeout(() => setMsg(''), 2000); }} />
+                  <p className="text-xs text-gray-500 flex items-center gap-1.5">
+                    <span className="w-1 h-1 rounded-full bg-gray-400"></span>
+                    仅用于当前面板管理后台登录，不影响 OpenClaw 自身的 provider / gateway 配置。
+                  </p>
+                </div>
+                <div className="rounded-[24px] border border-gray-100 dark:border-gray-800 bg-gray-50/75 dark:bg-gray-900/40 p-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-xl border border-white/80 dark:border-gray-800 bg-white/80 dark:bg-gray-950/30 px-3 py-3">
+                      <div className="text-[11px] text-gray-500">编辑顺序</div>
+                      <div className="mt-1 text-xs leading-relaxed text-gray-700 dark:text-gray-200">先改基础身份与登录入口，再处理文档内容。</div>
+                    </div>
+                    <div className="rounded-xl border border-white/80 dark:border-gray-800 bg-white/80 dark:bg-gray-950/30 px-3 py-3">
+                      <div className="text-[11px] text-gray-500">页面目标</div>
+                      <div className="mt-1 text-xs leading-relaxed text-gray-700 dark:text-gray-200">把“看密码、改密码、改人格”分出清晰层次。</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-[24px] border border-gray-100 dark:border-gray-800 bg-white/90 dark:bg-slate-900/55 p-5">
+                <ChangePasswordSection embedded />
+              </div>
             </div>
           </div>
 
-          {/* Identity MD files editor */}
-          <div className={`${modern ? 'page-modern-panel overflow-hidden flex flex-col h-[600px]' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 overflow-hidden flex flex-col h-[600px]'}`}>
-            <div className="px-5 py-4 flex items-center gap-3 border-b border-gray-100 dark:border-gray-800 bg-gray-50/30 dark:bg-gray-900/30">
-              <div className="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600">
-                <FileText size={16} />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-gray-900 dark:text-white">身份文档 (Markdown)</h3>
-                <p className="text-xs text-gray-500 mt-0.5">编辑核心人格设定与系统提示词</p>
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.35fr),minmax(320px,0.95fr)] gap-6 items-start">
+            <div className="space-y-4">
+              <div className={`${modern ? 'page-modern-panel p-5' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-5'} space-y-4`}>
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900 dark:text-white">身份与消息外观</h3>
+                    <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                      这组配置决定面板里助手如何命名、如何显示，以及消息确认与会话维护的默认体验。
+                    </p>
+                  </div>
+                  <div className="rounded-full border border-gray-200 dark:border-gray-700 px-3 py-1 text-[11px] text-gray-500 dark:text-gray-400">
+                    先改外观，再改下面的 Markdown 身份文档
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 2xl:grid-cols-2 gap-4">
+              <CfgSection title="身份设置" icon={Users} defaultExpanded description="控制面板里助手的名称、头像和主题色，属于用户第一眼能看到的外观层。" fields={[
+                    { path: 'ui.assistant.name', label: '助手名称', type: 'text' as const, placeholder: 'OpenClaw' },
+                    { path: 'ui.assistant.avatar', label: '助手头像', type: 'text' as const, placeholder: 'emoji或URL' },
+                    { path: 'ui.seamColor', label: '主题色', type: 'text' as const, placeholder: '#7c3aed' },
+                  ]} getVal={getVal} setVal={setVal} />
+
+              <CfgSection title="消息配置" icon={MessageSquare} defaultExpanded description="控制默认回复前缀、会话条目维护上限，以及消息确认时使用的 reaction 策略。" fields={[
+                    { path: 'messages.responsePrefix', label: '回复前缀', type: 'text' as const, placeholder: '[OpenClaw]' },
+                    { path: 'session.maintenance.maxEntries', label: '会话条目上限', type: 'number' as const, placeholder: '2000', integer: true, min: 1 },
+                    { path: 'messages.ackReactionScope', label: '确认反应范围', type: 'select' as const, options: ['all', 'group-mentions', 'group-all', 'direct', 'off', 'none'] },
+                  ]} getVal={getVal} setVal={setVal} />
+                </div>
               </div>
             </div>
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 overflow-hidden">
-              <div className="p-3 border-r border-gray-100 dark:border-gray-800 overflow-y-auto bg-gray-50/30 dark:bg-gray-900/30 space-y-1">
+
+            <div className="space-y-4">
+              <div className={`${modern ? 'page-modern-panel p-5' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-5'} space-y-4`}>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">Agent 默认上下文</h3>
+                  <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                    这一组是全局共享的 Agent 默认行为。它和身份文档不同，不负责“说什么”，而是控制默认上下文预算、Bootstrap 注入量和压缩策略。
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="rounded-[22px] border border-violet-100/80 dark:border-violet-900/40 bg-[linear-gradient(145deg,rgba(255,255,255,0.88),rgba(245,243,255,0.72))] dark:bg-[linear-gradient(145deg,rgba(24,16,42,0.84),rgba(76,29,149,0.14))] p-4 space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-white/80 dark:border-gray-800 bg-white/80 dark:bg-gray-950/30 px-3 py-3">
+                        <div className="text-[11px] text-gray-500">默认上下文</div>
+                        <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-white font-mono">{getVal('agents.defaults.contextTokens') || '未显式设置'}</div>
+                      </div>
+                      <div className="rounded-xl border border-white/80 dark:border-gray-800 bg-white/80 dark:bg-gray-950/30 px-3 py-3">
+                        <div className="text-[11px] text-gray-500">压缩模式</div>
+                        <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-white font-mono">{getVal('agents.defaults.compaction.mode') || 'default'}</div>
+                      </div>
+                    </div>
+                    <div className="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+                      对大多数场景，优先只调整 <span className="font-mono">contextTokens</span> 和 <span className="font-mono">compaction.mode</span>。其余项只在你明确需要精细控制 bootstrap 注入规模时再改。
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAgentDefaultsModal(true)}
+                      className={`${modern ? 'page-modern-accent px-4 py-2 text-xs font-medium' : 'inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-xs font-medium text-white hover:bg-violet-700'}`}
+                    >
+                      <Brain size={13} />
+                      打开弹窗编辑
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className={`${modern ? 'page-modern-panel overflow-hidden flex flex-col min-h-[640px]' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 overflow-hidden flex flex-col min-h-[640px]'}`}>
+            <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-800 bg-gray-50/30 dark:bg-gray-900/30 space-y-3">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600">
+                    <FileText size={16} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900 dark:text-white">身份文档 (Markdown)</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">编辑核心人格设定、系统提示词和附加说明文档</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 text-[11px]">
+                  <span className="rounded-full border border-gray-200 dark:border-gray-700 px-3 py-1 text-gray-500 dark:text-gray-400">
+                    文档数 {identityDocs.length}
+                  </span>
+                  <span className="rounded-full border border-gray-200 dark:border-gray-700 px-3 py-1 text-gray-500 dark:text-gray-400">
+                    当前 {selectedIdentityDoc?.name || '未选择'}
+                  </span>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="rounded-xl border border-gray-100 dark:border-gray-800 bg-white/70 dark:bg-gray-900/40 px-4 py-3">
+                  <div className="text-[11px] text-gray-500 dark:text-gray-400">编辑顺序</div>
+                  <div className="mt-1 text-xs leading-relaxed text-gray-700 dark:text-gray-200">先选左侧文档，再在右侧集中编辑内容，最后单独保存。</div>
+                </div>
+                <div className="rounded-xl border border-gray-100 dark:border-gray-800 bg-white/70 dark:bg-gray-900/40 px-4 py-3">
+                  <div className="text-[11px] text-gray-500 dark:text-gray-400">适合放什么</div>
+                  <div className="mt-1 text-xs leading-relaxed text-gray-700 dark:text-gray-200">身份设定、输出风格、常驻规则和面向用户的长期提示。</div>
+                </div>
+                <div className="rounded-xl border border-gray-100 dark:border-gray-800 bg-white/70 dark:bg-gray-900/40 px-4 py-3">
+                  <div className="text-[11px] text-gray-500 dark:text-gray-400">与上方配置的区别</div>
+                  <div className="mt-1 text-xs leading-relaxed text-gray-700 dark:text-gray-200">上方字段管“配置行为”，这里管“提示内容”。</div>
+                </div>
+              </div>
+            </div>
+            <div className="flex-1 grid grid-cols-1 xl:grid-cols-[280px,minmax(0,1fr)] overflow-hidden min-h-0">
+              <div className="p-3 border-r border-gray-100 dark:border-gray-800 overflow-y-auto bg-gray-50/30 dark:bg-gray-900/30 space-y-1 min-h-0">
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-3 py-2">文件列表</h4>
                 {identityDocs.map((doc: any) => (
                   <button key={doc.name} onClick={() => { setSelectedIdentityDoc(doc); setIdentityContent(doc.content || ''); }}
@@ -988,13 +1619,23 @@ export default function SystemConfig() {
                   </button>
                 ))}
               </div>
-              <div className="lg:col-span-3 flex flex-col h-full bg-white dark:bg-gray-800">
+              <div className="flex flex-col h-full bg-white dark:bg-gray-800 min-h-0">
                 {selectedIdentityDoc ? (
                   <>
-                    <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between bg-white dark:bg-gray-800 z-10">
-                      <div className="flex items-center gap-2">
-                        <FileText size={14} className="text-gray-400" />
-                        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{selectedIdentityDoc.name}</span>
+                    <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-800 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between bg-white dark:bg-gray-800 z-10">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <FileText size={14} className="text-gray-400" />
+                          <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{selectedIdentityDoc.name}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+                          <span className="rounded-full border border-gray-200 dark:border-gray-700 px-2.5 py-1">
+                            {selectedIdentityDoc.exists === false ? '未创建' : '已存在'}
+                          </span>
+                          <span className="rounded-full border border-gray-200 dark:border-gray-700 px-2.5 py-1">
+                            {(selectedIdentityDoc.size / 1024).toFixed(1)} KB
+                          </span>
+                        </div>
                       </div>
                       <button onClick={async () => {
                         setIdentitySaving(true);
@@ -1025,100 +1666,353 @@ export default function SystemConfig() {
               </div>
             </div>
           </div>
+
+          {showAgentDefaultsModal && (
+            <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowAgentDefaultsModal(false)}>
+              <div
+                className={`${modern ? 'w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-[28px] bg-[linear-gradient(145deg,rgba(255,255,255,0.92),rgba(245,243,255,0.72))] dark:bg-[linear-gradient(145deg,rgba(12,24,42,0.94),rgba(76,29,149,0.14))] border border-violet-100/70 dark:border-violet-800/20 shadow-xl backdrop-blur-xl flex flex-col' : 'w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-xl flex flex-col'}`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                      <Brain size={16} className="text-violet-500" />
+                      Agent 默认设置
+                    </h3>
+                    <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                      用弹窗单独编辑高密度参数，避免身份页右侧长期挂着一大块配置表单。
+                    </p>
+                  </div>
+                  <button onClick={() => setShowAgentDefaultsModal(false)} className={`${modern ? 'page-modern-action px-2.5 py-1.5 text-xs' : 'px-2 py-1 text-xs rounded bg-gray-100 dark:bg-gray-700'}`}>
+                    关闭
+                  </button>
+                </div>
+                <div className="p-5 overflow-y-auto">
+                  <CfgSection
+                    title="Agent 默认设置"
+                    icon={Brain}
+                    description="这里控制所有 Agent 共享的默认上下文预算；当前 OpenClaw schema 不支持单 Agent 级 contextTokens / compaction 覆盖。"
+                    defaultExpanded
+                    fields={agentDefaultsFields}
+                    getVal={getVal}
+                    setVal={setVal}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* === General Config Tab === */}
       {tab === 'general' && (
-        <div className="space-y-3">
-          <CfgSection title="网关配置" icon={Globe} fields={[
-            { path: 'gateway.port', label: '端口', type: 'number' as const, placeholder: '18789', integer: true, min: 1, max: 65535 },
-            { path: 'gateway.mode', label: '模式', type: 'select' as const, options: ['local', 'remote'] },
-            { path: 'gateway.bind', label: '绑定', type: 'select' as const, options: ['auto', 'loopback', 'lan', 'tailnet', 'custom'] },
-            { path: 'gateway.customBindHost', label: '自定义绑定地址', type: 'text' as const, placeholder: '0.0.0.0 / 127.0.0.1 / ::1' },
-            { path: 'gateway.auth.mode', label: '认证模式', type: 'select' as const, options: ['none', 'token', 'password', 'trusted-proxy'] },
-            { path: 'gateway.auth.token', label: '认证Token', type: 'password' as const },
-          ]} getVal={getVal} setVal={setVal} />
-          <CfgSection title="多智能体协同" icon={Users} fields={[
-            { path: 'tools.agentToAgent.enabled', label: '启用 Agent 间委托', type: 'toggle' as const },
-            { path: 'session.agentToAgent.maxPingPongTurns', label: '最大来回委托轮次', type: 'number' as const, placeholder: '4', integer: true, min: 1 },
-            { path: 'tools.sessions.visibility', label: '会话可见性', type: 'select' as const, options: ['self', 'tree', 'agent', 'all'], help: '官方枚举：self=仅当前会话，tree=当前会话及其子会话，agent=当前 Agent 的全部会话，all=全部会话。' },
-            { path: 'session.dmScope', label: '私聊隔离范围', type: 'select' as const, options: ['main', 'per-peer', 'per-channel-peer', 'per-account-channel-peer'] },
-          ]} getVal={getVal} setVal={setVal} />
-          <CfgSection title="Web 搜索工具" icon={Search} description="控制联网搜索行为" fields={[
-            { path: 'tools.web.search.provider', label: '搜索提供商', type: 'select' as const, options: ['brave', 'perplexity', 'grok', 'gemini', 'kimi'], help: '当前 OpenClaw 官方支持 brave / perplexity / grok / gemini / kimi。' },
-            { path: 'tools.web.search.apiKey', label: 'API Key', type: 'password' as const, help: '搜索服务的密钥，优先于 env.vars 中的同名变量。' },
-            { path: 'tools.web.search.maxResults', label: '最大结果数', type: 'number' as const, placeholder: '5', integer: true, min: 1, max: 10, help: '单次搜索返回的最多条目数（官方范围 1-10，默认 5）。' },
-          ]} getVal={getVal} setVal={setVal} />
-          <CfgSection title="命令执行安全" icon={Terminal} description="控制 exec/shell 工具的安全边界" fields={[
-            { path: 'tools.exec.timeoutSec', label: '超时（秒）', type: 'number' as const, placeholder: '30', integer: true, min: 1, help: '单次命令最大执行时长，超时后进程会被强制终止。' },
-            { path: 'tools.exec.security', label: '安全模式', type: 'select' as const, options: ['deny', 'allowlist', 'full'], help: 'deny = 默认拒绝；allowlist = 仅 safeBins 白名单；full = 完全放开（高风险）。' },
-            { path: 'tools.exec.ask', label: '审批模式', type: 'select' as const, options: ['off', 'on-miss', 'always'], help: 'off = 不额外审批；on-miss = 未命中白名单时审批；always = 总是审批。' },
-          ]} getVal={getVal} setVal={setVal} />
-          <div className="page-modern-panel p-5 space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">命令白名单 <InfoTooltip size={14} content={<>字段路径：<code className="font-mono text-[11px]">tools.exec.safeBins</code></>} /></h3>
+        <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-200">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+            <div className={`${modern ? 'page-modern-panel p-5' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-5'} space-y-2`}>
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-xl bg-blue-100/80 dark:bg-blue-900/20 text-blue-600 border border-blue-100/70 dark:border-blue-800/30">
+                  <Globe size={16} />
+                </div>
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white">基础接入</h3>
+              </div>
+              <p className="text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                先确定网关、认证和系统级密钥，再往下调协同、搜索和自动化。这样层级会更接近 OpenClaw 自己的运行模型。
+              </p>
             </div>
-            <input
-              value={(() => {
-                const raw = getVal('tools.exec.safeBins');
-                if (Array.isArray(raw)) return raw.join(', ');
-                if (typeof raw === 'string') return raw;
-                return '';
-              })()}
-              onChange={e => {
-                const list = parseConfigListInput(e.target.value);
-                setVal('tools.exec.safeBins', list.length > 0 ? list : undefined);
-              }}
-              placeholder="例如: ls, cat, echo, grep, git"
-              className="w-full px-3.5 py-2.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono"
-            />
-            <p className="text-[11px] text-gray-500">逗号分隔；security=allowlist 时 Agent 只能调用列表内的可执行文件。保存时写为数组。</p>
-          </div>
-          <SessionIsolationSection config={config} updateConfig={updateConfig} />
-          <BrowserControlSection config={config} updateConfig={updateConfig} />
-          <ToolGovernanceSection config={config} updateConfig={updateConfig} />
-          <div className={`${modern ? 'page-modern-panel p-5 space-y-2' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-5 space-y-2'}`}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">Agent 间委托白名单 <InfoTooltip size={14} content={<>字段路径：<code className="font-mono text-[11px]">tools.agentToAgent.allow</code></>} /></h3>
+            <div className={`${modern ? 'page-modern-panel p-5' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-5'} space-y-2`}>
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-xl bg-violet-100/80 dark:bg-violet-900/20 text-violet-600 border border-violet-100/70 dark:border-violet-800/30">
+                  <Users size={16} />
+                </div>
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white">Agent / 会话治理</h3>
+              </div>
+              <p className="text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                这部分控制上下文隔离、工具暴露范围、跨 Agent 委托和命令安全边界，适合一起看，不再被分散在长列表里。
+              </p>
             </div>
-            <input
-              value={(() => {
-                const raw = getVal('tools.agentToAgent.allow');
-                if (Array.isArray(raw)) return raw.join(', ');
-                if (typeof raw === 'string') return raw;
-                return '';
-              })()}
-              onChange={e => {
-                const list = parseConfigListInput(e.target.value);
-                setVal('tools.agentToAgent.allow', list);
-              }}
-              placeholder="例如: *, main->work, work->main"
-              className="w-full px-3.5 py-2.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono"
-            />
-            <p className="text-[11px] text-gray-500">用逗号分隔规则；保存时会写为数组。</p>
+            <div className={`${modern ? 'page-modern-panel p-5' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-5'} space-y-2`}>
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-xl bg-emerald-100/80 dark:bg-emerald-900/20 text-emerald-600 border border-emerald-100/70 dark:border-emerald-800/30">
+                  <RefreshCw size={16} />
+                </div>
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white">自动化与运维</h3>
+              </div>
+              <p className="text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                Cron、Heartbeat、命令和调试预览单独放在后面，减少“基础配置”和“运行时维护”混在一起的感觉。
+              </p>
+            </div>
           </div>
-          <CfgSection title="Hooks" icon={Webhook} fields={[
-            { path: 'hooks.enabled', label: '启用Hooks', type: 'toggle' as const },
-            { path: 'hooks.path', label: '基础路径', type: 'text' as const, placeholder: '/hooks' },
-            { path: 'hooks.token', label: 'Webhook密钥', type: 'password' as const },
-          ]} getVal={getVal} setVal={setVal} />
-          <CfgSection title="命令配置" icon={Terminal} fields={[
-            { path: 'commands.native', label: '原生命令', type: 'select' as const, options: ['auto', 'on', 'off'] },
-            { path: 'commands.nativeSkills', label: '原生技能', type: 'select' as const, options: ['auto', 'on', 'off'] },
-            { path: 'commands.restart', label: '允许重启', type: 'toggle' as const },
-          ]} getVal={getVal} setVal={setVal} />
-          <CfgSection title="认证密钥" icon={Key} fields={[
-            { path: 'env.vars.ANTHROPIC_API_KEY', label: 'Anthropic API Key', type: 'password' as const },
-            { path: 'env.vars.OPENAI_API_KEY', label: 'OpenAI API Key', type: 'password' as const },
-            { path: 'env.vars.GOOGLE_API_KEY', label: 'Google API Key', type: 'password' as const },
-          ]} getVal={getVal} setVal={setVal} />
-          <SudoPasswordSection />
-          <details className={`${modern ? 'page-modern-panel overflow-hidden' : 'card'}`}>
-            <summary className="px-4 py-3 text-xs font-medium text-gray-500 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50">高级 JSON 只读预览</summary>
-            <div className="px-4 pt-2 text-[11px] text-gray-400">以下内容为当前编辑态配置快照（只读），保存前会先弹出差异预览。</div>
-            <pre className="px-4 pb-4 text-[11px] text-gray-600 dark:text-gray-400 overflow-x-auto max-h-96 overflow-y-auto font-mono">{JSON.stringify(config, null, 2)}</pre>
-          </details>
+
+          <div className={`${modern ? 'page-modern-panel p-5' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-5'}`}>
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-1.5 rounded-xl bg-blue-100/80 dark:bg-blue-900/20 text-blue-600 border border-blue-100/70 dark:border-blue-800/30">
+                <HardDrive size={16} />
+              </div>
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white">工作区路径</h3>
+              <InfoTooltip content="ClawPanel 配置中的 OpenClaw 工作区路径（openClawWork），用于指定 Agent 工作目录和文件存储位置。修改后需重启网关生效。" />
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="text"
+                value={workspacePath}
+                onChange={e => setWorkspacePath(e.target.value)}
+                placeholder="例如 ~/.openclaw/workspace 或 /Users/xxx/.openclaw/workspace"
+                className="flex-1 px-3.5 py-2.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono"
+              />
+              <button
+                onClick={saveWorkspacePathFn}
+                disabled={workspacePathSaving || workspacePathLoading}
+                className={`${modern ? 'page-modern-action px-4 py-2 text-xs font-medium disabled:opacity-50' : 'flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 shadow-sm transition-all'}`}
+              >
+                {workspacePathSaving ? <RefreshCw size={12} className="animate-spin" /> : <Save size={12} />}
+                {workspacePathSaving ? '保存中...' : '保存'}
+              </button>
+            </div>
+          </div>
+
+          <ConfigGroup
+            title="基础接入"
+            description="先把 OpenClaw 对外入口、认证方式和基础密钥整理好。这里的内容最接近“机器怎么连起来”。"
+          >
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <CfgSection title="网关配置" icon={Globe} defaultExpanded description="决定 OpenClaw Control / Gateway 监听在哪、怎么暴露、是否要求认证访问。" fields={[
+                { path: 'gateway.port', label: '端口', type: 'number' as const, placeholder: '18789', integer: true, min: 1, max: 65535 },
+                { path: 'gateway.mode', label: '模式', type: 'select' as const, options: ['local', 'remote'] },
+                { path: 'gateway.bind', label: '绑定', type: 'select' as const, options: ['auto', 'loopback', 'lan', 'tailnet', 'custom'] },
+                { path: 'gateway.customBindHost', label: '自定义绑定地址', type: 'text' as const, placeholder: '0.0.0.0 / 127.0.0.1 / ::1' },
+                { path: 'gateway.auth.mode', label: '认证模式', type: 'select' as const, options: ['none', 'token', 'password', 'trusted-proxy'] },
+                { path: 'gateway.auth.token', label: '认证Token', type: 'password' as const },
+              ]} getVal={getVal} setVal={setVal} />
+              <CfgSection title="Hooks" icon={Webhook} description="给外部系统调用 OpenClaw 用的 webhook 入口。适合让 CI、监控、脚本或第三方服务主动推事件进来。" fields={[
+                { path: 'hooks.enabled', label: '启用Hooks', type: 'toggle' as const },
+                { path: 'hooks.path', label: '基础路径', type: 'text' as const, placeholder: '/hooks' },
+                { path: 'hooks.token', label: 'Webhook密钥', type: 'password' as const },
+              ]} getVal={getVal} setVal={setVal} />
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <CfgSection title="认证密钥" icon={Key} description="给 OpenClaw 自己去调用上游模型服务时用的 API Key，不是面板登录密码，也不是 webhook 密钥。" fields={[
+                { path: 'env.vars.ANTHROPIC_API_KEY', label: 'Anthropic API Key', type: 'password' as const },
+                { path: 'env.vars.OPENAI_API_KEY', label: 'OpenAI API Key', type: 'password' as const },
+                { path: 'env.vars.GOOGLE_API_KEY', label: 'Google API Key', type: 'password' as const },
+              ]} getVal={getVal} setVal={setVal} />
+            </div>
+          </ConfigGroup>
+
+          <ConfigGroup
+            title="Agent / 会话治理"
+            description="把上下文隔离、工具可见性、委托和命令安全收拢到一处，便于按“模型能看到什么、能做什么”来统一判断。"
+          >
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <CfgSection title="多智能体协同" icon={Users} defaultExpanded description="控制 Agent 之间是否允许互相委托、可见哪些会话，以及跨 Agent 协作的基本边界。" fields={[
+                { path: 'tools.agentToAgent.enabled', label: '启用 Agent 间委托', type: 'toggle' as const },
+                { path: 'session.agentToAgent.maxPingPongTurns', label: '最大来回委托轮次', type: 'number' as const, placeholder: '4', integer: true, min: 1 },
+                { path: 'tools.sessions.visibility', label: '会话可见性', type: 'select' as const, options: ['self', 'tree', 'agent', 'all'], help: '官方枚举：self=仅当前会话，tree=当前会话及其子会话，agent=当前 Agent 的全部会话，all=全部会话。' },
+                { path: 'session.dmScope', label: '私聊隔离范围', type: 'select' as const, options: ['main', 'per-peer', 'per-channel-peer', 'per-account-channel-peer'] },
+              ]} getVal={getVal} setVal={setVal} />
+              <CfgSection title="命令执行安全" icon={Terminal} description="控制 exec/shell 工具的安全边界" defaultExpanded fields={[
+                { path: 'tools.exec.timeoutSec', label: '超时（秒）', type: 'number' as const, placeholder: '30', integer: true, min: 1, help: '单次命令最大执行时长，超时后进程会被强制终止。' },
+                { path: 'tools.exec.security', label: '安全模式', type: 'select' as const, options: ['deny', 'allowlist', 'full'], help: 'deny = 默认拒绝；allowlist = 仅 safeBins 白名单；full = 完全放开（高风险）。' },
+                { path: 'tools.exec.ask', label: '审批模式', type: 'select' as const, options: ['off', 'on-miss', 'always'], help: 'off = 不额外审批；on-miss = 未命中白名单时审批；always = 总是审批。' },
+              ]} getVal={getVal} setVal={setVal} />
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <SessionIsolationSection config={config} updateConfig={updateConfig} />
+              <ToolGovernanceSection config={config} updateConfig={updateConfig} />
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr),minmax(0,1fr),minmax(0,1.15fr)] gap-4">
+              <BrowserControlSection config={config} updateConfig={updateConfig} />
+              <div className="page-modern-panel p-5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">命令白名单 <InfoTooltip size={14} content={<>字段路径：<code className="font-mono text-[11px]">tools.exec.safeBins</code></>} /></h3>
+                </div>
+                <input
+                  value={(() => {
+                    const raw = getVal('tools.exec.safeBins');
+                    if (Array.isArray(raw)) return raw.join(', ');
+                    if (typeof raw === 'string') return raw;
+                    return '';
+                  })()}
+                  onChange={e => {
+                    const list = parseConfigListInput(e.target.value);
+                    setVal('tools.exec.safeBins', list.length > 0 ? list : undefined);
+                  }}
+                  placeholder="例如: ls, cat, echo, grep, git"
+                  className="w-full px-3.5 py-2.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono"
+                />
+                <p className="text-[11px] text-gray-500">逗号分隔；security=allowlist 时 Agent 只能调用列表内的可执行文件。保存时写为数组。</p>
+              </div>
+              <div className={`${modern ? 'page-modern-panel p-5 space-y-2' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-5 space-y-2'}`}>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">Agent 间委托白名单 <InfoTooltip size={14} content={<>字段路径：<code className="font-mono text-[11px]">tools.agentToAgent.allow</code></>} /></h3>
+                </div>
+                <input
+                  value={(() => {
+                    const raw = getVal('tools.agentToAgent.allow');
+                    if (Array.isArray(raw)) return raw.join(', ');
+                    if (typeof raw === 'string') return raw;
+                    return '';
+                  })()}
+                  onChange={e => {
+                    const list = parseConfigListInput(e.target.value);
+                    setVal('tools.agentToAgent.allow', list);
+                  }}
+                  placeholder="例如: *, main->work, work->main"
+                  className="w-full px-3.5 py-2.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono"
+                />
+                <p className="text-[11px] text-gray-500">用逗号分隔规则；保存时会写为数组。</p>
+              </div>
+            </div>
+          </ConfigGroup>
+
+          <ConfigGroup
+            title="搜索与外部信息"
+            description="这里集中放 Web 搜索 provider、Codex 原生搜索和对应凭证，避免和命令安全、Agent 治理混在一块。"
+          >
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.15fr),minmax(0,0.85fr)] gap-4">
+              <CfgSection title="Web 搜索工具" icon={Search} defaultExpanded description="同步 OpenClaw 2026.4.x 的 provider、原生 Codex 搜索与缓存控制" fields={[
+                { path: 'tools.web.search.enabled', label: '启用 Web 搜索', type: 'toggle' as const },
+                { path: 'tools.web.search.provider', label: '搜索提供商', type: 'select' as const, options: [...WEB_SEARCH_PROVIDERS], help: '支持 brave / duckduckgo / exa / firecrawl / gemini / grok / kimi / minimax / ollama / perplexity / searxng / tavily；留空则由 OpenClaw 自动探测。' },
+                { path: 'tools.web.search.maxResults', label: '最大结果数', type: 'number' as const, placeholder: '5', integer: true, min: 1, max: 20, help: '通用 web_search 返回条数；多数 provider 仍建议保持在较小范围。' },
+                { path: 'tools.web.search.timeoutSeconds', label: '超时（秒）', type: 'number' as const, placeholder: '30', integer: true, min: 1, max: 300 },
+                { path: 'tools.web.search.cacheTtlMinutes', label: '缓存 TTL（分钟）', type: 'number' as const, placeholder: '15', integer: true, min: 0, max: 1440 },
+                { path: 'tools.web.search.openaiCodex.enabled', label: '启用 Codex 原生搜索', type: 'toggle' as const },
+                { path: 'tools.web.search.openaiCodex.mode', label: 'Codex 搜索模式', type: 'select' as const, options: ['cached', 'live'], help: '仅对 Codex-capable 模型生效；官方推荐 cached。' },
+                { path: 'tools.web.search.openaiCodex.allowedDomains', label: 'Codex 域名白名单', type: 'textarea' as const, placeholder: 'example.com, docs.openai.com', help: '保存时写为数组；限制原生 Codex 搜索可访问的域名。' },
+                { path: 'tools.web.search.openaiCodex.contextSize', label: 'Codex 上下文大小', type: 'select' as const, options: ['low', 'medium', 'high'] },
+                { path: 'tools.web.search.openaiCodex.userLocation.country', label: 'Codex 用户国家', type: 'text' as const, placeholder: 'US' },
+                { path: 'tools.web.search.openaiCodex.userLocation.city', label: 'Codex 用户城市', type: 'text' as const, placeholder: 'New York' },
+                { path: 'tools.web.search.openaiCodex.userLocation.timezone', label: 'Codex 用户时区', type: 'text' as const, placeholder: 'America/New_York' },
+              ]} getVal={getVal} setVal={(path, value) => {
+                if (path === 'tools.web.search.openaiCodex.allowedDomains') {
+                  const list = parseConfigListInput(String(value || ''));
+                  setVal(path, list.length > 0 ? list : undefined);
+                  return;
+                }
+                setVal(path, value);
+              }} />
+              <div className={`${modern ? 'page-modern-panel p-5 space-y-4' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-5 space-y-4'}`}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white">当前搜索 Provider 凭证</h3>
+                <p className="mt-1 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+                  OpenClaw 2026.4.x 已将大多数搜索凭证迁到 <code className="font-mono">plugins.entries.&lt;provider&gt;.config.webSearch.*</code>。
+                  这里会跟随当前 provider 展示对应字段，避免继续写入过时的 <code className="font-mono">tools.web.search.apiKey</code>。
+                </p>
+              </div>
+              <div className="text-[11px] font-mono text-gray-400">
+                provider: {currentWebSearchProvider || 'auto'}
+              </div>
+            </div>
+            {webSearchProviderMeta ? (
+              <div className="space-y-4">
+                {webSearchProviderMeta.credentialPath && (
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1">
+                      {webSearchProviderMeta.credentialLabel}
+                      <InfoTooltip content={<>字段路径：<code className="font-mono text-[11px]">{webSearchProviderMeta.credentialPath}</code></>} />
+                    </label>
+                    <input
+                      type={webSearchProviderMeta.credentialPath.includes('baseUrl') ? 'text' : 'password'}
+                      value={getVal(webSearchProviderMeta.credentialPath) ?? ''}
+                      onChange={e => setVal(webSearchProviderMeta.credentialPath!, e.target.value)}
+                      placeholder={webSearchProviderMeta.credentialPlaceholder}
+                      className="mt-1.5 w-full px-3.5 py-2.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                )}
+                {webSearchProviderMeta.extraFields?.length ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {webSearchProviderMeta.extraFields.map(field => (
+                      <div key={field.path} className={field.type === 'textarea' ? 'md:col-span-2' : ''}>
+                        <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1">
+                          {field.label}
+                          <InfoTooltip content={<>字段路径：<code className="font-mono text-[11px]">{field.path}</code></>} />
+                        </label>
+                        {field.type === 'select' ? (
+                          <select
+                            value={getVal(field.path) || ''}
+                            onChange={e => setVal(field.path, e.target.value)}
+                            className="mt-1.5 w-full px-3.5 py-2.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                          >
+                            <option value="">选择...</option>
+                            {field.options?.map(option => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            value={getVal(field.path) ?? ''}
+                            onChange={e => setVal(field.path, e.target.value)}
+                            placeholder={field.placeholder}
+                            className="mt-1.5 w-full px-3.5 py-2.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-gray-200 dark:border-gray-700 px-4 py-4 text-[11px] text-gray-500 dark:text-gray-400">
+                    当前 provider 没有额外的面板专用凭证字段。像 DuckDuckGo / Ollama 这类 key-free 模式，保持 provider 选择即可。
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-gray-200 dark:border-gray-700 px-4 py-4 text-[11px] text-gray-500 dark:text-gray-400">
+                选择固定 provider 后，这里会显示对应的凭证和附加配置。若保持 <span className="font-mono">auto</span>，OpenClaw 会按官方优先级自动探测可用 provider。
+              </div>
+            )}
+              </div>
+            </div>
+          </ConfigGroup>
+
+          <ConfigGroup
+            title="自动化与运行维护"
+            description="把周期任务、心跳、命令开关和只读调试预览放在最后，更符合“先连通，再治理，最后运维”的阅读顺序。"
+          >
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <CfgSection title="Cron 自动化" icon={RefreshCw} description="配置 OpenClaw 内建调度器与故障治理策略" fields={[
+                { path: 'cron.enabled', label: '启用 Cron', type: 'toggle' as const },
+                { path: 'cron.store', label: '存储路径(可选)', type: 'text' as const, placeholder: '/path/to/cron/jobs.json', help: '留空使用 OpenClaw 默认路径；仅在需要自定义持久化位置时填写。' },
+                { path: 'cron.maxConcurrentRuns', label: '最大并发任务', type: 'number' as const, placeholder: '4', integer: true, min: 1 },
+                { path: 'cron.retry.maxAttempts', label: '最大重试次数', type: 'number' as const, placeholder: '3', integer: true, min: 0 },
+                { path: 'cron.retry.backoffMs', label: '重试退避毫秒数组(JSON)', type: 'text' as const, placeholder: '[30000, 60000, 300000]', help: 'OpenClaw 期望数组；例如 [30000, 60000, 300000]。' },
+                { path: 'cron.webhook', label: 'Cron Webhook 入口', type: 'text' as const, placeholder: 'https://example.com/hooks/cron' },
+                { path: 'cron.webhookToken', label: 'Cron Webhook Token', type: 'password' as const },
+                { path: 'cron.failureAlert.enabled', label: '失败告警', type: 'toggle' as const },
+                { path: 'cron.failureAlert.after', label: '连续失败阈值', type: 'number' as const, placeholder: '1', integer: true, min: 1 },
+                { path: 'cron.failureAlert.cooldownMs', label: '告警冷却毫秒', type: 'number' as const, placeholder: '60000', integer: true, min: 0 },
+                { path: 'cron.failureAlert.mode', label: '告警模式', type: 'select' as const, options: ['announce', 'webhook'] },
+                { path: 'cron.failureAlert.accountId', label: '告警账号(accountId)', type: 'text' as const, placeholder: 'default' },
+                { path: 'cron.failureDestination.mode', label: '默认失败目的地模式', type: 'select' as const, options: ['announce', 'webhook'] },
+                { path: 'cron.failureDestination.channel', label: '默认失败目的地通道', type: 'text' as const, placeholder: 'telegram / feishu / last ...' },
+                { path: 'cron.failureDestination.to', label: '默认失败目的地 to', type: 'text' as const, placeholder: 'oc://channel/ops 或 webhook URL' },
+                { path: 'cron.failureDestination.accountId', label: '默认失败目的地账号(accountId)', type: 'text' as const, placeholder: 'default' },
+                { path: 'cron.runLog.maxBytes', label: '运行日志最大字节', type: 'number' as const, placeholder: '2097152', integer: true, min: 1 },
+                { path: 'cron.runLog.keepLines', label: '运行日志保留行数', type: 'number' as const, placeholder: '2000', integer: true, min: 1 },
+              ]} getVal={getVal} setVal={setVal} />
+              <CfgSection title="Heartbeat 自动化" icon={RefreshCw} description="配置 Agent 默认心跳节奏与投递策略（agents.defaults.heartbeat）" fields={[
+                { path: 'agents.defaults.heartbeat.every', label: '心跳间隔', type: 'text' as const, placeholder: '30m', help: '支持如 30m / 1h / 15m 等持续时间。' },
+                { path: 'agents.defaults.heartbeat.target', label: '心跳目标', type: 'select' as const, options: ['none', 'last', 'telegram', 'whatsapp', 'discord', 'irc', 'googlechat', 'slack', 'signal', 'imessage', 'line', 'feishu', 'wecom', 'qq'], help: 'none=仅自检，last=最近通道，其余为固定通道ID。' },
+                { path: 'agents.defaults.heartbeat.to', label: '固定目标 (to)', type: 'text' as const, placeholder: 'oc://channel/xxx' },
+                { path: 'agents.defaults.heartbeat.accountId', label: '账号标识 (accountId)', type: 'text' as const, placeholder: 'default' },
+                { path: 'agents.defaults.heartbeat.prompt', label: '心跳提示词', type: 'textarea' as const, placeholder: '请做轻量自检并回报关键状态。' },
+                { path: 'agents.defaults.heartbeat.ackMaxChars', label: '最大确认字符数', type: 'number' as const, placeholder: '300', integer: true, min: 0 },
+                { path: 'agents.defaults.heartbeat.lightContext', label: '轻量上下文', type: 'toggle' as const },
+                { path: 'agents.defaults.heartbeat.includeReasoning', label: '包含推理摘要', type: 'toggle' as const },
+              ]} getVal={getVal} setVal={setVal} />
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,0.9fr),minmax(0,1.1fr)] gap-4">
+              <CfgSection title="命令配置" icon={Terminal} description="控制 OpenClaw 是否启用原生命令、原生技能，以及是否允许执行重启这类更敏感的命令。" fields={[
+                { path: 'commands.native', label: '原生命令', type: 'select' as const, options: ['auto', 'on', 'off'] },
+                { path: 'commands.nativeSkills', label: '原生技能', type: 'select' as const, options: ['auto', 'on', 'off'] },
+                { path: 'commands.restart', label: '允许重启', type: 'toggle' as const },
+              ]} getVal={getVal} setVal={setVal} />
+              <details className={`${modern ? 'page-modern-panel overflow-hidden' : 'card'}`}>
+                <summary className="px-4 py-3 text-xs font-medium text-gray-500 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50">高级 JSON 只读预览</summary>
+                <div className="px-4 pt-2 text-[11px] text-gray-400">以下内容为当前编辑态配置快照（只读），保存前会先弹出差异预览。</div>
+                <pre className="px-4 pb-4 text-[11px] text-gray-600 dark:text-gray-400 overflow-x-auto max-h-96 overflow-y-auto font-mono">{JSON.stringify(config, null, 2)}</pre>
+              </details>
+            </div>
+          </ConfigGroup>
         </div>
       )}
 
@@ -1521,7 +2415,7 @@ function SudoPasswordSection() {
   );
 }
 
-function ChangePasswordSection() {
+function ChangePasswordSection({ embedded = false }: { embedded?: boolean }) {
   const { t } = useI18n();
   const [oldPwd, setOldPwd] = useState('');
   const [newPwd, setNewPwd] = useState('');
@@ -1549,6 +2443,53 @@ function ChangePasswordSection() {
     finally { setSaving(false); setTimeout(() => setMsg(''), 4000); }
   };
 
+  const body = (
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <input type="password" value={oldPwd} onChange={e => setOldPwd(e.target.value)}
+          placeholder={t.sysConfig?.currentPassword || '当前密码'}
+          className="w-full px-4 py-2.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-gray-400" />
+        <input type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)}
+          placeholder={t.sysConfig?.newPassword || '新密码'}
+          className="w-full px-4 py-2.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-gray-400" />
+        <input type="password" value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)}
+          placeholder={t.sysConfig?.confirmPassword || '确认新密码'}
+          className="w-full px-4 py-2.5 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-gray-400" />
+      </div>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <p className="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+          修改后会自动退出当前登录态，重新使用新密码进入面板。
+        </p>
+        <button onClick={handleChange} disabled={saving || !oldPwd || !newPwd || !confirmPwd}
+          className="px-4 py-2.5 text-xs font-medium page-modern-accent disabled:opacity-50">
+          {saving ? '修改中...' : (t.sysConfig?.changePasswordBtn || '修改密码')}
+        </button>
+      </div>
+      {msg && (
+        <div className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border ${msgOk ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-900/30' : 'text-red-600 bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-900/30'}`}>
+          {msgOk ? <CheckCircle size={12} /> : <AlertTriangle size={12} />} {msg}
+        </div>
+      )}
+    </div>
+  );
+
+  if (embedded) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="p-1.5 rounded-xl bg-blue-100/80 dark:bg-blue-900/20 text-blue-600 border border-blue-100/70 dark:border-blue-800/30">
+            <Key size={16} />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white">{t.sysConfig?.changePassword || '修改管理密码'}</h3>
+            <p className="text-[10px] text-gray-500 mt-0.5">{t.sysConfig?.changePasswordDesc || '修改 ClawPanel 管理后台登录密码，修改后需重新登录'}</p>
+          </div>
+        </div>
+        {body}
+      </div>
+    );
+  }
+
   return (
     <div className="page-modern-panel overflow-hidden">
       <div className="px-5 py-4 flex items-center gap-3 border-b border-gray-100 dark:border-gray-800 bg-gray-50/30 dark:bg-gray-900/30">
@@ -1560,25 +2501,8 @@ function ChangePasswordSection() {
           <p className="text-[10px] text-gray-500 mt-0.5">{t.sysConfig?.changePasswordDesc || '修改 ClawPanel 管理后台登录密码，修改后需重新登录'}</p>
         </div>
       </div>
-      <div className="p-5 space-y-3">
-        <input type="password" value={oldPwd} onChange={e => setOldPwd(e.target.value)}
-          placeholder={t.sysConfig?.currentPassword || '当前密码'}
-          className="w-full px-4 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-gray-400" />
-        <input type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)}
-          placeholder={t.sysConfig?.newPassword || '新密码'}
-          className="w-full px-4 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-gray-400" />
-        <input type="password" value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)}
-          placeholder={t.sysConfig?.confirmPassword || '确认新密码'}
-          className="w-full px-4 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-gray-400" />
-        <button onClick={handleChange} disabled={saving || !oldPwd || !newPwd || !confirmPwd}
-          className="w-full px-4 py-2.5 text-xs font-medium page-modern-accent disabled:opacity-50">
-          {saving ? '修改中...' : (t.sysConfig?.changePasswordBtn || '修改密码')}
-        </button>
-        {msg && (
-          <div className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border ${msgOk ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-900/30' : 'text-red-600 bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-900/30'}`}>
-            {msgOk ? <CheckCircle size={12} /> : <AlertTriangle size={12} />} {msg}
-          </div>
-        )}
+      <div className="p-5">
+        {body}
       </div>
     </div>
   );
@@ -1629,7 +2553,18 @@ function PanelUpdateSection() {
     setNavigating(true);
     try {
       const r = await api.generateUpdateToken();
-      if (!r.ok) { alert('生成更新令牌失败: ' + (r.error || '')); setNavigating(false); return; }
+      if (!r.ok) {
+        const error = r.error || '';
+        if (error.includes('认证令牌无效') || error.includes('未提供认证令牌')) {
+          localStorage.removeItem('admin-token');
+          alert('登录状态已过期，请重新登录后再试更新。');
+          window.location.href = '/login';
+          return;
+        }
+        alert('生成更新令牌失败: ' + error);
+        setNavigating(false);
+        return;
+      }
       window.open(r.updaterURL, '_blank');
     } catch (e) { alert('网络错误: ' + e); }
     finally { setNavigating(false); }
@@ -1909,12 +2844,18 @@ function ProviderHealthCheck({ pid, prov }: { pid: string; prov: any }) {
   );
 }
 
-function CfgSection({ title, icon: Icon, description, defaultExpanded = false, fields, getVal, setVal }: {
-  title: string; icon: any; description?: string; defaultExpanded?: boolean;
+function CfgSection({ title, icon: Icon, description, defaultExpanded = true, fields, getVal, setVal, storageKey }: {
+  title: string; icon: any; description?: string; defaultExpanded?: boolean; storageKey?: string;
   fields: CfgField[];
   getVal: (p: string) => any; setVal: (p: string, v: any) => void;
 }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
+  const persistKey = storageKey || getExpandStateStorageKey(title);
+  const [expanded, setExpanded] = useState(() => readPersistedExpandState(persistKey, defaultExpanded));
+
+  useEffect(() => {
+    writePersistedExpandState(persistKey, expanded);
+  }, [expanded, persistKey]);
+
   return (
     <div className="page-modern-panel overflow-hidden transition-all hover:shadow-md">
       <button onClick={() => setExpanded(!expanded)}
@@ -2002,6 +2943,27 @@ function CfgSection({ title, icon: Icon, description, defaultExpanded = false, f
   );
 }
 
+function ConfigGroup({ title, description, children }: {
+  title: string;
+  description: string;
+  children: any;
+}) {
+  return (
+    <section className="page-modern-panel p-6 space-y-5">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+        <div className="max-w-3xl">
+          <h3 className="text-sm font-bold text-gray-900 dark:text-white">{title}</h3>
+          <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">{description}</p>
+        </div>
+        <div className="h-px xl:h-auto xl:w-px self-stretch bg-gray-100 dark:bg-gray-800" />
+      </div>
+      <div className="space-y-4">
+        {children}
+      </div>
+    </section>
+  );
+}
+
 function SessionIsolationSection({
   config,
   updateConfig,
@@ -2009,7 +2971,9 @@ function SessionIsolationSection({
   config: any;
   updateConfig: (mutate: (draft: any) => void) => void;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const persistKey = getExpandStateStorageKey('session-isolation');
+  const [expanded, setExpanded] = useState(() => readPersistedExpandState(persistKey, true));
+  useEffect(() => { writePersistedExpandState(persistKey, expanded); }, [expanded, persistKey]);
   const rawDmScope = typeof readConfigValue(config, 'session.dmScope') === 'string'
     ? String(readConfigValue(config, 'session.dmScope')).trim()
     : '';
@@ -2215,7 +3179,9 @@ function ToolGovernanceSection({
   config: any;
   updateConfig: (mutate: (draft: any) => void) => void;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const persistKey = getExpandStateStorageKey('tool-governance');
+  const [expanded, setExpanded] = useState(() => readPersistedExpandState(persistKey, true));
+  useEffect(() => { writePersistedExpandState(persistKey, expanded); }, [expanded, persistKey]);
   const rawProfile = String(readConfigValue(config, 'tools.profile') || '').trim();
   const allowText = formatConfigList(readConfigValue(config, 'tools.allow'));
   const denyText = formatConfigList(readConfigValue(config, 'tools.deny'));
@@ -2463,7 +3429,9 @@ function BrowserControlSection({
   config: any;
   updateConfig: (mutate: (draft: any) => void) => void;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const persistKey = getExpandStateStorageKey('browser-control');
+  const [expanded, setExpanded] = useState(() => readPersistedExpandState(persistKey, true));
+  useEffect(() => { writePersistedExpandState(persistKey, expanded); }, [expanded, persistKey]);
   const browser = getBrowserConfigDraft(config);
   const enabled = getEffectiveBrowserEnabled(config);
   const rawDefaultProfile = getRawBrowserDefaultProfile(config);

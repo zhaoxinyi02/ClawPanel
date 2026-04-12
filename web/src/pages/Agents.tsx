@@ -24,7 +24,7 @@ interface AgentItem {
 }
 
 type AgentFormSection = 'basic' | 'behavior' | 'access' | 'collaboration' | 'advanced';
-type InheritToggle = 'inherit' | 'enabled' | 'disabled';
+type 继承默认Toggle = 'inherit' | 'enabled' | 'disabled';
 
 interface AgentFormState {
   id: string;
@@ -46,14 +46,14 @@ interface AgentFormState {
   sandboxWorkspaceAccess: '' | 'none' | 'ro' | 'rw';
   sandboxWorkspaceRoot: string;
   sandboxDockerNetwork: string;
-  sandboxDockerReadOnlyRoot: InheritToggle;
+  sandboxDockerReadOnlyRoot: 继承默认Toggle;
   sandboxDockerSetupCommand: string;
   sandboxDockerBinds: string;
-  groupChatMode: InheritToggle;
+  groupChatMode: 继承默认Toggle;
   toolProfile: '' | 'minimal' | 'coding' | 'messaging' | 'full';
   toolAllow: string;
   toolDeny: string;
-  agentToAgentMode: InheritToggle;
+  agentToAgentMode: 继承默认Toggle;
   agentToAgentAllow: string;
   sessionVisibility: SessionVisibility;
   subagentAllowAgents: string;
@@ -185,14 +185,14 @@ interface SessionInfo {
 
 const ALLOWED_MATCH_KEYS = ['channel', 'sender', 'peer', 'parentPeer', 'guildId', 'teamId', 'accountId', 'roles'];
 const AGENT_FORM_SECTIONS: { id: AgentFormSection; title: string; description: string }[] = [
-  { id: 'basic', title: '基础信息 (Basic)', description: '核心身份、工作区与默认关系' },
-  { id: 'behavior', title: '行为设定 (Behavior)', description: '模型、常用参数与身份摘要' },
-  { id: 'access', title: '访问与安全 (Access & Safety)', description: 'sandbox 与群聊行为' },
-  { id: 'collaboration', title: '协作说明 (Global Collaboration)', description: '当前仅支持全局协作策略' },
-  { id: 'advanced', title: '高级 JSON (Advanced)', description: '完整 JSON 覆盖与 runtime' },
+  { id: 'basic', title: '基础信息', description: '核心身份、工作区与默认关系' },
+  { id: 'behavior', title: '行为设定', description: '模型、常用参数与身份摘要' },
+  { id: 'access', title: '访问与安全', description: 'sandbox 与群聊行为' },
+  { id: 'collaboration', title: '协作说明', description: '当前仅支持全局协作策略' },
+  { id: 'advanced', title: '高级 JSON', description: '完整 JSON 覆盖与 runtime' },
 ];
 const SANDBOX_STARTERS = [
-  { key: 'inherit', label: '继承默认', help: '不写 sandbox 覆盖，沿用全局或默认 Agent 配置。', text: '' },
+  { key: 'inherit', label: '继承默认', help: '不写 sandbox 覆盖，沿用全局或默认智能体 配置。', text: '' },
   { key: 'non-main', label: '仅非主会话沙箱', help: '官方常见起步：主会话继续在宿主机运行，群聊 / channel / 非 main 会话进入 sandbox。', text: '{\n  "mode": "non-main",\n  "scope": "session",\n  "workspaceAccess": "none"\n}' },
   { key: 'read-only', label: '只读沙箱', help: '官方语义：始终启用 sandbox，并把 agent workspace 以只读方式挂载进去。', text: '{\n  "mode": "all",\n  "workspaceAccess": "ro"\n}' },
   { key: 'workspace-write', label: '工作区可写', help: '官方语义：始终启用 sandbox，并允许在 workspace 内读写。', text: '{\n  "mode": "all",\n  "workspaceAccess": "rw"\n}' },
@@ -255,42 +255,42 @@ const EMPTY_AGENT_DEFAULTS: AgentDefaultsState = {
 };
 
 const AGENT_DIRECTORY_TABS: { id: AgentDetailTab; title: string; description: string }[] = [
-  { id: 'overview', title: '概览 (Overview)', description: '先理解定位、默认关系与关键摘要' },
-  { id: 'model', title: '模型与身份 (Model & Identity)', description: '模型、参数与身份口吻' },
-  { id: 'tools', title: '工具与权限 (Tools & Access)', description: '工具策略、委派与 sandbox' },
-  { id: 'files', title: '核心文件 (Core Files)', description: '查看并编辑工作区里的关键文档' },
-  { id: 'capabilities', title: '技能与运行态 (Skills · Routing · Cron)', description: '按当前 Agent 的 workspace / bindings / cron 观察有效结果' },
-  { id: 'context', title: '路由上下文 (Routing Context)', description: '查看它被哪些规则和会话引用' },
-  { id: 'advanced', title: '高级 JSON (Advanced)', description: '需要完整 JSON 时再进入' },
+  { id: 'overview', title: '概览', description: '先理解定位、默认关系与关键摘要' },
+  { id: 'model', title: '模型与身份', description: '模型、参数与身份口吻' },
+  { id: 'tools', title: '工具与权限', description: '工具策略、委派与 sandbox' },
+  { id: 'files', title: '核心文件', description: '查看并编辑工作区里的关键文档' },
+  { id: 'capabilities', title: '技能与运行态', description: '按当前智能体的 workspace / bindings / cron 观察有效结果' },
+  { id: 'context', title: '路由上下文', description: '查看它被哪些规则和会话引用' },
+  { id: 'advanced', title: '高级 JSON', description: '需要完整 JSON 时再进入' },
 ];
 
 const TOOL_POLICY_PRESETS: Array<{ id: '' | 'minimal' | 'coding' | 'messaging' | 'full'; label: string; help: string }> = [
-  { id: '', label: 'Inherit', help: '不写 per-agent profile，继续继承全局工具策略。' },
+  { id: '', label: '继承默认', help: '不写单智能体 profile，继续继承全局工具策略。' },
   { id: 'minimal', label: 'Minimal', help: '只保留最小会话能力，适合作为最保守的起点。' },
-  { id: 'coding', label: 'Coding', help: '偏向编码/文件/运行时工具，适合代码型 Agent。' },
-  { id: 'messaging', label: 'Messaging', help: '偏向消息入口与渠道协作，适合路由型 Agent。' },
-  { id: 'full', label: 'Full', help: '完整工具面；除非明确需要，否则不建议长期给高权限 Agent。' },
+  { id: 'coding', label: '编码优先', help: '偏向编码/文件/运行时工具，适合代码型智能体。' },
+  { id: 'messaging', label: '消息协作', help: '偏向消息入口与渠道协作，适合路由型智能体。' },
+  { id: 'full', label: '完整能力', help: '完整工具面；除非明确需要，否则不建议长期给高权限智能体。' },
 ];
 
 const AGENT_CORE_FILE_META: Record<string, { label: string; description: string }> = {
-  'AGENTS.md': { label: '工作说明 (AGENTS.md)', description: '定义这个 Agent 的总任务边界与协作规则。' },
-  'SOUL.md': { label: '人格内核 (SOUL.md)', description: '记录风格、价值观与长期行为倾向。' },
-  'TOOLS.md': { label: '工具策略 (TOOLS.md)', description: '补充工具使用原则、限制与推荐模式。' },
-  'IDENTITY.md': { label: '身份设定 (IDENTITY.md)', description: '描述角色、人设和对外表达方式。' },
-  'USER.md': { label: '用户偏好 (USER.md)', description: '放业务方偏好、长期协作约定与注意事项。' },
-  'HEARTBEAT.md': { label: '自检节奏 (HEARTBEAT.md)', description: '约定这个 Agent 的周期性自检或提醒。' },
-  'BOOT.md': { label: '启动检查 (BOOT.md)', description: 'Gateway 重启时可执行的简短启动检查清单。' },
-  'BOOTSTRAP.md': { label: '启动引导 (BOOTSTRAP.md)', description: '首次加载时最应该先看的说明或初始化步骤。' },
-  'MEMORY.md': { label: '记忆摘录 (MEMORY.md)', description: '存放长期记忆或需要沉淀给后续会话的内容。' },
+  'AGENTS.md': { label: '工作说明', description: '定义这个智能体的总任务边界与协作规则。' },
+  'SOUL.md': { label: '人格内核', description: '记录风格、价值观与长期行为倾向。' },
+  'TOOLS.md': { label: '工具策略', description: '补充工具使用原则、限制与推荐模式。' },
+  'IDENTITY.md': { label: '身份设定', description: '描述角色、人设和对外表达方式。' },
+  'USER.md': { label: '用户偏好', description: '放业务方偏好、长期协作约定与注意事项。' },
+  'HEARTBEAT.md': { label: '自检节奏', description: '约定这个智能体的周期性自检或提醒。' },
+  'BOOT.md': { label: '启动检查', description: 'Gateway 重启时可执行的简短启动检查清单。' },
+  'BOOTSTRAP.md': { label: '启动引导', description: '首次加载时最应该先看的说明或初始化步骤。' },
+  'MEMORY.md': { label: '记忆摘录', description: '存放长期记忆或需要沉淀给后续会话的内容。' },
 };
 
 const CHANNEL_DISPLAY_NAMES: Record<string, string> = {
   qq: 'QQ',
   discord: 'Discord',
-  feishu: '飞书 (Feishu/Lark)',
+  feishu: '飞书 / Lark',
   slack: 'Slack',
   telegram: 'Telegram',
-  wechat: '微信 (WeChat)',
+  wechat: '微信',
 };
 
 const DEFAULT_PREVIEW_META: Record<PreviewMetaKey, string> = {
@@ -338,7 +338,7 @@ const PREVIEW_FIELD_META: Record<PreviewMetaKey, { label: string; placeholder: s
   },
   teamId: {
     label: 'Slack 工作区',
-    placeholder: '例如 workspace-main',
+    placeholder: '例如 主工作区',
     help: '只在 Slack / team 场景有意义。',
   },
   roles: {
@@ -362,20 +362,20 @@ const PREVIEW_GROUPS: { title: string; description: string; fields: PreviewMetaK
 ];
 
 const BINDING_TYPE_OPTIONS: Array<{ value: 'route' | 'acp'; label: string; description: string }> = [
-  { value: 'route', label: '路由规则（route）', description: '把匹配到的消息交给目标 Agent。' },
-  { value: 'acp', label: 'ACP 规则（acp）', description: '在命中时附带 ACP 执行配置。' },
+  { value: 'route', label: '路由规则', description: '把匹配到的消息交给目标智能体。' },
+  { value: 'acp', label: 'ACP 规则', description: '在命中时附带 ACP 执行配置。' },
 ];
 
 const OFFICIAL_MATCHED_BY_LABELS: Record<string, string> = {
-  'binding.sender': '发送者（sender）',
-  'binding.peer': '会话（peer）',
-  'binding.peer.parent': '父会话继承（parent peer）',
-  'binding.guild+roles': '服务器 + 角色（guild + roles）',
-  'binding.guild': '服务器（guild）',
-  'binding.team': '团队 / 工作区（team）',
-  'binding.account': '账号（account）',
-  'binding.account.wildcard': '账号通配（accountId: *）',
-  'binding.channel': '通道（channel）',
+  'binding.sender': '发送者',
+  'binding.peer': '会话',
+  'binding.peer.parent': '父会话继承',
+  'binding.guild+roles': '服务器 + 角色',
+  'binding.guild': '服务器',
+  'binding.team': '团队 / 工作区',
+  'binding.account': '账号',
+  'binding.account.wildcard': '账号通配',
+  'binding.channel': '通道',
   default: '默认兜底',
 };
 
@@ -771,7 +771,7 @@ function humanizeBindingPriority(priority: string): string {
   }
 }
 
-function describeTriState(raw: InheritToggle, enabledLabel: string, disabledLabel: string): string {
+function describeTriState(raw: 继承默认Toggle, enabledLabel: string, disabledLabel: string): string {
   if (raw === 'enabled') return enabledLabel;
   if (raw === 'disabled') return disabledLabel;
   return '继承默认';
@@ -784,15 +784,15 @@ function describeSessionVisibility(raw: any): string {
     case 'tree':
       return '当前会话树';
     case 'agent':
-      return '当前 Agent 的全部会话';
+      return '当前智能体的全部会话';
     case 'all':
       return '所有会话';
   }
   return '继承默认';
 }
 
-function describeSandboxMode(raw: any): string {
-  const draft = extractSandboxDraft(raw);
+function describe沙箱Mode(raw: any): string {
+  const draft = extract沙箱Draft(raw);
   if (!draft.mode && !draft.scope && !draft.workspaceAccess && !draft.workspaceRoot && !draft.dockerNetwork && draft.dockerReadOnlyRoot === 'inherit' && !draft.dockerSetupCommand && !draft.dockerBinds) {
     return '继承默认';
   }
@@ -804,27 +804,27 @@ function describeSandboxMode(raw: any): string {
   return '自定义 JSON';
 }
 
-function describeSandboxModeValue(raw: string): string {
+function describe沙箱ModeValue(raw: string): string {
   switch (raw) {
     case 'off':
-      return '关闭（off，宿主机运行）';
+      return '关闭 - 宿主机运行';
     case 'non-main':
-      return '仅非主会话（non-main）';
+      return '仅非主会话';
     case 'all':
-      return '全部会话（all）';
+      return '全部会话';
     default:
       return '继承默认';
   }
 }
 
-function describeSandboxScopeValue(raw: string): string {
+function describe沙箱ScopeValue(raw: string): string {
   switch (raw) {
     case 'session':
-      return '每会话一个容器（session）';
+      return '每会话一个容器';
     case 'agent':
-      return '每 Agent 一个容器（agent）';
+      return '每 Agent 一个容器';
     case 'shared':
-      return '全部共享一个容器（shared）';
+      return '全部共享一个容器';
     default:
       return '继承默认';
   }
@@ -833,23 +833,23 @@ function describeSandboxScopeValue(raw: string): string {
 function describeWorkspaceAccessValue(raw: string): string {
   switch (raw) {
     case 'none':
-      return '仅沙箱工作区（none）';
+      return '仅沙箱工作区';
     case 'ro':
-      return '只读挂载 Agent workspace（ro）';
+      return '只读挂载智能体工作区（ro）';
     case 'rw':
-      return '可写挂载 Agent workspace（rw）';
+      return '可写挂载智能体工作区（rw）';
     default:
       return '继承默认';
   }
 }
 
-function describeToggleValue(raw: InheritToggle, enabledLabel: string, disabledLabel: string): string {
+function describeToggleValue(raw: 继承默认Toggle, enabledLabel: string, disabledLabel: string): string {
   if (raw === 'enabled') return enabledLabel;
   if (raw === 'disabled') return disabledLabel;
   return '继承默认';
 }
 
-function normalizeLegacySandboxDraft(raw: any): Record<string, any> {
+function normalizeLegacy沙箱Draft(raw: any): Record<string, any> {
   if (!isPlainObject(raw)) return {};
   const next = deepClone(raw);
   const mode = String(next.mode || '').trim();
@@ -865,8 +865,8 @@ function normalizeLegacySandboxDraft(raw: any): Record<string, any> {
   return next;
 }
 
-function extractSandboxDraft(raw: any) {
-  const sandbox = normalizeLegacySandboxDraft(raw);
+function extract沙箱Draft(raw: any) {
+  const sandbox = normalizeLegacy沙箱Draft(raw);
   const docker = isPlainObject(sandbox.docker) ? sandbox.docker : {};
   return {
     mode: (() => {
@@ -889,7 +889,7 @@ function extractSandboxDraft(raw: any) {
   } as const;
 }
 
-function buildStructuredSandboxPreview(form: Pick<AgentFormState, 'sandboxMode' | 'sandboxScope' | 'sandboxWorkspaceAccess' | 'sandboxWorkspaceRoot' | 'sandboxDockerNetwork' | 'sandboxDockerReadOnlyRoot' | 'sandboxDockerSetupCommand' | 'sandboxDockerBinds'>): any {
+function buildStructured沙箱Preview(form: Pick<AgentFormState, 'sandboxMode' | 'sandboxScope' | 'sandboxWorkspaceAccess' | 'sandboxWorkspaceRoot' | 'sandboxDockerNetwork' | 'sandboxDockerReadOnlyRoot' | 'sandboxDockerSetupCommand' | 'sandboxDockerBinds'>): any {
   const sandbox: Record<string, any> = {};
   if (form.sandboxMode) sandbox.mode = form.sandboxMode;
   if (form.sandboxScope) sandbox.scope = form.sandboxScope;
@@ -928,7 +928,7 @@ function buildBindingSummary(matchRaw: any, channelMeta: Record<string, ChannelM
   const teamId = extractTextValue(match.teamId);
 
   if (channel) parts.push(`通道 ${channel}`);
-  if (accountId === '*') parts.push('全部账号（按通道级规则处理）');
+  if (accountId === '*') parts.push('全部账号');
   else if (accountId) parts.push(`账号 ${accountId}`);
   else if (channel) parts.push(`默认账号${channelMeta[channel]?.defaultAccount ? ` (${channelMeta[channel]?.defaultAccount})` : ''}`);
   if (sender) parts.push(`发送者 ${sender}`);
@@ -1012,8 +1012,8 @@ function validateAvatarValue(raw: string): string {
   const lower = value.toLowerCase();
   if (lower.startsWith('http://') || lower.startsWith('https://')) return '';
   if (lower.startsWith('data:image/') || lower.startsWith('data:')) return '';
-  if (value.startsWith('~')) return '头像不支持以 ~ 开头，请使用工作区相对路径、http(s) URL 或 data URI。';
-  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return '头像仅支持 http(s) URL、data URI 或工作区相对路径。';
+  if (value.startsWith('~')) return '头像不支持以 ~ 开头，请使用工作区相对路径、http(s) 地址或 data URI。';
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return '头像仅支持 http(s) 地址、data URI 或工作区相对路径。';
   if (value.startsWith('/')) return '头像不支持绝对路径，请改用工作区相对路径。';
   return '';
 }
@@ -1105,13 +1105,13 @@ function cleanupObject(raw: any): any {
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-function triStateFromValue(raw: any): InheritToggle {
+function triStateFromValue(raw: any): 继承默认Toggle {
   if (raw === true) return 'enabled';
   if (raw === false) return 'disabled';
   return 'inherit';
 }
 
-function triStateToValue(raw: InheritToggle): boolean | undefined {
+function triStateToValue(raw: 继承默认Toggle): boolean | undefined {
   if (raw === 'enabled') return true;
   if (raw === 'disabled') return false;
   return undefined;
@@ -1159,7 +1159,7 @@ function extractIdentityDraft(raw: any): { name: string; theme: string; emoji: s
   };
 }
 
-function detectSandboxStarter(raw: string): string {
+function detect沙箱Starter(raw: string): string {
   const text = raw.trim();
   if (!text) return 'inherit';
   try {
@@ -1185,7 +1185,7 @@ function detectSandboxStarter(raw: string): string {
   return 'custom';
 }
 
-function getUnsupportedSandboxStructuredMessages(raw: string): string[] {
+function getUnsupported沙箱StructuredMessages(raw: string): string[] {
   const text = raw.trim();
   if (!text) return [];
   try {
@@ -1258,7 +1258,7 @@ function createAgentFormState(agent?: AgentItem): AgentFormState {
   const tools = isPlainObject(agent?.tools) ? agent?.tools : {};
   const subagents = isPlainObject(agent?.subagents) ? agent?.subagents : {};
   const groupChat = isPlainObject(agent?.groupChat) ? agent?.groupChat : {};
-  const sandboxDraft = extractSandboxDraft(agent?.sandbox);
+  const sandboxDraft = extract沙箱Draft(agent?.sandbox);
 
   return {
     ...DEFAULT_AGENT_FORM,
@@ -1329,8 +1329,8 @@ function buildPreviewExplanation(result: PreviewResult | null, bindings: Binding
   const agentID = result.agent || defaultAgent || '未命名 Agent';
   if (!result.matchedBy || result.matchedBy === 'default') {
     return {
-      headline: `消息会回落给默认 Agent「${agentID}」`,
-      detail: '本次输入没有命中任何显式路由规则，所以系统使用默认 Agent 兜底。',
+      headline: `消息会回落给默认智能体「${agentID}」`,
+      detail: '本次输入没有命中任何显式路由规则，所以系统使用默认智能体 兜底。',
       ruleLabel: '默认回落',
     };
   }
@@ -1341,7 +1341,7 @@ function buildPreviewExplanation(result: PreviewResult | null, bindings: Binding
   return {
     headline: `消息会交给 Agent「${agentID}」`,
     detail: index >= 0
-      ? `命中了「${bindingLabel}」的「${ruleLabel}」优先级（bindings[${index}]）。`
+      ? `命中了「${bindingLabel}」的「${ruleLabel}」优先级。`
       : `命中优先级：${ruleLabel}。`,
     ruleLabel: bindingLabel,
   };
@@ -1391,7 +1391,7 @@ function AgentsPage() {
   const [showForm, setShowForm] = useState(false);
   const [formSection, setFormSection] = useState<AgentFormSection>('basic');
   const [form, setForm] = useState<AgentFormState>(DEFAULT_AGENT_FORM);
-  const [sandboxClearIntent, setSandboxClearIntent] = useState(false);
+  const [sandboxClearIntent, set沙箱ClearIntent] = useState(false);
   const [saveAttempted, setSaveAttempted] = useState(false);
   const [structuredTouched, setStructuredTouched] = useState<AgentStructuredTouchedState>(DEFAULT_AGENT_STRUCTURED_TOUCHED);
 
@@ -1444,11 +1444,11 @@ function AgentsPage() {
 
   const sandboxStarter = useMemo(() => {
     if (structuredTouched.sandbox) {
-      return detectSandboxStarter(stringifyJSON(buildStructuredSandboxPreview(form)));
+      return detect沙箱Starter(stringifyJSON(buildStructured沙箱Preview(form)));
     }
-    return detectSandboxStarter(form.sandboxText);
+    return detect沙箱Starter(form.sandboxText);
   }, [form, structuredTouched.sandbox]);
-  const sandboxStructuredIssues = useMemo(() => getUnsupportedSandboxStructuredMessages(form.sandboxText), [form.sandboxText]);
+  const sandboxStructuredIssues = useMemo(() => getUnsupported沙箱StructuredMessages(form.sandboxText), [form.sandboxText]);
   const sandboxStructuredLocked = sandboxStructuredIssues.length > 0;
   const isBlankAgentID = !form.id.trim();
   const agentIDError = useMemo(() => {
@@ -1642,9 +1642,9 @@ function AgentsPage() {
     if (touchKey) touchStructured(touchKey);
   };
 
-  const updateSandboxForm = (patch: Partial<AgentFormState>) => {
+  const update沙箱Form = (patch: Partial<AgentFormState>) => {
     updateForm(patch, 'sandbox');
-    setSandboxClearIntent(false);
+    set沙箱ClearIntent(false);
   };
 
   const applyToolPolicyPreset = (preset: AgentFormState['toolProfile']) => {
@@ -1666,7 +1666,7 @@ function AgentsPage() {
   const closeForm = () => {
     setShowForm(false);
     setMaterializingImplicitAgent(false);
-    setSandboxClearIntent(false);
+    set沙箱ClearIntent(false);
     setSaveAttempted(false);
     setStructuredTouched(DEFAULT_AGENT_STRUCTURED_TOUCHED);
     setIdentityImportMsg('');
@@ -1974,7 +1974,7 @@ function AgentsPage() {
     setMsg('');
     setIdentityImportMsg('');
     setMaterializingImplicitAgent(false);
-    setSandboxClearIntent(false);
+    set沙箱ClearIntent(false);
     setSaveAttempted(false);
     setStructuredTouched(DEFAULT_AGENT_STRUCTURED_TOUCHED);
     setEditingId(null);
@@ -1988,7 +1988,7 @@ function AgentsPage() {
     setIdentityImportMsg('');
     const implicitAgent = isImplicitAgent(agent);
     setMaterializingImplicitAgent(implicitAgent);
-    setSandboxClearIntent(false);
+    set沙箱ClearIntent(false);
     setSaveAttempted(false);
     setStructuredTouched(DEFAULT_AGENT_STRUCTURED_TOUCHED);
     setEditingId(agent.id);
@@ -2007,11 +2007,11 @@ function AgentsPage() {
     }
   };
 
-  const applySandboxStarter = (starterKey: string) => {
+  const apply沙箱Starter = (starterKey: string) => {
     const starter = SANDBOX_STARTERS.find(item => item.key === starterKey);
     if (!starter) return;
     const sandboxObj = parseJSONText(starter.text, 'sandbox');
-    const draft = extractSandboxDraft(sandboxObj);
+    const draft = extract沙箱Draft(sandboxObj);
     setForm(prev => ({
       ...prev,
       sandboxMode: draft.mode,
@@ -2024,7 +2024,7 @@ function AgentsPage() {
       sandboxDockerBinds: draft.dockerBinds,
     }));
     touchStructured('sandbox');
-    setSandboxClearIntent(starterKey === 'inherit');
+    set沙箱ClearIntent(starterKey === 'inherit');
   };
 
   const syncStructuredFieldsFromAdvanced = () => {
@@ -2037,7 +2037,7 @@ function AgentsPage() {
       const subagentsObj = parseJSONText(form.subagentsText, 'subagents');
       const paramsObj = parseJSONText(form.paramsText, 'params');
       const modelDraft = extractModelDraft(modelObj);
-      const sandboxDraft = extractSandboxDraft(sandboxObj);
+      const sandboxDraft = extract沙箱Draft(sandboxObj);
       const identityDraft = extractIdentityDraft(identityObj);
       setForm(prev => ({
         ...prev,
@@ -2070,8 +2070,8 @@ function AgentsPage() {
         sessionVisibility: '',
         subagentAllowAgents: isPlainObject(subagentsObj) ? parseStringList(getNestedValue(subagentsObj, 'allowAgents')).join(', ') : '',
       }));
-      setSandboxClearIntent(false);
-      setMsg('已从 Advanced JSON 同步结构化字段');
+      set沙箱ClearIntent(false);
+      setMsg('已从 高级 JSON 同步结构化字段');
       setTimeout(() => setMsg(''), 3000);
     } catch (err) {
       setMsg('同步失败: ' + String(err));
@@ -2088,7 +2088,7 @@ function AgentsPage() {
     }
     if (sandboxStructuredLocked && structuredTouched.sandbox) {
       setFormSection('advanced');
-      setMsg('当前 sandbox 含有结构化表单不支持的值，请先在 Advanced JSON 中调整。');
+      setMsg('当前 sandbox 含有结构化表单不支持的值，请先在 高级 JSON 中调整。');
       return;
     }
     const id = form.id.trim();
@@ -2198,17 +2198,17 @@ function AgentsPage() {
         if (sandboxObj !== undefined && !isPlainObject(sandboxObj)) {
           throw new Error('sandbox JSON 必须是对象才能与结构化字段合并');
         }
-        const nextSandbox = isPlainObject(sandboxObj) ? deepClone(sandboxObj) : {};
-        if (form.sandboxMode) nextSandbox.mode = form.sandboxMode;
-        else delete nextSandbox.mode;
-        if (form.sandboxScope) nextSandbox.scope = form.sandboxScope;
-        else delete nextSandbox.scope;
-        if (form.sandboxWorkspaceAccess) nextSandbox.workspaceAccess = form.sandboxWorkspaceAccess;
-        else delete nextSandbox.workspaceAccess;
-        if (form.sandboxWorkspaceRoot.trim()) nextSandbox.workspaceRoot = form.sandboxWorkspaceRoot.trim();
-        else delete nextSandbox.workspaceRoot;
+        const next沙箱 = isPlainObject(sandboxObj) ? deepClone(sandboxObj) : {};
+        if (form.sandboxMode) next沙箱.mode = form.sandboxMode;
+        else delete next沙箱.mode;
+        if (form.sandboxScope) next沙箱.scope = form.sandboxScope;
+        else delete next沙箱.scope;
+        if (form.sandboxWorkspaceAccess) next沙箱.workspaceAccess = form.sandboxWorkspaceAccess;
+        else delete next沙箱.workspaceAccess;
+        if (form.sandboxWorkspaceRoot.trim()) next沙箱.workspaceRoot = form.sandboxWorkspaceRoot.trim();
+        else delete next沙箱.workspaceRoot;
 
-        const nextDocker = isPlainObject(nextSandbox.docker) ? nextSandbox.docker : {};
+        const nextDocker = isPlainObject(next沙箱.docker) ? next沙箱.docker : {};
         if (form.sandboxDockerNetwork.trim()) nextDocker.network = form.sandboxDockerNetwork.trim();
         else delete nextDocker.network;
         const readOnlyRoot = triStateToValue(form.sandboxDockerReadOnlyRoot);
@@ -2219,9 +2219,9 @@ function AgentsPage() {
         const binds = parseLineList(form.sandboxDockerBinds);
         if (binds.length > 0) nextDocker.binds = binds;
         else delete nextDocker.binds;
-        if (Object.keys(nextDocker).length > 0) nextSandbox.docker = nextDocker;
-        else delete nextSandbox.docker;
-        sandboxObj = cleanupObject(nextSandbox);
+        if (Object.keys(nextDocker).length > 0) next沙箱.docker = nextDocker;
+        else delete next沙箱.docker;
+        sandboxObj = cleanupObject(next沙箱);
       }
 
       if (structuredTouched.subagents) {
@@ -2246,12 +2246,12 @@ function AgentsPage() {
       agentDir: form.agentDir.trim() || undefined,
       default: effectiveIsDefault,
     };
-    const clearsSandboxOverride = structuredTouched.sandbox && sandboxObj === undefined && form.sandboxText.trim() !== '' && !!editingId;
+    const clears沙箱Override = structuredTouched.sandbox && sandboxObj === undefined && form.sandboxText.trim() !== '' && !!editingId;
     const clearsToolsOverride = structuredTouched.tools && toolsObj === undefined && form.toolsText.trim() !== '' && !!editingId;
     if (modelObj !== undefined) payload.model = modelObj;
     if (clearsToolsOverride && editingId) payload.tools = null;
     else if (toolsObj !== undefined) payload.tools = toolsObj;
-    if (clearsSandboxOverride && editingId) payload.sandbox = null;
+    if (clears沙箱Override && editingId) payload.sandbox = null;
     else if (sandboxObj !== undefined) payload.sandbox = sandboxObj;
     if (groupChatObj !== undefined) payload.groupChat = groupChatObj;
     if (identityObj !== undefined) payload.identity = identityObj;
@@ -2648,9 +2648,9 @@ function AgentsPage() {
   const selectedTools = isPlainObject(selectedAgent?.tools) ? selectedAgent.tools : {};
   const selectedSubagents = isPlainObject(selectedAgent?.subagents) ? selectedAgent.subagents : {};
   const selectedGroupChat = isPlainObject(selectedAgent?.groupChat) ? selectedAgent.groupChat : {};
-  const selectedSandboxDraft = extractSandboxDraft(selectedAgent?.sandbox);
+  const selected沙箱Draft = extract沙箱Draft(selectedAgent?.sandbox);
   const selectedAdvancedBlocks = summarizeAdvancedBlocks(selectedAgent);
-  const selectedRouteCount = selectedAgentBindings.length;
+  const selected路由Count = selectedAgentBindings.length;
   const selectedToolAllow = parseStringList(getNestedValue(selectedTools, 'allow'));
   const selectedToolDeny = parseStringList(getNestedValue(selectedTools, 'deny'));
   const selectedToolProfile = String(getNestedValue(selectedTools, 'profile') || '').trim();
@@ -2679,15 +2679,15 @@ function AgentsPage() {
 
       <div className={modern ? 'page-modern-header' : 'flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between'}>
         <div>
-          <h2 className={modern ? 'page-modern-title text-xl' : 'text-xl font-bold text-gray-900 dark:text-white'}>智能体（Agents）</h2>
+          <h2 className={modern ? 'page-modern-title text-xl' : 'text-xl font-bold text-gray-900 dark:text-white'}>智能体</h2>
           <p className={modern ? 'page-modern-subtitle text-sm mt-1' : 'text-sm text-gray-500 mt-1'}>在这里维护智能体配置、查看核心文件，并快速检查一条消息最终会交给谁处理。</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={loadData} className={controlButtonClass}>
-            <RefreshCw size={14} /> 刷新（Refresh）
+            <RefreshCw size={14} /> 刷新
           </button>
           <button onClick={() => openCreate('basic')} className={accentButtonClass}>
-            <Plus size={14} /> 新建智能体（New Agent）
+            <Plus size={14} /> 新建智能体
           </button>
         </div>
       </div>
@@ -2701,10 +2701,10 @@ function AgentsPage() {
       <div className={`${modern ? 'page-modern-panel p-4' : 'rounded-xl border border-violet-100 dark:border-violet-900/40 bg-violet-50/80 dark:bg-violet-950/20 p-4'}`}>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className={`text-xs font-semibold tracking-wide uppercase ${modern ? 'text-sky-700 dark:text-sky-300' : 'text-violet-700 dark:text-violet-300'}`}>使用方式（How it works）</p>
+            <p className={`text-xs font-semibold tracking-wide uppercase ${modern ? 'text-sky-700 dark:text-sky-300' : 'text-violet-700 dark:text-violet-300'}`}>使用方式</p>
             <h3 className="text-base font-semibold text-gray-900 dark:text-white mt-1">先管理单个智能体，再检查路由命中</h3>
             <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-              “Agent 目录”适合查看单个智能体的配置、文件与上下文；“路由工作台”适合检查规则、模拟消息并确认最终分流结果。
+              “智能体目录”适合查看单个智能体的配置、文件与上下文；“路由工作台”适合检查规则、模拟消息并确认最终分流结果。
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -2717,7 +2717,7 @@ function AgentsPage() {
               }`}
             >
               <Bot size={14} />
-                Agent 目录（Directory）
+                智能体目录
             </button>
             <button
               onClick={() => setWorkbenchView('routing')}
@@ -2728,7 +2728,7 @@ function AgentsPage() {
               }`}
             >
               <Route size={14} />
-                路由工作台（Routing Studio）
+                路由工作台
             </button>
           </div>
         </div>
@@ -2741,16 +2741,16 @@ function AgentsPage() {
               <div>
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                   <Bot size={15} className="text-violet-500" />
-                  Agent 目录（Directory）
+                  智能体目录
                 </h3>
-                <p className="text-[11px] text-gray-500 mt-1">先选 Agent，再看它的配置、核心文件、能力快照与路由上下文。</p>
+                <p className="text-[11px] text-gray-500 mt-1">先选智能体，再看它的配置、核心文件、能力快照与路由上下文。</p>
               </div>
-              <span className="text-xs text-gray-500">默认（Default）: {defaultAgent}</span>
+              <span className="text-xs text-gray-500">默认：{defaultAgent}</span>
             </div>
             <div className="p-4 space-y-3">
               {agents.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-gray-200 dark:border-gray-700 px-4 py-8 text-center text-sm text-gray-400">
-                    还没有显式 Agent，先创建一个吧（Create your first explicit Agent）。
+                    还没有显式 Agent，先创建一个吧。
                 </div>
               ) : (
                 agents.map(agent => {
@@ -2790,22 +2790,22 @@ function AgentsPage() {
                         </div>
                         <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-gray-500">
                           <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-2.5 py-2">
-                              <div className="text-gray-400">模型（Model）</div>
+                              <div className="text-gray-400">模型</div>
                             <div className="mt-1 truncate text-gray-700 dark:text-gray-200">{modelDraft.primary || defaultModelHint || '继承默认'}</div>
                           </div>
                           <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-2.5 py-2">
-                              <div className="text-gray-400">路由规则（Bindings）</div>
+                              <div className="text-gray-400">路由规则</div>
                             <div className="mt-1 text-gray-700 dark:text-gray-200">{routeCount > 0 ? `${routeCount} 条` : '未绑定'}</div>
                           </div>
                         </div>
                         <div className="mt-3 space-y-1 text-[11px] text-gray-500">
-                          <div className="min-w-0">工作区（Workspace）：<span className="font-mono text-gray-700 dark:text-gray-200 break-all">{displayWorkspacePath(agent.workspace)}</span></div>
-                          <div>最后活跃（Last Active）：<span className="text-gray-700 dark:text-gray-200">{formatLastActive(agent.lastActive)}</span></div>
+                          <div className="min-w-0">工作区：<span className="font-mono text-gray-700 dark:text-gray-200 break-all">{displayWorkspacePath(agent.workspace)}</span></div>
+                          <div>最后活跃：<span className="text-gray-700 dark:text-gray-200">{formatLastActive(agent.lastActive)}</span></div>
                         </div>
                       </button>
                       <div className="mt-3 flex items-center gap-2">
                         <button onClick={() => openEdit(agent)} className={actionButtonClass}>
-                           {implicitAgent ? '配置（Materialize）' : '编辑（Edit）'}
+                           {implicitAgent ? '配置' : '编辑'}
                         </button>
                         <button
                           disabled={implicitAgent}
@@ -2813,7 +2813,7 @@ function AgentsPage() {
                           onClick={() => deleteAgent(agent)}
                           className={dangerButtonClass}
                         >
-                           删除（Delete）
+                           删除
                         </button>
                       </div>
                     </div>
@@ -2832,7 +2832,7 @@ function AgentsPage() {
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{String(selectedAgent.name || selectedIdentity.name || '').trim() || selectedAgent.id}</h3>
-                            {selectedAgent.default && <span className={`text-[10px] px-1.5 py-0.5 rounded ${modern ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-200' : 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200'}`}>默认 Agent</span>}
+                            {selectedAgent.default && <span className={`text-[10px] px-1.5 py-0.5 rounded ${modern ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-200' : 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200'}`}>默认智能体</span>}
                           {isImplicitAgent(selectedAgent) && <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-200">运行时占位</span>}
                         </div>
                         <p className="mt-1 text-sm text-gray-500">
@@ -2842,28 +2842,28 @@ function AgentsPage() {
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
                         <div className="rounded-xl border border-gray-100 dark:border-gray-700 px-3 py-3 bg-gray-50/80 dark:bg-gray-900">
-                          <div className="text-gray-400">模型（Model）</div>
+                          <div className="text-gray-400">模型</div>
                           <div className="mt-1 font-medium text-gray-900 dark:text-white">{selectedModelDraft.primary || defaultModelHint || '继承默认'}</div>
-                          <div className="mt-1 text-gray-500">fallback：{selectedModelDraft.fallbacks || '未设置'}</div>
+                          <div className="mt-1 text-gray-500">回退：{selectedModelDraft.fallbacks || '未设置'}</div>
                         </div>
                         <div className="rounded-xl border border-gray-100 dark:border-gray-700 px-3 py-3 bg-gray-50/80 dark:bg-gray-900">
-                          <div className="text-gray-400">工具与权限（Tools & Access）</div>
-                          <div className="mt-1 font-medium text-gray-900 dark:text-white">{describeSandboxMode(selectedAgent.sandbox)}</div>
-                          <div className="mt-1 text-gray-500">profile：{String(getNestedValue(selectedTools, 'profile') || '未设置')}</div>
+                          <div className="text-gray-400">工具与权限</div>
+                          <div className="mt-1 font-medium text-gray-900 dark:text-white">{describe沙箱Mode(selectedAgent.sandbox)}</div>
+                          <div className="mt-1 text-gray-500">配置：{String(getNestedValue(selectedTools, 'profile') || '未设置')}</div>
                         </div>
                         <div className="rounded-xl border border-gray-100 dark:border-gray-700 px-3 py-3 bg-gray-50/80 dark:bg-gray-900">
-                          <div className="text-gray-400">路由上下文（Routing Context）</div>
-                          <div className="mt-1 font-medium text-gray-900 dark:text-white">{selectedRouteCount > 0 ? `${selectedRouteCount} 条规则指向它` : '暂无显式规则'}</div>
+                          <div className="text-gray-400">路由上下文</div>
+                          <div className="mt-1 font-medium text-gray-900 dark:text-white">{selected路由Count > 0 ? `${selected路由Count} 条规则指向它` : '暂无显式规则'}</div>
                           <div className="mt-1 text-gray-500">{selectedAgent.sessions ?? 0} 个活跃会话</div>
                         </div>
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <button onClick={() => openEdit(selectedAgent)} className={accentButtonClass}>
-                        编辑当前智能体（Edit Agent）
+                        编辑当前智能体
                       </button>
                       <button onClick={() => setWorkbenchView('routing')} className={actionButtonClass}>
-                        查看路由工作台（Open Routing Studio）
+                        查看路由工作台
                       </button>
                     </div>
                   </div>
@@ -2895,47 +2895,47 @@ function AgentsPage() {
                           <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4">
                             <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
                               <Brain size={15} className="text-violet-500" />
-                              模型与身份（Model & Identity）
+                              模型与身份
                             </div>
                             <div className="mt-3 space-y-2 text-sm text-gray-600 dark:text-gray-300">
-                              <div>主模型（Primary）：<span className="font-medium text-gray-900 dark:text-white">{selectedModelDraft.primary || defaultModelHint || '继承默认'}</span></div>
-                              <div>回退模型（Fallbacks）：{selectedModelDraft.fallbacks || '未设置'}</div>
+                              <div>主模型：<span className="font-medium text-gray-900 dark:text-white">{selectedModelDraft.primary || defaultModelHint || '继承默认'}</span></div>
+                              <div>回退模型：{selectedModelDraft.fallbacks || '未设置'}</div>
                               <div className="flex items-center gap-1">默认上下文预算 <InfoTooltip content={<>对应 <code className="font-mono text-[11px]">agents.defaults.contextTokens</code>，系统级默认值，不支持单 Agent 覆盖</>} />：{agentDefaults.contextTokens !== undefined ? String(agentDefaults.contextTokens) : '未设置'}</div>
                               <div className="flex items-center gap-1">默认压缩模式 <InfoTooltip content={<>对应 <code className="font-mono text-[11px]">agents.defaults.compaction.mode</code>，系统级默认值</>} />：{agentDefaults.compactionMode || '未设置'}</div>
-                              <div>身份名（Name）：{selectedIdentity.name || '未设置'}</div>
-                              <div>主题（Theme）：{selectedIdentity.theme || '未设置'}</div>
-                              <div>表情（Emoji）：{selectedIdentity.emoji || '未设置'}</div>
+                              <div>身份名：{selectedIdentity.name || '未设置'}</div>
+                              <div>主题：{selectedIdentity.theme || '未设置'}</div>
+                              <div>表情：{selectedIdentity.emoji || '未设置'}</div>
                             </div>
                             <button onClick={() => openEdit(selectedAgent, 'behavior')} className="mt-4 px-3 py-2 text-xs rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600">
-                              编辑模型与身份（Edit Model & Identity）
+                              编辑模型与身份
                             </button>
                           </div>
                           <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4">
                             <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
                               <Shield size={15} className="text-violet-500" />
-                              工具与权限（Tools & Access）
+                              工具与权限
                             </div>
                             <div className="mt-3 space-y-2 text-sm text-gray-600 dark:text-gray-300">
-                              <div>Sandbox：<span className="font-medium text-gray-900 dark:text-white">{describeSandboxMode(selectedAgent.sandbox)}</span></div>
-                              <div>Tool Profile：{String(getNestedValue(selectedTools, 'profile') || '未设置')}</div>
-                              <div>Allow：{parseStringList(getNestedValue(selectedTools, 'allow')).join(', ') || '未设置'}</div>
-                              <div>Deny：{parseStringList(getNestedValue(selectedTools, 'deny')).join(', ') || '未设置'}</div>
+                              <div>沙箱：<span className="font-medium text-gray-900 dark:text-white">{describe沙箱Mode(selectedAgent.sandbox)}</span></div>
+                              <div>工具配置：{String(getNestedValue(selectedTools, 'profile') || '未设置')}</div>
+                              <div>允许：{parseStringList(getNestedValue(selectedTools, 'allow')).join(', ') || '未设置'}</div>
+                              <div>拒绝：{parseStringList(getNestedValue(selectedTools, 'deny')).join(', ') || '未设置'}</div>
                               <div>群聊模式：{describeTriState(triStateFromValue(getNestedValue(selectedGroupChat, 'enabled')), '显式启用', '显式关闭')}</div>
                             </div>
                             <button onClick={() => openEdit(selectedAgent, 'access')} className={`mt-4 ${actionButtonClass}`}>
-                              编辑工具与权限（Edit Tools & Access）
+                              编辑工具与权限
                             </button>
                           </div>
                           <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4">
                             <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
                               <Route size={15} className="text-violet-500" />
-                              路由与上下文（Routing Context）
+                              路由与上下文
                             </div>
                             <div className="mt-3 space-y-2 text-sm text-gray-600 dark:text-gray-300">
-                              <div>路由规则：<span className="font-medium text-gray-900 dark:text-white">{selectedRouteCount > 0 ? `${selectedRouteCount} 条命中到它` : '暂无规则'}</span></div>
+                              <div>路由规则：<span className="font-medium text-gray-900 dark:text-white">{selected路由Count > 0 ? `${selected路由Count} 条命中到它` : '暂无规则'}</span></div>
                               <div>活跃会话：{selectedAgent.sessions ?? 0}</div>
                               <div>最后活跃：{formatLastActive(selectedAgent.lastActive)}</div>
-                              <div>workspace：<span className="font-mono">{selectedAgent.workspace || '—'}</span></div>
+                              <div>工作区：<span className="font-mono">{selectedAgent.workspace || '—'}</span></div>
                             </div>
                             <button
                               onClick={() => {
@@ -2944,7 +2944,7 @@ function AgentsPage() {
                               }}
                               className="mt-4 px-3 py-2 text-xs rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600"
                             >
-                              打开路由工作台（Open Routing Studio）
+                              打开路由工作台
                             </button>
                           </div>
                         </div>
@@ -2955,24 +2955,24 @@ function AgentsPage() {
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                         <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-3">
                           <div>
-                            <h4 className="text-sm font-semibold text-gray-900 dark:text-white">模型选择（Model Settings）</h4>
+                            <h4 className="text-sm font-semibold text-gray-900 dark:text-white">模型选择</h4>
                             <p className="text-xs text-gray-500 mt-1">明确区分“当前设置”和“继承默认”的关系。</p>
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                             <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
-                              <div className="text-xs text-gray-400">主模型（Primary Model）</div>
+                              <div className="text-xs text-gray-400">主模型</div>
                               <div className="mt-1 font-medium text-gray-900 dark:text-white">{selectedModelDraft.primary || '继承默认'}</div>
                             </div>
                             <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
-                              <div className="text-xs text-gray-400">回退模型（Fallbacks）</div>
+                              <div className="text-xs text-gray-400">回退模型</div>
                               <div className="mt-1 text-gray-700 dark:text-gray-200">{selectedModelDraft.fallbacks || '未设置'}</div>
                             </div>
                             <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
-                              <div className="text-xs text-gray-400">温度（temperature）</div>
+                              <div className="text-xs text-gray-400">温度</div>
                               <div className="mt-1 text-gray-700 dark:text-gray-200">{isPlainObject(selectedAgent.params) && selectedAgent.params.temperature !== undefined ? String(selectedAgent.params.temperature) : '未覆盖'}</div>
                             </div>
                             <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
-                              <div className="text-xs text-gray-400">最大输出（maxTokens）</div>
+                              <div className="text-xs text-gray-400">最大输出</div>
                               <div className="mt-1 text-gray-700 dark:text-gray-200">{isPlainObject(selectedAgent.params) && selectedAgent.params.maxTokens !== undefined ? String(selectedAgent.params.maxTokens) : '未覆盖'}</div>
                             </div>
                             <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
@@ -2995,17 +2995,17 @@ function AgentsPage() {
                             </div>
                           </div>
                           <button onClick={() => openEdit(selectedAgent, 'behavior')} className={accentButtonClass}>
-                            编辑模型参数（Edit Model Settings）
+                            编辑模型参数
                           </button>
                         </div>
                         <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-3">
                           <div>
-                            <h4 className="text-sm font-semibold text-gray-900 dark:text-white">身份摘要（Identity Summary）</h4>
+                            <h4 className="text-sm font-semibold text-gray-900 dark:text-white">身份摘要</h4>
                             <p className="text-xs text-gray-500 mt-1">业务方通常先理解“这个 Agent 是谁、以什么口吻工作”。</p>
                           </div>
                             <div className="space-y-3 text-sm">
                               <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
-                                <div className="text-xs text-gray-400">头像预览（Avatar Preview）</div>
+                                <div className="text-xs text-gray-400">头像预览</div>
                                 {selectedAvatarPreview ? (
                                   <div className="mt-2 flex items-center gap-3">
                                     <img src={selectedAvatarPreview} alt={`${selectedIdentity.name || selectedAgent.id} avatar`} className="h-14 w-14 rounded-2xl object-cover border border-white/60 dark:border-slate-700 bg-white dark:bg-slate-950" />
@@ -3018,24 +3018,24 @@ function AgentsPage() {
                                 )}
                               </div>
                               <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
-                                <div className="text-xs text-gray-400">显示名称（Name）</div>
+                                <div className="text-xs text-gray-400">显示名称</div>
                                 <div className="mt-1 text-gray-900 dark:text-white">{selectedIdentity.name || '未设置'}</div>
                               </div>
                               <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
-                                <div className="text-xs text-gray-400">主题（Theme）</div>
+                                <div className="text-xs text-gray-400">主题</div>
                                 <div className="mt-1 text-gray-700 dark:text-gray-200 whitespace-pre-wrap">{selectedIdentity.theme || '未设置'}</div>
                               </div>
                               <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
-                                <div className="text-xs text-gray-400">表情（Emoji）</div>
+                                <div className="text-xs text-gray-400">表情</div>
                                 <div className="mt-1 text-gray-700 dark:text-gray-200">{selectedIdentity.emoji || '未设置'}</div>
                               </div>
                               <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
-                                <div className="text-xs text-gray-400">头像（Avatar）</div>
+                                <div className="text-xs text-gray-400">头像</div>
                                 <div className="mt-1 text-gray-700 dark:text-gray-200 break-all">{selectedIdentity.avatar || '未设置'}</div>
                               </div>
                             </div>
                           <button onClick={() => openEdit(selectedAgent, 'behavior')} className={actionButtonClass}>
-                              编辑身份摘要（Edit Identity）
+                              编辑身份摘要
                             </button>
                           </div>
                       </div>
@@ -3045,7 +3045,7 @@ function AgentsPage() {
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                         <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
                           <div>
-                            <h4 className="text-sm font-semibold text-gray-900 dark:text-white">工具策略与群聊（Tool Policy & Group Chat）</h4>
+                            <h4 className="text-sm font-semibold text-gray-900 dark:text-white">工具策略与群聊</h4>
                             <p className="text-xs text-gray-500 mt-1">这里只展示当前 Agent 真正受支持的工具覆盖；跨 Agent 协作策略请到系统级配置查看。</p>
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
@@ -3062,12 +3062,12 @@ function AgentsPage() {
                               <div className="mt-1 text-gray-900 dark:text-white">{parseStringList(getNestedValue(selectedTools, 'deny')).join(', ') || '未设置'}</div>
                             </div>
                             <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
-                              <div className="text-xs text-gray-400">群聊模式（Group Chat）</div>
+                              <div className="text-xs text-gray-400">群聊模式</div>
                               <div className="mt-1 text-gray-900 dark:text-white">{describeTriState(triStateFromValue(getNestedValue(selectedGroupChat, 'enabled')), '显式启用', '显式关闭')}</div>
                             </div>
                             <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
                               <div className="text-xs text-gray-400">子 Agent allow（Subagents）</div>
-                              <div className="mt-1 text-gray-900 dark:text-white">{parseStringList(getNestedValue(selectedSubagents, 'allowAgents')).join(', ') || '未额外覆盖（默认仅同 Agent）'}</div>
+                              <div className="mt-1 text-gray-900 dark:text-white">{parseStringList(getNestedValue(selectedSubagents, 'allowAgents')).join(', ') || '未额外覆盖 - 默认仅同 Agent'}</div>
                             </div>
                           </div>
                           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
@@ -3077,38 +3077,38 @@ function AgentsPage() {
                         </div>
                         <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
                           <div>
-                            <h4 className="text-sm font-semibold text-gray-900 dark:text-white">工具策略与执行权限（Tool Policy & Sandbox）</h4>
+                            <h4 className="text-sm font-semibold text-gray-900 dark:text-white">工具策略与执行权限</h4>
                             <p className="text-xs text-gray-500 mt-1">这里把 “能不能调用工具” 和 “工具在哪里执行” 分开看，避免把 sandbox 误当成完整权限模型。</p>
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                             <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
-                              <div className="text-xs text-gray-400">工具配置（Tools Profile）</div>
+                              <div className="text-xs text-gray-400">工具配置</div>
                               <div className="mt-1 text-gray-900 dark:text-white">{selectedToolProfile || '继承默认'}</div>
                               <div className="mt-1 text-xs text-gray-500">allow {selectedToolAllow.length} 项 · deny {selectedToolDeny.length} 项</div>
                             </div>
                             <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
-                              <div className="text-xs text-gray-400">Sandbox 模式</div>
-                              <div className="mt-1 text-gray-900 dark:text-white">{describeSandboxModeValue(selectedSandboxDraft.mode)}</div>
-                              <div className="mt-1 text-xs text-gray-500">scope：{describeSandboxScopeValue(selectedSandboxDraft.scope)}</div>
+                              <div className="text-xs text-gray-400">沙箱 模式</div>
+                              <div className="mt-1 text-gray-900 dark:text-white">{describe沙箱ModeValue(selected沙箱Draft.mode)}</div>
+                              <div className="mt-1 text-xs text-gray-500">scope：{describe沙箱ScopeValue(selected沙箱Draft.scope)}</div>
                             </div>
                             <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
-                              <div className="text-xs text-gray-400">工作区挂载（workspaceAccess）</div>
-                              <div className="mt-1 text-gray-900 dark:text-white">{describeWorkspaceAccessValue(selectedSandboxDraft.workspaceAccess)}</div>
-                              <div className="mt-1 text-xs text-gray-500 font-mono">{selectedSandboxDraft.workspaceRoot || '使用默认 sandbox workspace'}</div>
+                              <div className="text-xs text-gray-400">工作区挂载</div>
+                              <div className="mt-1 text-gray-900 dark:text-white">{describeWorkspaceAccessValue(selected沙箱Draft.workspaceAccess)}</div>
+                              <div className="mt-1 text-xs text-gray-500 font-mono">{selected沙箱Draft.workspaceRoot || '使用默认 sandbox workspace'}</div>
                             </div>
                             <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3">
                               <div className="text-xs text-gray-400">Docker 覆盖</div>
-                              <div className="mt-1 text-gray-900 dark:text-white">{selectedSandboxDraft.dockerBinds ? `${parseLineList(selectedSandboxDraft.dockerBinds).length} 条 bind` : '未设置 bind'}</div>
-                              <div className="mt-1 text-xs text-gray-500">network：{selectedSandboxDraft.dockerNetwork || '默认'} · readOnlyRoot：{describeToggleValue(selectedSandboxDraft.dockerReadOnlyRoot, '启用', '关闭')}</div>
+                              <div className="mt-1 text-gray-900 dark:text-white">{selected沙箱Draft.dockerBinds ? `${parseLineList(selected沙箱Draft.dockerBinds).length} 条 bind` : '未设置 bind'}</div>
+                              <div className="mt-1 text-xs text-gray-500">network：{selected沙箱Draft.dockerNetwork || '默认'} · readOnlyRoot：{describeToggleValue(selected沙箱Draft.dockerReadOnlyRoot, '启用', '关闭')}</div>
                             </div>
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                             <div className="rounded-lg border border-gray-100 dark:border-gray-700 px-3 py-3">
-                              <div className="text-gray-400">工作区（Workspace）</div>
+                              <div className="text-gray-400">工作区</div>
                               <div className="mt-1 font-mono text-gray-700 dark:text-gray-200 break-all">{displayWorkspacePath(selectedAgent.workspace)}</div>
                             </div>
                             <div className="rounded-lg border border-gray-100 dark:border-gray-700 px-3 py-3">
-                              <div className="text-gray-400">Agent 目录（AgentDir）</div>
+                              <div className="text-gray-400">智能体目录</div>
                               <div className="mt-1 font-mono text-gray-700 dark:text-gray-200 break-all">{displayAgentDirPath(selectedAgent.agentDir, selectedAgent.id)}</div>
                             </div>
                           </div>
@@ -3125,7 +3125,7 @@ function AgentsPage() {
                             </div>
                           )}
                           <button onClick={() => openEdit(selectedAgent, 'access')} className={accentButtonClass}>
-                            编辑工具与权限（Edit Tools & Access）
+                            编辑工具与权限
                           </button>
                         </div>
                       </div>
@@ -3140,7 +3140,7 @@ function AgentsPage() {
                           <div className={softPanelClass}>
                             <div className="flex items-start justify-between gap-3">
                               <div>
-                                <h4 className="text-sm font-semibold text-gray-900 dark:text-white">核心文件列表（Core Files）</h4>
+                                <h4 className="text-sm font-semibold text-gray-900 dark:text-white">核心文件列表</h4>
                                 <p className="text-xs text-gray-500 mt-1 break-all">{selectedAgent.workspace || '当前 Agent 未配置 workspace。'}</p>
                               </div>
                               <button
@@ -3150,7 +3150,7 @@ function AgentsPage() {
                                 }}
                                 className={actionButtonClass}
                               >
-                                刷新（Refresh）
+                                刷新
                               </button>
                             </div>
                             {coreFilesLoading ? (
@@ -3280,7 +3280,7 @@ function AgentsPage() {
                         </div>
                         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
                           <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 bg-gray-50/80 dark:bg-gray-900">
-                            <div className="text-xs text-gray-400">有效技能（Resolved Skills）</div>
+                            <div className="text-xs text-gray-400">有效技能</div>
                             <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{skillsLoading ? '…' : enabledSkills.length}</div>
                             <div className="mt-1 text-xs text-gray-500">
                               {skillsLoading
@@ -3289,21 +3289,21 @@ function AgentsPage() {
                             </div>
                           </div>
                           <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 bg-gray-50/80 dark:bg-gray-900">
-                            <div className="text-xs text-gray-400">显式路由通道（Routing Channels）</div>
+                            <div className="text-xs text-gray-400">显式路由通道</div>
                             <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{selectedAgentChannelSnapshot.length}</div>
                             <div className="mt-1 text-xs text-gray-500">
                               {selectedAgentIsDefault
-                                ? '显式 bindings 命中的通道数；它同时还是默认 Agent 的回落目标。'
+                                ? '显式 bindings 命中的通道数；它同时还是默认智能体 的回落目标。'
                                 : '只统计显式 bindings 命中的通道路由上下文。'}
                             </div>
                           </div>
                           <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 bg-gray-50/80 dark:bg-gray-900">
-                            <div className="text-xs text-gray-400">定时任务（Cron Jobs）</div>
+                            <div className="text-xs text-gray-400">定时任务</div>
                             <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{selectedAgentCronJobs.length}</div>
                             <div className="mt-1 text-xs text-gray-500 flex items-center gap-1">只统计绑定到当前 Agent 的任务。<InfoTooltip content={<>通过 <code className="font-mono text-[11px]">agentId</code> 绑定；<code className="font-mono text-[11px]">sessionTarget</code> 决定跑在 main 还是 isolated。</>} /></div>
                           </div>
                           <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 bg-gray-50/80 dark:bg-gray-900">
-                            <div className="text-xs text-gray-400">心跳文件（HEARTBEAT）</div>
+                            <div className="text-xs text-gray-400">心跳文件</div>
                             <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{selectedHeartbeatFile?.exists ? '已配置' : '未配置'}</div>
                             <div className="mt-1 text-xs text-gray-500">
                               {selectedHeartbeatFile?.exists
@@ -3316,7 +3316,7 @@ function AgentsPage() {
                         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
                           <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-3">
                             <div>
-                              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">技能快照（Resolved Skills）</h4>
+                              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">技能快照</h4>
                               <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">按当前 Agent 的工作区与共享来源解析有效 Skills；启用/禁用仍是全局配置。<InfoTooltip content={<>依据 <code className="font-mono text-[11px]">workspace</code> 解析；<code className="font-mono text-[11px]">skills.entries</code> 的开关是全局生效的。</>} /></p>
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-gray-500">
@@ -3363,8 +3363,8 @@ function AgentsPage() {
 
                           <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-3">
                             <div>
-                              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">通道路由上下文（Routing Channels）</h4>
-                              <p className="text-xs text-gray-500 mt-1">通道本身是全局 Gateway 配置；这里只列出当前 Agent 命中的显式 bindings 对应通道。{selectedAgentIsDefault ? '它同时是默认 Agent，未命中显式规则的消息仍会回落到这里。' : ''}</p>
+                              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">通道路由上下文</h4>
+                              <p className="text-xs text-gray-500 mt-1">通道本身是全局 Gateway 配置；这里只列出当前 Agent 命中的显式 bindings 对应通道。{selectedAgentIsDefault ? '它同时是默认智能体，未命中显式规则的消息仍会回落到这里。' : ''}</p>
                             </div>
                             <div className="space-y-2">
                               {selectedAgentChannelSnapshot.map(channel => (
@@ -3385,7 +3385,7 @@ function AgentsPage() {
                               {selectedAgentChannelSnapshot.length === 0 && (
                                 <div className="rounded-lg border border-dashed border-gray-200 dark:border-gray-700 px-4 py-6 text-sm text-gray-400 text-center">
                                   {selectedAgentIsDefault
-                                    ? '当前还没有显式 bindings 指向它；作为默认 Agent，未命中路由规则的消息仍会回落到这里。'
+                                    ? '当前还没有显式 bindings 指向它；作为默认智能体，未命中路由规则的消息仍会回落到这里。'
                                     : '当前还没有显式 bindings 把任何通道路由到这个 Agent。'}
                                 </div>
                               )}
@@ -3394,7 +3394,7 @@ function AgentsPage() {
 
                           <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-3">
                             <div>
-                              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">定时任务（Cron Jobs）</h4>
+                              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">定时任务</h4>
                               <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">展示绑定到当前 Agent 的定时任务。<InfoTooltip content={<>通过 <code className="font-mono text-[11px]">agentId</code> 绑定；<code className="font-mono text-[11px]">sessionTarget</code> 决定 main/isolated，<code className="font-mono text-[11px]">wakeMode</code> 决定是否等待心跳周期。</>} /></p>
                             </div>
                             <div className="space-y-2">
@@ -3407,7 +3407,7 @@ function AgentsPage() {
                                     </span>
                                   </div>
                                   <div className="mt-2 text-[11px] text-gray-500">{formatCronSchedule(job.schedule)}</div>
-                                  <div className="mt-1 text-[11px] text-gray-400">执行模式：{job.sessionTarget === 'isolated' ? 'isolated cron 会话' : `main 会话（wakeMode: ${job.wakeMode || 'now'}）`}</div>
+                                  <div className="mt-1 text-[11px] text-gray-400">执行模式：{job.sessionTarget === 'isolated' ? '独立 cron 会话' : `main 会话 - 唤醒模式: ${job.wakeMode || 'now'}`}</div>
                                   <div className="mt-1 text-[11px] text-gray-400">最近执行：{formatDateTime(job.state?.lastRunAtMs || 0)}</div>
                                 </div>
                               ))}
@@ -3426,31 +3426,31 @@ function AgentsPage() {
                       <div className="space-y-4">
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
                           <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 bg-gray-50/80 dark:bg-gray-900">
-                            <div className="text-xs text-gray-400">命中规则（Bindings）</div>
-                            <div className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{selectedRouteCount}</div>
+                            <div className="text-xs text-gray-400">命中规则</div>
+                            <div className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{selected路由Count}</div>
                           </div>
                           <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 bg-gray-50/80 dark:bg-gray-900">
-                            <div className="text-xs text-gray-400">活跃会话（Active Sessions）</div>
+                            <div className="text-xs text-gray-400">活跃会话</div>
                             <div className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{selectedAgent.sessions ?? 0}</div>
                           </div>
                           <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 bg-gray-50/80 dark:bg-gray-900">
-                            <div className="text-xs text-gray-400">最后活跃（Last Active）</div>
+                            <div className="text-xs text-gray-400">最后活跃</div>
                             <div className="mt-1 text-sm font-medium text-gray-900 dark:text-white">{formatLastActive(selectedAgent.lastActive)}</div>
                           </div>
                         </div>
                         <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-3">
                           <div className="flex items-center justify-between gap-3">
                             <div>
-                              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">引用它的路由规则（Bindings Targeting This Agent）</h4>
+                              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">引用它的路由规则</h4>
                               <p className="text-xs text-gray-500 mt-1">这能帮助你快速理解“为什么消息会来到这个 Agent”。</p>
                             </div>
                             <button onClick={() => setWorkbenchView('routing')} className={actionButtonClass}>
-                              前往路由工作台（Open Routing Studio）
+                              前往路由工作台
                             </button>
                           </div>
                           {selectedAgentBindings.length === 0 ? (
                             <div className="rounded-lg border border-dashed border-gray-200 dark:border-gray-700 px-4 py-6 text-sm text-gray-400 text-center">
-                              暂无显式规则指向这个 Agent；未命中时会按默认 Agent 或其它规则兜底。
+                              暂无显式规则指向这个 Agent；未命中时会按默认智能体 或其它规则兜底。
                             </div>
                           ) : (
                             selectedAgentBindings.map(({ binding, index }) => {
@@ -3463,11 +3463,11 @@ function AgentsPage() {
                                       <div className="flex flex-wrap items-center gap-2">
                                         <span className="font-medium text-sm text-gray-900 dark:text-white">{binding.comment.trim() || `规则 ${index + 1}`}</span>
                                         <span className={`text-[10px] px-1.5 py-0.5 rounded ${binding.type === 'acp' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200' : 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-200'}`}>
-                                          {binding.type === 'acp' ? 'ACP' : 'Route'}
+                                          {binding.type === 'acp' ? 'ACP' : '路由'}
                                         </span>
                                         {binding.enabled === false && (
                                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">
-                                            Legacy Disabled
+                                            旧版已禁用
                                           </span>
                                         )}
                                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200">
@@ -3503,14 +3503,14 @@ function AgentsPage() {
                         <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-3">
                           <div className="flex items-center justify-between gap-3">
                             <div>
-                              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">最近会话（Recent Sessions）</h4>
+                              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">最近会话</h4>
                               <p className="text-xs text-gray-500 mt-1">基于现有 Sessions API 展示这个 Agent 最近活跃的会话，便于从单 Agent 视角快速巡检。</p>
                             </div>
                             <button
                               onClick={() => loadAgentSessions(selectedAgent.id, true)}
                               className="px-3 py-2 text-xs rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600"
                             >
-                              刷新（Refresh）
+                              刷新
                             </button>
                           </div>
                           {sessionsLoading && selectedAgentSessions.length === 0 ? (
@@ -3520,7 +3520,7 @@ function AgentsPage() {
                             </div>
                           ) : selectedAgentSessions.length === 0 ? (
                             <div className="rounded-lg border border-dashed border-gray-200 dark:border-gray-700 px-4 py-6 text-sm text-gray-400 text-center">
-                              当前没有可展示的会话，或会话仍由默认 Agent 接管。
+                              当前没有可展示的会话，或会话仍由默认智能体 接管。
                             </div>
                           ) : (
                             <div className="space-y-2">
@@ -3544,13 +3544,13 @@ function AgentsPage() {
                     {detailTab === 'advanced' && (
                       <div className="space-y-4">
                         <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-4 text-sm text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200">
-                          结构化表单优先覆盖常用配置；只有当你需要 provider 专属字段或复杂对象时，再进入 Advanced JSON。
+                          结构化表单优先覆盖常用配置；只有当你需要 provider 专属字段或复杂对象时，再进入 高级 JSON。
                         </div>
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                           <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4">
                             <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
                               <Sparkles size={15} className="text-violet-500" />
-                              当前已使用的高级块（Advanced Blocks）
+                              当前已使用的高级块
                             </div>
                             <div className="mt-3 flex flex-wrap gap-2">
                               {selectedAdvancedBlocks.length > 0 ? selectedAdvancedBlocks.map(block => (
@@ -3565,7 +3565,7 @@ function AgentsPage() {
                           <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4">
                             <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
                               <FileText size={15} className="text-violet-500" />
-                              下一步建议（Next Step）
+                              下一步建议
                             </div>
                             <ul className="mt-3 list-disc pl-4 space-y-1.5 text-sm text-gray-600 dark:text-gray-300">
                               <li>先在结构化表单里完成常见字段，再用 JSON 补充 provider 专属项。</li>
@@ -3575,7 +3575,7 @@ function AgentsPage() {
                           </div>
                         </div>
                         <button onClick={() => openEdit(selectedAgent, 'advanced')} className={accentButtonClass}>
-                          打开高级 JSON（Open Advanced JSON）
+                          打开高级 JSON（Open 高级 JSON）
                         </button>
                       </div>
                     )}
@@ -3584,7 +3584,7 @@ function AgentsPage() {
               </>
             ) : (
               <div className="rounded-xl border border-dashed border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6 py-16 text-center text-sm text-gray-400">
-                选择左侧 Agent 后，这里会显示它的配置摘要与上下文。
+                选择左侧智能体后，这里会显示它的配置摘要与上下文。
               </div>
             )}
           </div>
@@ -3597,15 +3597,15 @@ function AgentsPage() {
               <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{routingStats.total}</div>
             </div>
             <div className={`${modern ? 'page-modern-panel p-4' : 'rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shadow-sm'}`}>
-              <div className="text-xs text-gray-400">显式规则（Official Bindings）</div>
+              <div className="text-xs text-gray-400">显式规则</div>
               <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{routingStats.enabled}</div>
             </div>
             <div className={`${modern ? 'page-modern-panel p-4' : 'rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shadow-sm'}`}>
-              <div className="text-xs text-gray-400">被路由引用的 Agent</div>
+              <div className="text-xs text-gray-400">被路由引用的智能体</div>
               <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{routingStats.agents}</div>
             </div>
             <div className={`${modern ? 'page-modern-panel p-4' : 'rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shadow-sm'}`}>
-              <div className="text-xs text-gray-400">涉及通道（Channels）</div>
+              <div className="text-xs text-gray-400">涉及通道</div>
               <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{routingStats.channels}</div>
             </div>
           </div>
@@ -3615,7 +3615,7 @@ function AgentsPage() {
               <div>
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                   <Settings size={15} className={modern ? 'text-sky-500' : 'text-violet-500'} />
-                  路由规则（Bindings）
+                  路由规则
                 </h3>
                 <p className="text-xs text-gray-500 mt-1">结构化编辑器优先输出常用字段，并兼容保留 legacy sender / parentPeer / 字符串 peer 规则；遇到更复杂的历史写法时，再切到 JSON 模式。</p>
               </div>
@@ -3630,7 +3630,7 @@ function AgentsPage() {
             </div>
             <div className="px-4 pt-4">
                 <div className={`${modern ? 'rounded-xl border border-sky-200/70 bg-sky-500/10 px-4 py-3 text-xs text-sky-700 dark:border-sky-800/50 dark:text-sky-200' : 'rounded-xl border border-violet-100 bg-violet-50 px-4 py-3 text-xs text-violet-700 dark:border-violet-900/40 dark:bg-violet-950/20 dark:text-violet-200'}`}>
-                  当前优先级为 sender &gt; peer &gt; parent peer inheritance &gt; guild+roles &gt; guild &gt; team &gt; account &gt; account wildcard &gt; channel &gt; default；只有同一优先级才按列表顺序比较。未命中时会回落到默认 Agent「{defaultAgent}」。
+                  当前优先级为 sender &gt; peer &gt; parent peer inheritance &gt; guild+roles &gt; guild &gt; team &gt; account &gt; account wildcard &gt; channel &gt; default；只有同一优先级才按列表顺序比较。未命中时会回落到默认智能体「{defaultAgent}」。
                 </div>
             </div>
             {duplicateAccountBindings.length > 0 && (
@@ -3643,7 +3643,7 @@ function AgentsPage() {
             <div className="p-4 space-y-3">
               {bindings.length === 0 && (
                 <div className="rounded-lg border border-dashed border-gray-200 dark:border-gray-700 px-4 py-8 text-center text-sm text-gray-400">
-                  还没有显式路由规则，当前所有消息都会落到默认 Agent。
+                  还没有显式路由规则，当前所有消息都会落到默认智能体。
                 </div>
               )}
 
@@ -3676,11 +3676,11 @@ function AgentsPage() {
                           </button>
                           <span className="font-medium text-sm text-gray-900 dark:text-white">{row.comment.trim() || `规则 ${idx + 1}`}</span>
                           <span className={`text-[10px] px-1.5 py-0.5 rounded ${row.type === 'acp' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200' : (modern ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-200' : 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200')}`}>
-                            {row.type === 'acp' ? 'ACP' : 'Route'}
+                            {row.type === 'acp' ? 'ACP' : '路由'}
                           </span>
                           {row.enabled === false && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">
-                              Legacy Disabled
+                              旧版已禁用
                             </span>
                           )}
                           <span className={`text-[10px] px-1.5 py-0.5 rounded ${modern ? 'bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-200' : 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200'}`}>
@@ -3717,23 +3717,23 @@ function AgentsPage() {
                       <div className="border-t border-gray-100 dark:border-gray-700 px-4 py-4 space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                           <div>
-                            <label htmlFor={`binding-${idx}-comment`} className="text-[11px] text-gray-500">备注 / 注释（comment）</label>
+                            <label htmlFor={`binding-${idx}-comment`} className="text-[11px] text-gray-500">备注 / 注释</label>
                             <input
                               id={`binding-${idx}-comment`}
                               name={`binding-${idx}-comment`}
                               aria-label="binding comment"
                               value={row.comment}
                               onChange={e => setBindingAt(idx, r => ({ ...r, comment: e.target.value }))}
-                              placeholder="例如 Discord 维护群"
+                              placeholder="例如维护群"
                               className="w-full mt-1 px-2 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
                             />
                           </div>
                           <div>
-                            <label htmlFor={`binding-${idx}-agent`} className="text-[11px] text-gray-500">目标 Agent（agentId）</label>
+                            <label htmlFor={`binding-${idx}-agent`} className="text-[11px] text-gray-500">目标智能体（agentId）</label>
                             <select
                               id={`binding-${idx}-agent`}
                               name={`binding-${idx}-agent`}
-                              aria-label="目标 Agent"
+                              aria-label="目标智能体"
                               value={row.agentId}
                               onChange={e => setBindingAt(idx, r => ({ ...r, agentId: e.target.value }))}
                               className="w-full mt-1 px-2 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
@@ -3744,7 +3744,7 @@ function AgentsPage() {
                             </select>
                           </div>
                           <div>
-                            <label htmlFor={`binding-${idx}-type`} className="text-[11px] text-gray-500">规则类型（type）</label>
+                            <label htmlFor={`binding-${idx}-type`} className="text-[11px] text-gray-500">规则类型</label>
                             <select
                               id={`binding-${idx}-type`}
                               name={`binding-${idx}-type`}
@@ -3866,7 +3866,7 @@ function AgentsPage() {
                               <h4 className="text-[11px] font-semibold text-gray-900 dark:text-white uppercase tracking-wide">会话匹配</h4>
                               <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <div>
-                                  <label htmlFor={`binding-${idx}-sender`} className="text-[11px] text-gray-500">sender（兼容字段）</label>
+                                  <label htmlFor={`binding-${idx}-sender`} className="text-[11px] text-gray-500">sender - 兼容字段</label>
                                   <input
                                     id={`binding-${idx}-sender`}
                                     name={`binding-${idx}-sender`}
@@ -3904,7 +3904,7 @@ function AgentsPage() {
                               </div>
                               <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <div>
-                                  <label htmlFor={`binding-${idx}-parent-peer-kind`} className="text-[11px] text-gray-500">parentPeer.kind（兼容字段）</label>
+                                  <label htmlFor={`binding-${idx}-parent-peer-kind`} className="text-[11px] text-gray-500">parentPeer.kind - 兼容字段</label>
                                   <input
                                     id={`binding-${idx}-parent-peer-kind`}
                                     name={`binding-${idx}-parent-peer-kind`}
@@ -3916,7 +3916,7 @@ function AgentsPage() {
                                   />
                                 </div>
                                 <div>
-                                  <label htmlFor={`binding-${idx}-parent-peer-id`} className="text-[11px] text-gray-500">parentPeer.id（兼容字段）</label>
+                                  <label htmlFor={`binding-${idx}-parent-peer-id`} className="text-[11px] text-gray-500">parentPeer.id - 兼容字段</label>
                                   <input
                                     id={`binding-${idx}-parent-peer-id`}
                                     name={`binding-${idx}-parent-peer-id`}
@@ -3942,12 +3942,12 @@ function AgentsPage() {
                                     aria-label="guildId"
                                     value={extractTextValue(match.guildId)}
                                     onChange={e => touchBindingMatch(idx, cur => ({ ...cur, guildId: e.target.value }))}
-                                    placeholder="Discord guild id"
+                                    placeholder="Discord 服务器 ID"
                                     className="w-full mt-1 px-2 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
                                   />
                                 </div>
                                 <div>
-                                  <label htmlFor={`binding-${idx}-roles`} className="text-[11px] text-gray-500">roles（逗号分隔）</label>
+                                  <label htmlFor={`binding-${idx}-roles`} className="text-[11px] text-gray-500">roles - 逗号分隔</label>
                                   <input
                                     id={`binding-${idx}-roles`}
                                     name={`binding-${idx}-roles`}
@@ -3966,7 +3966,7 @@ function AgentsPage() {
                                     aria-label="teamId"
                                     value={extractTextValue(match.teamId)}
                                     onChange={e => touchBindingMatch(idx, cur => ({ ...cur, teamId: e.target.value }))}
-                                    placeholder="Slack team id"
+                                    placeholder="Slack 团队 ID"
                                     className="w-full mt-1 px-2 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
                                   />
                                 </div>
@@ -4007,7 +4007,7 @@ function AgentsPage() {
               <div>
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                   <Route size={15} className={modern ? 'text-sky-500' : 'text-violet-500'} />
-                  消息分流模拟（Routing Simulator）
+                  消息分流模拟
                 </h3>
                 <p className="text-xs text-gray-500 mt-1">把消息场景描述清楚，然后看系统最终会把它交给谁。</p>
               </div>
@@ -4066,11 +4066,11 @@ function AgentsPage() {
                         <div className={`mt-1 font-mono ${modern ? 'text-sky-600 dark:text-sky-300' : 'text-violet-600 dark:text-violet-300'}`}>{previewResult.agent || defaultAgent || '-'}</div>
                       </div>
                       <div className="rounded-lg bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 px-3 py-3">
-                        <div className="text-xs text-gray-400">命中规则（Matched Rule）</div>
+                        <div className="text-xs text-gray-400">命中规则</div>
                         <div className="mt-1 text-gray-900 dark:text-white">{previewExplanation?.ruleLabel || previewResult.matchedBy || '默认回落'}</div>
                       </div>
                       <div className="rounded-lg bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 px-3 py-3">
-                        <div className="text-xs text-gray-400">命中优先级（Matched Tier）</div>
+                        <div className="text-xs text-gray-400">命中优先级</div>
                         <div className="mt-1 font-mono text-gray-700 dark:text-gray-200">{OFFICIAL_MATCHED_BY_LABELS[previewResult.matchedBy || ''] || previewResult.matchedBy || 'default'}</div>
                         {typeof previewResult.matchedIndex === 'number' && previewResult.matchedIndex >= 0 && (
                           <div className="mt-1 text-[11px] text-gray-500">bindings[{previewResult.matchedIndex}]</div>
@@ -4087,7 +4087,7 @@ function AgentsPage() {
 
                   <details className="rounded-lg border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800">
                     <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-gray-900 dark:text-white flex items-center justify-between">
-                      技术细节（Trace）
+                      技术细节
                       <span className="text-xs text-gray-400">展开查看完整判断路径</span>
                     </summary>
                     <div className="px-4 pb-4 text-xs">
@@ -4115,12 +4115,12 @@ function AgentsPage() {
             <div className={`sticky top-0 z-10 border-b backdrop-blur ${modern ? 'border-sky-200/60 dark:border-sky-900/40 bg-white/80 dark:bg-slate-900/75' : 'border-gray-100 dark:border-gray-700 bg-white/95 dark:bg-gray-800/95'}`}>
               <div className="px-5 py-4 flex items-start justify-between gap-4">
                 <div>
-                  <h3 className="font-semibold text-gray-900 dark:text-white">{editingId ? `编辑智能体（Edit Agent）: ${editingId}` : '新建智能体（New Agent）'}</h3>
+                  <h3 className="font-semibold text-gray-900 dark:text-white">{editingId ? `编辑智能体：${editingId}` : '新建智能体'}</h3>
                   <p className="text-xs text-gray-500 mt-1">
-                    先完成基础信息（Basic），再按需进入其它部分。高级 JSON（Advanced）会保留完整覆盖能力。
+                    先完成基础信息，再按需进入其它部分。高级 JSON 会保留完整覆盖能力。
                   </p>
                 </div>
-                  <button onClick={closeForm} className={modern ? 'page-modern-action text-xs px-2.5 py-1.5 shrink-0' : 'text-xs px-2.5 py-1.5 rounded bg-gray-100 dark:bg-gray-700 shrink-0'}>关闭（Close）</button>
+                  <button onClick={closeForm} className={modern ? 'page-modern-action text-xs px-2.5 py-1.5 shrink-0' : 'text-xs px-2.5 py-1.5 rounded bg-gray-100 dark:bg-gray-700 shrink-0'}>关闭</button>
               </div>
               <div className="px-5 pb-4 space-y-3">
                 <div className="flex flex-wrap gap-2">
@@ -4141,15 +4141,15 @@ function AgentsPage() {
                     <div className="font-mono text-gray-700 dark:text-gray-200 mt-1">{form.id.trim() || '未设置'}</div>
                   </div>
                   <div className="rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 px-3 py-2">
-                      <div className="text-gray-400">主模型（Primary Model）</div>
-                    <div className="text-gray-700 dark:text-gray-200 mt-1 truncate">{form.modelPrimary.trim() || '继承 / Advanced JSON'}</div>
+                      <div className="text-gray-400">主模型</div>
+                    <div className="text-gray-700 dark:text-gray-200 mt-1 truncate">{form.modelPrimary.trim() || '继承 / 高级 JSON'}</div>
                   </div>
                   <div className="rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 px-3 py-2">
-                      <div className="text-gray-400">工作区（Workspace）</div>
+                      <div className="text-gray-400">工作区</div>
                     <div className="font-mono text-gray-700 dark:text-gray-200 mt-1 break-all">{displayWorkspacePath(form.workspace.trim())}</div>
                   </div>
                   <div className="rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 px-3 py-2">
-                      <div className="text-gray-400">默认接管（Default）</div>
+                      <div className="text-gray-400">默认接管</div>
                     <div className="text-gray-700 dark:text-gray-200 mt-1">{effectiveIsDefault ? '是' : '否'}</div>
                   </div>
                 </div>
@@ -4162,7 +4162,7 @@ function AgentsPage() {
                   {implicitMainOnly && (
                     <div className="rounded-xl border border-sky-100 bg-sky-50 px-4 py-3 text-[12px] text-sky-700 space-y-1.5">
                     <div className="font-medium">当前列表里的 main 更像运行时占位，而不是已经写入配置的显式 Agent。</div>
-                    <div>如果你直接新建首个显式 Agent，它会接管默认路由，并自动成为默认 Agent。</div>
+                    <div>如果你直接新建首个显式 Agent，它会接管默认路由，并自动成为默认智能体。</div>
                     <div>如果你想把 <span className="font-mono">main</span> 真正写进配置，请改用列表里的“编辑 main”。</div>
                   </div>
                   )}
@@ -4172,14 +4172,14 @@ function AgentsPage() {
                       <div className="font-medium">你正在把运行时发现的 <span className="font-mono">{form.id.trim() || editingId || 'agent'}</span> 显式写入配置。</div>
                       <div>保存后，它会真正进入 <span className="font-mono">agents.list</span>，后续即可像普通 Agent 一样继续编辑。</div>
                       {form.id.trim() === defaultAgent && (
-                        <div>当前它也是默认 Agent 的运行时来源，保存后默认关系会一起落盘。</div>
+                        <div>当前它也是默认智能体 的运行时来源，保存后默认关系会一起落盘。</div>
                       )}
                     </div>
                   )}
 
                   <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-[12px] text-amber-700 space-y-1.5">
                     <div><span className="font-medium">workspace</span> 只是默认工作目录，方便文件与上下文定位；它不是硬隔离边界。</div>
-                    <div>如果需要更严格的执行限制，请在 <span className="font-medium">Access &amp; Safety</span> 里设置 <span className="font-mono">sandbox</span> 覆盖。</div>
+                    <div>如果需要更严格的执行限制，请在“访问与安全”里设置 <span className="font-mono">sandbox</span> 覆盖。</div>
                     <div><span className="font-mono">agentDir</span> 可以放在 OpenClaw 状态目录外，但同一个 <span className="font-mono">agentDir</span> 不要复用；<span className="font-mono">workspace</span> 目前也不能与其它 Agent 重复。</div>
                   </div>
 
@@ -4199,7 +4199,7 @@ function AgentsPage() {
                       )}
                     </div>
                     <div>
-                        <label className="text-xs text-gray-500">显示名称（Name）</label>
+                        <label className="text-xs text-gray-500">显示名称</label>
                       <input
                         value={form.name}
                         onChange={e => updateForm({ name: e.target.value })}
@@ -4208,7 +4208,7 @@ function AgentsPage() {
                       />
                     </div>
                     <div>
-                        <label className="text-xs text-gray-500">工作区目录（Workspace）</label>
+                        <label className="text-xs text-gray-500">工作区目录</label>
                       <input
                         value={form.workspace}
                         onChange={e => updateForm({ workspace: e.target.value })}
@@ -4217,20 +4217,20 @@ function AgentsPage() {
                       />
                       <p className="mt-1 text-[11px] text-gray-400">用于默认文件读写位置，不代表执行隔离；可以填写绝对路径，但部分受保护的 core-files 功能仍要求落在面板受管工作区内。</p>
                       {workspaceConflict && (
-                        <p className="mt-1 text-[11px] text-red-600">该 workspace 已被 Agent “{workspaceConflict.id}” 使用。</p>
+                        <p className="mt-1 text-[11px] text-red-600">该工作区已被智能体“{workspaceConflict.id}”使用。</p>
                       )}
                     </div>
                     <div>
-                        <label className="text-xs text-gray-500">Agent 目录（AgentDir）</label>
+                        <label className="text-xs text-gray-500">智能体目录</label>
                       <input
                         value={form.agentDir}
                         onChange={e => updateForm({ agentDir: e.target.value })}
                         placeholder="agents/support"
                         className="w-full mt-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
                       />
-                      <p className="mt-1 text-[11px] text-gray-400">建议每个 Agent 使用独立目录，避免认证或模型配置互相覆盖；可填写 OpenClaw 状态目录外的绝对路径。</p>
+                      <p className="mt-1 text-[11px] text-gray-400">建议每个智能体使用独立目录，避免认证或模型配置互相覆盖；可填写 OpenClaw 状态目录外的绝对路径。</p>
                       {agentDirConflict && (
-                        <p className="mt-1 text-[11px] text-red-600">该 agentDir 已被 Agent “{agentDirConflict.id}” 使用。</p>
+                        <p className="mt-1 text-[11px] text-red-600">该智能体目录已被智能体“{agentDirConflict.id}”使用。</p>
                       )}
                     </div>
                   </div>
@@ -4242,11 +4242,11 @@ function AgentsPage() {
                       disabled={firstExplicitAgentWillBecomeDefault}
                       onChange={e => updateForm({ isDefault: e.target.checked })}
                     />
-                    设为默认 Agent（Default Fallback，未命中 bindings 时优先接管）
+                    设为默认智能体（Default Fallback，未命中 bindings 时优先接管）
                   </label>
                   {firstExplicitAgentWillBecomeDefault && (
                     <p className="text-[11px] text-gray-500">
-                      当前还没有显式 Agent，本次保存后它会自动成为默认 Agent。
+                      当前还没有显式 Agent，本次保存后它会自动成为默认智能体。
                     </p>
                   )}
                 </div>
@@ -4257,11 +4257,11 @@ function AgentsPage() {
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                     <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
                       <div>
-                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white">模型选择（Model）</h4>
-                        <p className="text-xs text-gray-500 mt-1">优先把常见选择做成结构化输入；更复杂的模型对象可在 Advanced 中继续编辑。</p>
+                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white">模型选择</h4>
+                        <p className="text-xs text-gray-500 mt-1">优先把常见选择做成结构化输入；更复杂的模型对象可在高级区继续编辑。</p>
                       </div>
                       <div>
-                        <label className="text-xs text-gray-500">主模型（Primary Model）</label>
+                        <label className="text-xs text-gray-500">主模型</label>
                         <input
                           list="agent-model-options"
                           value={form.modelPrimary}
@@ -4289,7 +4289,7 @@ function AgentsPage() {
                                         : 'bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-violet-300'
                                     }`}
                                   >
-                                    {model === defaultModelHint ? `${model}（默认）` : model}
+                                    {model === defaultModelHint ? `${model} - 默认` : model}
                                   </button>
                                 ))}
                               </div>
@@ -4298,7 +4298,7 @@ function AgentsPage() {
                         )}
                       </div>
                       <div>
-                        <label className="text-xs text-gray-500">回退模型（Fallback Models）</label>
+                        <label className="text-xs text-gray-500">回退模型</label>
                         <input
                           value={form.modelFallbacks}
                           onChange={e => updateForm({ modelFallbacks: e.target.value }, 'model')}
@@ -4311,12 +4311,12 @@ function AgentsPage() {
 
                     <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
                       <div>
-                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white">常用参数（Common Params）</h4>
-                        <p className="text-xs text-gray-500 mt-1">这些参数会覆盖模型默认值；如需 provider 专属参数，请转到 Advanced / params JSON。</p>
+                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white">常用参数</h4>
+                        <p className="text-xs text-gray-500 mt-1">这些参数会覆盖模型默认值；如需 provider 专属参数，请转到高级区 / params JSON。</p>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div>
-                          <label className="text-xs text-gray-500">温度（temperature）</label>
+                          <label className="text-xs text-gray-500">温度</label>
                           <input
                             value={form.paramTemperature}
                             onChange={e => updateForm({ paramTemperature: e.target.value }, 'params')}
@@ -4325,7 +4325,7 @@ function AgentsPage() {
                           />
                         </div>
                         <div>
-                          <label className="text-xs text-gray-500">采样范围（topP）</label>
+                          <label className="text-xs text-gray-500">采样范围</label>
                           <input
                             value={form.paramTopP}
                             onChange={e => updateForm({ paramTopP: e.target.value }, 'params')}
@@ -4334,7 +4334,7 @@ function AgentsPage() {
                           />
                         </div>
                         <div>
-                          <label className="text-xs text-gray-500">最大输出（maxTokens）</label>
+                          <label className="text-xs text-gray-500">最大输出</label>
                           <input
                             value={form.paramMaxTokens}
                             onChange={e => updateForm({ paramMaxTokens: e.target.value }, 'params')}
@@ -4348,7 +4348,7 @@ function AgentsPage() {
                     <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
                       <div>
                         <h4 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
-                          上下文预算（Context Budget）
+                          上下文预算
                           <InfoTooltip size={14} content={<>当前 OpenClaw schema 仅支持 <code className="font-mono text-[11px]">agents.defaults.contextTokens / compaction</code>，不支持单 Agent 级覆盖。如需修改，请前往 System Config。</>} />
                         </h4>
                         <p className="text-xs text-gray-500 mt-1">
@@ -4384,7 +4384,7 @@ function AgentsPage() {
 
                   <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">身份摘要（Identity）</h4>
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">身份摘要</h4>
                       <div className="mt-1 flex flex-wrap items-center gap-2">
                         <p className="text-xs text-gray-500">结构化表单会写入 <span className="font-mono">identity.name / theme / emoji / avatar</span>，并保持与当前后端接受字段一致。</p>
                         <button type="button" onClick={importIdentityFromCoreFile} className={modern ? 'page-modern-action px-2.5 py-1 text-[11px]' : 'px-2.5 py-1 text-[11px] rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'}>
@@ -4399,7 +4399,7 @@ function AgentsPage() {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
-                        <label className="text-xs text-gray-500">身份名称（Identity Name）</label>
+                        <label className="text-xs text-gray-500">身份名称</label>
                         <input
                           value={form.identityName}
                           onChange={e => updateForm({ identityName: e.target.value }, 'identity')}
@@ -4408,7 +4408,7 @@ function AgentsPage() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs text-gray-500">主题（Theme）</label>
+                        <label className="text-xs text-gray-500">主题</label>
                         <input
                           value={form.identityTheme}
                           onChange={e => updateForm({ identityTheme: e.target.value }, 'identity')}
@@ -4417,7 +4417,7 @@ function AgentsPage() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs text-gray-500">表情（Emoji）</label>
+                        <label className="text-xs text-gray-500">表情</label>
                         <input
                           value={form.identityEmoji}
                           onChange={e => updateForm({ identityEmoji: e.target.value }, 'identity')}
@@ -4426,11 +4426,11 @@ function AgentsPage() {
                         />
                       </div>
                       <div className="md:col-span-2">
-                        <label className="text-xs text-gray-500">头像（Avatar）</label>
+                        <label className="text-xs text-gray-500">头像</label>
                         <input
                           value={form.identityAvatar}
                           onChange={e => updateForm({ identityAvatar: e.target.value }, 'identity')}
-                          placeholder="工作区相对路径、http(s) URL 或 data URI"
+                          placeholder="工作区相对路径、http(s) 地址或 data URI"
                           className="w-full mt-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
                         />
                         {formAvatarValidationError ? (
@@ -4441,19 +4441,19 @@ function AgentsPage() {
                       </div>
                       <div className="md:col-span-2">
                         <div className="rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900 px-4 py-4">
-                          <div className="text-xs text-gray-400">头像预览（Avatar Preview）</div>
+                          <div className="text-xs text-gray-400">头像预览</div>
                           {formAvatarPreview ? (
                             <div className="mt-3 flex items-center gap-4">
                               <img src={formAvatarPreview} alt="Identity avatar preview" className="h-16 w-16 rounded-2xl object-cover border border-white/60 dark:border-slate-700 bg-white dark:bg-slate-950" />
                               <div className="text-xs text-gray-500 leading-relaxed">
-                                <div>{/^data:/i.test(form.identityAvatar) ? '将直接渲染 data URI。' : /^https?:\/\//i.test(form.identityAvatar) ? '将直接渲染远程 URL。' : '将通过本地 avatar 预览接口读取工作区文件。'}</div>
+                                <div>{/^data:/i.test(form.identityAvatar) ? '将直接渲染 data URI。' : /^https?:\/\//i.test(form.identityAvatar) ? '将直接渲染远程地址。' : '将通过本地头像预览接口读取工作区文件。'}</div>
                                 {!editingId && !form.id.trim() && !/^https?:\/\//i.test(form.identityAvatar) && !/^data:/i.test(form.identityAvatar) && (
-                                  <div className="mt-1">若要预览工作区相对路径，请先填写 Agent ID。</div>
+                                  <div className="mt-1">若要预览工作区相对路径，请先填写智能体 ID。</div>
                                 )}
                               </div>
                             </div>
                           ) : (
-                            <div className="mt-2 text-xs text-gray-500">输入合法的头像值后，这里会显示可用预览。</div>
+                            <div className="mt-2 text-xs text-gray-500">输入合法的头像值后，这里会显示预览。</div>
                           )}
                         </div>
                       </div>
@@ -4473,21 +4473,21 @@ function AgentsPage() {
                   {sandboxStructuredLocked && (
                     <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-[12px] text-amber-700 space-y-1.5">
                       <div className="font-medium">当前 sandbox 含有结构化表单暂不支持的值。</div>
-                      <div>为避免保存时丢失未知枚举，已锁定结构化 sandbox 编辑；请先到 Advanced JSON 调整这些字段：<span className="font-mono">{sandboxStructuredIssues.join(', ')}</span></div>
+                      <div>为避免保存时丢失未知枚举，已锁定结构化 sandbox 编辑；请先到 高级 JSON 调整这些字段：<span className="font-mono">{sandboxStructuredIssues.join(', ')}</span></div>
                     </div>
                   )}
 
                   <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Sandbox 起步模板（Starter Preset）</h4>
-                      <p className="text-xs text-gray-500 mt-1">先用模板建立正确心智模型，再按需补充 mode / scope / docker 覆盖；更高阶字段仍可回到 Advanced JSON。</p>
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">沙箱 起步模板</h4>
+                      <p className="text-xs text-gray-500 mt-1">先用模板建立正确心智模型，再按需补充 mode / scope / docker 覆盖；更高阶字段仍可回到 高级 JSON。</p>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-[220px,1fr] gap-4">
                       <div>
-                        <label className="text-xs text-gray-500">起步模板（Starter Preset）</label>
+                        <label className="text-xs text-gray-500">起步模板</label>
                         <select
                           value={sandboxStarter}
-                          onChange={e => applySandboxStarter(e.target.value)}
+                          onChange={e => apply沙箱Starter(e.target.value)}
                           disabled={sandboxStructuredLocked}
                           className="w-full mt-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
                         >
@@ -4506,55 +4506,55 @@ function AgentsPage() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="text-xs text-gray-500">运行模式（sandbox.mode）</label>
+                        <label className="text-xs text-gray-500">运行模式</label>
                         <select
                           value={form.sandboxMode}
-                          onChange={e => updateSandboxForm({ sandboxMode: e.target.value as '' | 'off' | 'non-main' | 'all' })}
+                          onChange={e => update沙箱Form({ sandboxMode: e.target.value as '' | 'off' | 'non-main' | 'all' })}
                           disabled={sandboxStructuredLocked}
                           className="w-full mt-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
                         >
                           <option value="">继承默认</option>
-                          <option value="off">关闭（off，宿主机运行）</option>
-                          <option value="non-main">仅非主会话（non-main）</option>
-                          <option value="all">全部会话（all）</option>
+                          <option value="off">关闭 - 宿主机运行</option>
+                          <option value="non-main">仅非主会话</option>
+                          <option value="all">全部会话</option>
                         </select>
                         <p className="mt-1 text-[11px] text-gray-400">官方里 <span className="font-mono">non-main</span> 是常见默认值；群聊 / channel / thread 会话通常都会落入这个分支。</p>
                       </div>
                       <div>
-                        <label className="text-xs text-gray-500">容器复用范围（sandbox.scope）</label>
+                        <label className="text-xs text-gray-500">容器复用范围</label>
                         <select
                           value={form.sandboxScope}
-                          onChange={e => updateSandboxForm({ sandboxScope: e.target.value as '' | 'session' | 'agent' | 'shared' })}
+                          onChange={e => update沙箱Form({ sandboxScope: e.target.value as '' | 'session' | 'agent' | 'shared' })}
                           disabled={sandboxStructuredLocked}
                           className="w-full mt-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
                         >
                           <option value="">继承默认</option>
-                          <option value="session">每会话一个容器（session）</option>
-                          <option value="agent">每 Agent 一个容器（agent）</option>
-                          <option value="shared">全部共享一个容器（shared）</option>
+                          <option value="session">每会话一个容器</option>
+                          <option value="agent">每 Agent 一个容器</option>
+                          <option value="shared">全部共享一个容器</option>
                         </select>
                         <p className="mt-1 text-[11px] text-gray-400">若选 <span className="font-mono">shared</span>，官方语义下 per-agent <span className="font-mono">docker.binds</span> 会被忽略。</p>
                       </div>
                       <div>
-                        <label className="text-xs text-gray-500">工作区挂载方式（workspaceAccess）</label>
+                        <label className="text-xs text-gray-500">工作区挂载方式</label>
                         <select
                           value={form.sandboxWorkspaceAccess}
-                          onChange={e => updateSandboxForm({ sandboxWorkspaceAccess: e.target.value as '' | 'none' | 'ro' | 'rw' })}
+                          onChange={e => update沙箱Form({ sandboxWorkspaceAccess: e.target.value as '' | 'none' | 'ro' | 'rw' })}
                           disabled={sandboxStructuredLocked}
                           className="w-full mt-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
                         >
                           <option value="">继承默认</option>
-                          <option value="none">仅沙箱工作区（none）</option>
-                          <option value="ro">只读挂载 Agent workspace（ro）</option>
-                          <option value="rw">可写挂载 Agent workspace（rw）</option>
+                          <option value="none">仅沙箱工作区</option>
+                          <option value="ro">只读挂载智能体工作区（ro）</option>
+                          <option value="rw">可写挂载智能体工作区（rw）</option>
                         </select>
                         <p className="mt-1 text-[11px] text-gray-400"><span className="font-mono">none</span> 才是官方默认；<span className="font-mono">ro/rw</span> 只影响 workspace 挂载，不会自动影响其它 bind mount。</p>
                       </div>
                       <div>
-                        <label className="text-xs text-gray-500">沙箱工作区根（workspaceRoot）</label>
+                        <label className="text-xs text-gray-500">沙箱工作区根</label>
                         <input
                           value={form.sandboxWorkspaceRoot}
-                          onChange={e => updateSandboxForm({ sandboxWorkspaceRoot: e.target.value })}
+                          onChange={e => update沙箱Form({ sandboxWorkspaceRoot: e.target.value })}
                           disabled={sandboxStructuredLocked}
                           placeholder="例如 /workspace 或 /agent"
                           className="w-full mt-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
@@ -4566,15 +4566,15 @@ function AgentsPage() {
 
                   <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Docker 覆盖（sandbox.docker）</h4>
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Docker 覆盖</h4>
                       <p className="text-xs text-gray-500 mt-1">这些字段决定容器根文件系统、网络和额外挂载；它们不会替代工具 allow/deny。</p>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="text-xs text-gray-500">容器网络（docker.network）</label>
+                        <label className="text-xs text-gray-500">容器网络</label>
                         <input
                           value={form.sandboxDockerNetwork}
-                          onChange={e => updateSandboxForm({ sandboxDockerNetwork: e.target.value })}
+                          onChange={e => update沙箱Form({ sandboxDockerNetwork: e.target.value })}
                           disabled={sandboxStructuredLocked}
                           placeholder="例如 none / bridge / custom-network"
                           className="w-full mt-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
@@ -4582,10 +4582,10 @@ function AgentsPage() {
                         <p className="mt-1 text-[11px] text-gray-400">官方默认是无网络；只有确实需要下载依赖或联网工具时再显式开放。</p>
                       </div>
                       <div>
-                        <label className="text-xs text-gray-500">根文件系统只读（docker.readOnlyRoot）</label>
+                        <label className="text-xs text-gray-500">根文件系统只读</label>
                         <select
                           value={form.sandboxDockerReadOnlyRoot}
-                          onChange={e => updateSandboxForm({ sandboxDockerReadOnlyRoot: e.target.value as InheritToggle })}
+                          onChange={e => update沙箱Form({ sandboxDockerReadOnlyRoot: e.target.value as 继承默认Toggle })}
                           disabled={sandboxStructuredLocked}
                           className="w-full mt-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
                         >
@@ -4596,11 +4596,11 @@ function AgentsPage() {
                         <p className="mt-1 text-[11px] text-gray-400">如果你依赖 <span className="font-mono">setupCommand</span> 做包安装，通常需要关闭只读根并允许网络。</p>
                       </div>
                       <div className="md:col-span-2">
-                        <label className="text-xs text-gray-500">一次性初始化命令（docker.setupCommand）</label>
+                        <label className="text-xs text-gray-500">一次性初始化命令</label>
                         <textarea
                           rows={3}
                           value={form.sandboxDockerSetupCommand}
-                          onChange={e => updateSandboxForm({ sandboxDockerSetupCommand: e.target.value })}
+                          onChange={e => update沙箱Form({ sandboxDockerSetupCommand: e.target.value })}
                           disabled={sandboxStructuredLocked}
                           placeholder="例如 apt-get update && apt-get install -y nodejs"
                           className="w-full mt-1 px-3 py-2 text-sm font-mono border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
@@ -4608,11 +4608,11 @@ function AgentsPage() {
                         <p className="mt-1 text-[11px] text-gray-400">它只在容器创建时执行一次；如果需要 root / 可写根 / 网络，请与上面的字段一起配置。</p>
                       </div>
                       <div className="md:col-span-2">
-                        <label className="text-xs text-gray-500">额外挂载（docker.binds，一行一个）</label>
+                        <label className="text-xs text-gray-500">额外挂载</label>
                         <textarea
                           rows={4}
                           value={form.sandboxDockerBinds}
-                          onChange={e => updateSandboxForm({ sandboxDockerBinds: e.target.value })}
+                          onChange={e => update沙箱Form({ sandboxDockerBinds: e.target.value })}
                           disabled={sandboxStructuredLocked}
                           placeholder={"/host/source:/source:ro\n/var/data/myapp:/data:rw"}
                           className="w-full mt-1 px-3 py-2 text-sm font-mono border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
@@ -4624,31 +4624,31 @@ function AgentsPage() {
 
                   <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">工具策略与逃逸口（Tool Policy & Elevated）</h4>
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">工具策略与逃逸口</h4>
                       <p className="text-xs text-gray-500 mt-1">这里不直接改 <span className="font-mono">tools.sandbox.tools</span> / <span className="font-mono">tools.elevated</span>，但要先理解它们和 sandbox 的关系。</p>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
                       <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3 text-gray-600 dark:text-gray-300">
-                        <div className="font-medium text-gray-900 dark:text-white">Sandbox</div>
-                        <div className="mt-1">决定工具是在宿主机还是 Docker 里运行。</div>
+                        <div className="font-medium text-gray-900 dark:text-white">沙箱</div>
+                        <div className="mt-1">决定工具是在宿主机还是容器里运行。</div>
                       </div>
                       <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3 text-gray-600 dark:text-gray-300">
-                        <div className="font-medium text-gray-900 dark:text-white">Tool Policy</div>
+                        <div className="font-medium text-gray-900 dark:text-white">工具策略</div>
                         <div className="mt-1"><span className="font-mono">tools.allow / deny / sandbox.tools</span> 决定“这个工具能不能被调用”。</div>
                       </div>
                       <div className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-3 text-gray-600 dark:text-gray-300">
-                        <div className="font-medium text-gray-900 dark:text-white">Elevated</div>
+                        <div className="font-medium text-gray-900 dark:text-white">提权通道</div>
                         <div className="mt-1"><span className="font-mono">tools.elevated</span> 只是 <span className="font-mono">exec</span> 的宿主机逃逸口，不会授予被 deny 的工具。</div>
                       </div>
                     </div>
-                    <p className="text-[11px] text-gray-400">如果你要进一步配置 <span className="font-mono">tools.sandbox.tools</span>、<span className="font-mono">tools.elevated</span>、<span className="font-mono">sandbox.browser.*</span>、<span className="font-mono">docker.image/user/env</span>，请继续在 Advanced JSON 里编辑。</p>
+                    <p className="text-[11px] text-gray-400">如果你要进一步配置 <span className="font-mono">tools.sandbox.tools</span>、<span className="font-mono">tools.elevated</span>、<span className="font-mono">sandbox.browser.*</span>、<span className="font-mono">docker.image/user/env</span>，请继续在高级 JSON 里编辑。</p>
                   </div>
 
                   <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
                     <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
                       <div>
-                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Per-Agent 工具治理（Profile / Allow / Deny）</h4>
-                        <p className="text-xs text-gray-500 mt-1">对标官方 Agents 面板里最常用的 Tool Access 起点：先选 profile，再按需补 <span className="font-mono">tools.allow / tools.deny</span>。</p>
+                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white">单智能体工具治理</h4>
+                        <p className="text-xs text-gray-500 mt-1">对标官方智能体面板里最常用的工具访问起点：先选配置，再按需补 <span className="font-mono">tools.allow / tools.deny</span>。</p>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <button
@@ -4691,7 +4691,7 @@ function AgentsPage() {
 
                     <div className="grid grid-cols-1 lg:grid-cols-[220px,1fr] gap-4">
                       <div>
-                        <label className="text-xs text-gray-500">工具 Profile（tools.profile）</label>
+                        <label className="text-xs text-gray-500">工具配置（tools.profile）</label>
                         <select
                           value={form.toolProfile}
                           onChange={e => updateForm({ toolProfile: e.target.value as AgentFormState['toolProfile'] }, 'tools')}
@@ -4701,11 +4701,11 @@ function AgentsPage() {
                             <option key={preset.label} value={preset.id}>{preset.label}</option>
                           ))}
                         </select>
-                        <p className="mt-1 text-[11px] text-gray-400">留在 Inherit 时不会写入 per-agent <span className="font-mono">tools.profile</span> 覆盖。</p>
+                        <p className="mt-1 text-[11px] text-gray-400">留在“继承默认”时不会写入单智能体 <span className="font-mono">tools.profile</span> 覆盖。</p>
                       </div>
                       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                         <div>
-                          <label className="text-xs text-gray-500">Allow 列表（tools.allow）</label>
+                          <label className="text-xs text-gray-500">允许列表</label>
                           <textarea
                             rows={4}
                             value={form.toolAllow}
@@ -4715,7 +4715,7 @@ function AgentsPage() {
                           />
                         </div>
                         <div>
-                          <label className="text-xs text-gray-500">Deny 列表（tools.deny）</label>
+                          <label className="text-xs text-gray-500">拒绝列表</label>
                           <textarea
                             rows={4}
                             value={form.toolDeny}
@@ -4726,24 +4726,24 @@ function AgentsPage() {
                         </div>
                       </div>
                     </div>
-                    <p className="text-[11px] text-gray-400">这三项是最常用的 per-agent 工具治理入口；更细的 <span className="font-mono">tools.sandbox.tools</span> 与 <span className="font-mono">tools.elevated</span> 继续放在 Advanced JSON。</p>
+                    <p className="text-[11px] text-gray-400">这三项是最常用的单智能体工具治理入口；更细的 <span className="font-mono">tools.sandbox.tools</span> 与 <span className="font-mono">tools.elevated</span> 继续放在高级 JSON。</p>
                   </div>
 
                   <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">群聊行为（Group Chat）</h4>
-                      <p className="text-xs text-gray-500 mt-1">用于设置本 Agent 是否显式覆盖 <span className="font-mono">groupChat.enabled</span>。留在“继承默认”时，不会写入额外覆盖。</p>
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">群聊行为</h4>
+                      <p className="text-xs text-gray-500 mt-1">用于设置本智能体是否显式覆盖 <span className="font-mono">groupChat.enabled</span>。留在“继承默认”时，不会写入额外覆盖。</p>
                     </div>
                     {sandboxClearIntent && editingId && (
                       <div className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-[12px] text-amber-700">
-                        你当前选择了“继承默认”。保存时会优先移除结构化 sandbox 字段；如果当前 override 里只剩这些字段，就会删除整块 <span className="font-mono">sandbox</span>。若还有 <span className="font-mono">sandbox.browser.*</span> 等 Advanced 字段，它们会继续保留。
+                        你当前选择了“继承默认”。保存时会优先移除结构化 sandbox 字段；如果当前 override 里只剩这些字段，就会删除整块 <span className="font-mono">sandbox</span>。若还有 <span className="font-mono">sandbox.browser.*</span> 等高级字段，它们会继续保留。
                       </div>
                     )}
                     <div className="max-w-xs">
-                        <label className="text-xs text-gray-500">群聊开关（groupChat.enabled）</label>
+                        <label className="text-xs text-gray-500">群聊开关</label>
                       <select
                         value={form.groupChatMode}
-                        onChange={e => updateForm({ groupChatMode: e.target.value as InheritToggle }, 'groupChat')}
+                        onChange={e => updateForm({ groupChatMode: e.target.value as 继承默认Toggle }, 'groupChat')}
                         className="w-full mt-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
                       >
                         <option value="inherit">继承默认</option>
@@ -4759,36 +4759,36 @@ function AgentsPage() {
                 <div className="space-y-5">
                   <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">全局协作策略说明（Global Collaboration）</h4>
-                      <p className="text-xs text-gray-500 mt-1">OpenClaw 2026.3.8 当前只支持系统级 <span className="font-mono">tools.agentToAgent</span> 与 <span className="font-mono">tools.sessions.visibility</span>，不支持单 Agent 覆盖。</p>
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">全局协作策略说明</h4>
+                      <p className="text-xs text-gray-500 mt-1">OpenClaw 2026.3.8 当前只支持系统级 <span className="font-mono">tools.agentToAgent</span> 与 <span className="font-mono">tools.sessions.visibility</span>，不支持单智能体覆盖。</p>
                     </div>
                     <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
-                      <div className="font-medium">当前 Agent 页面不会再写入这两个字段。</div>
+                      <div className="font-medium">当前智能体页面不会再写入这两个字段。</div>
                       <div className="mt-2 text-xs leading-6">
                         历史上误写到 <span className="font-mono">agents.list[].tools.agentToAgent</span> /
-                        <span className="font-mono"> agents.list[].tools.sessions.visibility</span> 的值，会在下一次保存时自动清理，避免 OpenClaw 报
-                        <span className="font-mono"> Unrecognized key</span>。
+                        <span className="font-mono"> agents.list[].tools.sessions.visibility</span> 的值，会在下一次保存时自动清理，避免 OpenClaw 报出
+                        <span className="font-mono">未知键</span>。
                       </div>
                       <div className="mt-2 text-xs leading-6">
-                        需要调整跨 Agent 委派或会话可见性时，请改系统级 <span className="font-mono">System Config</span> 中的全局 <span className="font-mono">tools</span> 配置。
+                        需要调整跨智能体委派或会话可见性时，请改系统级 <span className="font-mono">系统配置</span> 中的全局 <span className="font-mono">tools</span> 配置。
                       </div>
                     </div>
                   </div>
 
                   <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-4">
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">子 Agent 允许列表（Subagents Allowlist）</h4>
-                      <p className="text-xs text-gray-500 mt-1">用于编辑 <span className="font-mono">subagents.allowAgents</span>。这是 OpenClaw 2026.3.8 支持的正式字段；留空表示不额外覆盖，默认仅允许同一 Agent 自己。</p>
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">子智能体允许列表</h4>
+                      <p className="text-xs text-gray-500 mt-1">用于编辑 <span className="font-mono">subagents.allowAgents</span>。这是 OpenClaw 2026.3.8 支持的正式字段；留空表示不额外覆盖，默认仅允许同一智能体自己。</p>
                     </div>
                     <div>
-                        <label className="text-xs text-gray-500">允许的 Agent（Allowed Agents）</label>
+                        <label className="text-xs text-gray-500">允许的智能体</label>
                       <input
                         value={form.subagentAllowAgents}
                         onChange={e => updateForm({ subagentAllowAgents: e.target.value }, 'subagents')}
                         placeholder="逗号分隔，例如 research, reviewer, *"
                         className="w-full mt-1 px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900"
                       />
-                      <p className="mt-1 text-[11px] text-gray-400">用于限制 <span className="font-mono">sessions_spawn</span> 可指定的 <span className="font-mono">agentId</span>；<span className="font-mono">*</span> 表示允许任意 Agent。</p>
+                      <p className="mt-1 text-[11px] text-gray-400">用于限制 <span className="font-mono">sessions_spawn</span> 可指定的 <span className="font-mono">agentId</span>；<span className="font-mono">*</span> 表示允许任意智能体。</p>
                     </div>
                   </div>
                 </div>
@@ -4798,7 +4798,7 @@ function AgentsPage() {
                 <div className="space-y-5">
                   <div className="rounded-xl border border-violet-100 bg-violet-50 dark:bg-violet-900/10 dark:border-violet-900/30 px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div className="text-[12px] text-violet-700 dark:text-violet-200">
-                      高级 JSON（Advanced）保留完整编辑能力。保存时，结构化表单会覆盖相同路径上的值；如果你在这里改了结构化字段对应的 JSON，可先点击“从 JSON 同步结构化字段”。像 <span className="font-mono">tools.sandbox.tools</span>、<span className="font-mono">tools.elevated</span>、<span className="font-mono">sandbox.browser.*</span>、<span className="font-mono">docker.image/user/env</span> 这类高阶字段，仍建议直接在这里编辑。
+                      高级 JSON 保留完整编辑能力。保存时，结构化表单会覆盖相同路径上的值；如果你在这里改了结构化字段对应的 JSON，可先点击“从 JSON 同步结构化字段”。像 <span className="font-mono">tools.sandbox.tools</span>、<span className="font-mono">tools.elevated</span>、<span className="font-mono">sandbox.browser.*</span>、<span className="font-mono">docker.image/user/env</span> 这类高阶字段，仍建议直接在这里编辑。
                     </div>
                     <button
                       onClick={syncStructuredFieldsFromAdvanced}
@@ -4810,7 +4810,7 @@ function AgentsPage() {
 
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                     <div>
-                      <label htmlFor="agent-model-json" className="text-xs text-gray-500">model (JSON)</label>
+                      <label htmlFor="agent-model-json" className="text-xs text-gray-500">模型（JSON）</label>
                       <textarea
                         id="agent-model-json"
                         name="agentModelJson"
@@ -4821,7 +4821,7 @@ function AgentsPage() {
                       />
                     </div>
                     <div>
-                      <label htmlFor="agent-params-json" className="text-xs text-gray-500">params (JSON)</label>
+                      <label htmlFor="agent-params-json" className="text-xs text-gray-500">参数（JSON）</label>
                       <textarea
                         id="agent-params-json"
                         name="agentParamsJson"
@@ -4832,7 +4832,7 @@ function AgentsPage() {
                       />
                     </div>
                     <div>
-                      <label htmlFor="agent-identity-json" className="text-xs text-gray-500">identity (JSON)</label>
+                      <label htmlFor="agent-identity-json" className="text-xs text-gray-500">身份（JSON）</label>
                       <textarea
                         id="agent-identity-json"
                         name="agentIdentityJson"
@@ -4843,7 +4843,7 @@ function AgentsPage() {
                       />
                     </div>
                     <div>
-                      <label htmlFor="agent-groupchat-json" className="text-xs text-gray-500">groupChat (JSON)</label>
+                      <label htmlFor="agent-groupchat-json" className="text-xs text-gray-500">群聊（JSON）</label>
                       <textarea
                         id="agent-groupchat-json"
                         name="agentGroupChatJson"
@@ -4854,7 +4854,7 @@ function AgentsPage() {
                       />
                     </div>
                     <div>
-                      <label htmlFor="agent-tools-json" className="text-xs text-gray-500">tools (JSON)</label>
+                      <label htmlFor="agent-tools-json" className="text-xs text-gray-500">工具（JSON）</label>
                       <textarea
                         id="agent-tools-json"
                         name="agentToolsJson"
@@ -4865,7 +4865,7 @@ function AgentsPage() {
                       />
                     </div>
                     <div>
-                      <label htmlFor="agent-subagents-json" className="text-xs text-gray-500">subagents (JSON)</label>
+                      <label htmlFor="agent-subagents-json" className="text-xs text-gray-500">子智能体（JSON）</label>
                       <textarea
                         id="agent-subagents-json"
                         name="agentSubagentsJson"
@@ -4876,10 +4876,10 @@ function AgentsPage() {
                       />
                     </div>
                     <div>
-                      <label htmlFor="agent-sandbox-json" className="text-xs text-gray-500">sandbox (JSON)</label>
+                      <label htmlFor="agent-sandbox-json" className="text-xs text-gray-500">沙箱（JSON）</label>
                       <textarea
                         id="agent-sandbox-json"
-                        name="agentSandboxJson"
+                        name="agent沙箱Json"
                         rows={8}
                         value={form.sandboxText}
                         onChange={e => {
@@ -4888,7 +4888,7 @@ function AgentsPage() {
                             const next = { ...prev, sandboxText: value };
                             try {
                               const parsed = value.trim() ? JSON.parse(value) : undefined;
-                              const draft = extractSandboxDraft(parsed);
+                              const draft = extract沙箱Draft(parsed);
                               next.sandboxMode = draft.mode;
                               next.sandboxScope = draft.scope;
                               next.sandboxWorkspaceAccess = draft.workspaceAccess;
@@ -4903,20 +4903,20 @@ function AgentsPage() {
                             return next;
                           });
                           setStructuredTouched(prev => ({ ...prev, sandbox: false }));
-                          setSandboxClearIntent(false);
+                          set沙箱ClearIntent(false);
                         }}
                         className="w-full mt-1 px-3 py-2 text-xs font-mono border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900"
                       />
                     </div>
                     <div>
-                      <label htmlFor="agent-runtime-json" className="text-xs text-gray-500">runtime (JSON)</label>
+                      <label htmlFor="agent-runtime-json" className="text-xs text-gray-500">运行时（JSON）</label>
                       <textarea
                         id="agent-runtime-json"
                         name="agentRuntimeJson"
                         rows={8}
                         value={form.runtimeText}
                         onChange={e => setForm(prev => ({ ...prev, runtimeText: e.target.value }))}
-                        placeholder="仅在需要 per-agent runtime 覆盖时填写"
+                        placeholder="仅在需要单智能体 runtime 覆盖时填写"
                         className="w-full mt-1 px-3 py-2 text-xs font-mono border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900"
                       />
                     </div>
@@ -4930,9 +4930,9 @@ function AgentsPage() {
                 {footerValidationMessage}
               </div>
               <div className="flex items-center justify-end gap-2">
-                <button onClick={closeForm} className={modern ? 'page-modern-action px-4 py-2 text-xs' : 'px-4 py-2 text-xs rounded bg-gray-100 dark:bg-gray-700'}>取消（Cancel）</button>
+                <button onClick={closeForm} className={modern ? 'page-modern-action px-4 py-2 text-xs' : 'px-4 py-2 text-xs rounded bg-gray-100 dark:bg-gray-700'}>取消</button>
                 <button onClick={saveAgent} disabled={saving || !!saveBlockedReason} title={saveBlockedReason || ''} className={modern ? 'page-modern-accent px-4 py-2 text-xs disabled:opacity-50 disabled:cursor-not-allowed' : 'px-4 py-2 text-xs rounded bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed'}>
-                  {saving ? '保存中...' : '保存智能体（Save Agent）'}
+                  {saving ? '保存中...' : '保存智能体'}
                 </button>
               </div>
             </div>

@@ -420,6 +420,14 @@ func InstallClawHubSkill(cfg *config.Config) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 			return
 		}
+		if err := alignPathOwnershipToParent(skillDir); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		if err := alignPathOwnershipToParent(filepath.Join(workdir, ".clawhub")); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"ok":            true,
@@ -950,6 +958,19 @@ func writeClawHubOrigin(skillDir, registryBase, slug, version string, installedA
 		return err
 	}
 	return os.WriteFile(filepath.Join(originDir, "origin.json"), raw, 0644)
+}
+
+func alignPathOwnershipToParent(targetPath string) error {
+	uid, gid, ok, err := parentOwnership(filepath.Dir(targetPath))
+	if err != nil || !ok {
+		return err
+	}
+	return filepath.Walk(targetPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		return os.Chown(path, uid, gid)
+	})
 }
 
 func readClawHubOriginEntry(skillDir string) clawHubLockEntry {

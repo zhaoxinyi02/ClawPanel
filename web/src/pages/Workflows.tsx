@@ -1,5 +1,22 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import {
+  ReactFlow,
+  Background,
+  BackgroundVariant,
+  Controls,
+  MiniMap,
+  Handle,
+  Position,
+  MarkerType,
+  useNodesState,
+  useEdgesState,
+  type Node,
+  type Edge,
+  type NodeProps,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import dagre from 'dagre';
 import {
   Bot,
   CheckCircle2,
@@ -19,6 +36,10 @@ import {
   Wand2,
   X,
   XCircle,
+  Image as ImageIcon,
+  Plus,
+  Copy,
+  PencilRuler,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import MobileActionTray from '../components/MobileActionTray';
@@ -46,6 +67,16 @@ interface WorkflowTemplate {
   definition?: Record<string, any>;
   createdAt?: number;
   updatedAt?: number;
+}
+
+interface WorkflowTemplateNode {
+  id: string;
+  title: string;
+  type: string;
+  order?: number;
+  skill?: string;
+  position?: { x: number; y: number };
+  [key: string]: any;
 }
 
 interface WorkflowStep {
@@ -116,15 +147,45 @@ interface ModelOption {
   label: string;
 }
 
+interface ManualRunTarget {
+  channelId: string;
+  conversationId: string;
+  userId: string;
+  sourceMessage: string;
+}
+
+interface EnabledChannelOption {
+  id: string;
+  label: string;
+}
+
+interface OpenClawWeixinAccountOption {
+  accountId: string;
+  userId?: string;
+  enabled?: boolean;
+  configured?: boolean;
+  name?: string;
+}
+
+interface RecentTargetOption {
+  key: string;
+  channelId: string;
+  conversationId: string;
+  userId: string;
+  label: string;
+  meta: string;
+  updatedAt?: number;
+}
+
 const DEFAULT_SETTINGS: WorkflowSettings = {
   enabled: false,
   providerId: '',
   modelId: '',
   approvalMode: 2,
-  progressMode: 'detailed',
+  progressMode: 'concise',
   tone: 'professional',
   autoCreateRuns: true,
-  pushProgress: true,
+  pushProgress: false,
   complexityGuard: 'balanced',
 };
 
@@ -142,6 +203,13 @@ const DEFAULT_TEMPLATE_JSON = JSON.stringify(
   null,
   2,
 );
+
+const DEFAULT_MANUAL_RUN_TARGET: ManualRunTarget = {
+  channelId: '',
+  conversationId: '',
+  userId: '',
+  sourceMessage: '',
+};
 
 function extractModelOptions(payload: any): ModelOption[] {
   const providers = payload?.providers || payload?.models?.providers || {};
@@ -195,7 +263,12 @@ function channelLabel(value?: string) {
   if (value === 'qq') return 'QQ';
   if (value === 'wecom') return '企业微信';
   if (value === 'feishu') return '飞书';
+  if (value === 'openclaw-weixin') return '微信（ClawBot）';
   return value || '未知通道';
+}
+
+function isOpenClawWeixinChannel(value?: string) {
+  return value === 'openclaw-weixin';
 }
 
 function isTakeoverRun(run?: WorkflowRun | null) {
@@ -340,6 +413,275 @@ function isMarkdownArtifact(path?: string, fileName?: string) {
   return ['md', 'markdown'].includes(ext);
 }
 
+const WORKFLOW_NODE_WIDTH = 280;
+const WORKFLOW_NODE_HEIGHT = 116;
+
+const STEP_TYPE_OPTIONS = [
+  { value: 'input', label: '收集输入' },
+  { value: 'wait_user', label: '等待用户' },
+  { value: 'ai_plan', label: 'AI 规划' },
+  { value: 'ai_task', label: 'AI 任务' },
+  { value: 'image_generate', label: '图片生成' },
+  { value: 'publish', label: '发布文案' },
+  { value: 'summary', label: '总结' },
+  { value: 'approval', label: '审批' },
+  { value: 'end', label: '结束' },
+];
+
+function stepTypeLabel(value?: string) {
+  return STEP_TYPE_OPTIONS.find(item => item.value === value)?.label || value || '未命名步骤';
+}
+
+function workflowStepTone(value?: string) {
+  switch (value) {
+    case 'input':
+    case 'wait_user':
+      return 'border-amber-200 bg-amber-50/80 text-amber-700 dark:border-amber-800/40 dark:bg-amber-950/20 dark:text-amber-300';
+    case 'ai_plan':
+    case 'ai_task':
+    case 'publish':
+    case 'summary':
+      return 'border-blue-200 bg-blue-50/80 text-blue-700 dark:border-blue-800/40 dark:bg-blue-950/20 dark:text-blue-300';
+    case 'image_generate':
+      return 'border-fuchsia-200 bg-fuchsia-50/80 text-fuchsia-700 dark:border-fuchsia-800/40 dark:bg-fuchsia-950/20 dark:text-fuchsia-300';
+    case 'approval':
+      return 'border-rose-200 bg-rose-50/80 text-rose-700 dark:border-rose-800/40 dark:bg-rose-950/20 dark:text-rose-300';
+    case 'end':
+      return 'border-emerald-200 bg-emerald-50/80 text-emerald-700 dark:border-emerald-800/40 dark:bg-emerald-950/20 dark:text-emerald-300';
+    default:
+      return 'border-slate-200 bg-slate-50/80 text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300';
+  }
+}
+
+function workflowNodeEmoji(value?: string) {
+  switch (value) {
+    case 'input':
+      return '📝';
+    case 'wait_user':
+      return '⏳';
+    case 'ai_plan':
+      return '🧭';
+    case 'ai_task':
+      return '🤖';
+    case 'image_generate':
+      return '🖼️';
+    case 'publish':
+      return '📣';
+    case 'summary':
+      return '📚';
+    case 'approval':
+      return '✅';
+    case 'end':
+      return '🏁';
+    default:
+      return '•';
+  }
+}
+
+function sanitizeStepKey(value: string, fallback = 'step') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-+/g, '-');
+  return normalized || fallback;
+}
+
+function defaultNodeForType(type: string, index: number): WorkflowTemplateNode {
+  const order = index + 1;
+  const stepKey = sanitizeStepKey(`${type}-${order}`, `step-${order}`);
+  const node: WorkflowTemplateNode = {
+    id: stepKey,
+    title: `${stepTypeLabel(type)} ${order}`,
+    type,
+    order,
+    skill: 'none',
+  };
+  if (type === 'input' || type === 'wait_user') {
+    node.question = '';
+    node.requiredFields = [];
+  }
+  if (['ai_plan', 'ai_task', 'publish', 'summary'].includes(type)) {
+    node.instruction = '';
+    node.outputFile = `${String(order).padStart(2, '0')}-${node.title}.md`;
+    node.artifactName = node.title;
+    node.outputFormat = 'markdown';
+  }
+  if (type === 'image_generate') {
+    node.instruction = '';
+    node.outputFile = `${String(order).padStart(2, '0')}-${node.title}.png`;
+    node.artifactName = node.title;
+    node.promptStepKey = '';
+    node.providerId = '';
+    node.model = '';
+    node.sendToUser = true;
+    node.isFinalOutput = true;
+  }
+  return node;
+}
+
+function normalizeTemplateNodes(definition?: Record<string, any> | null): WorkflowTemplateNode[] {
+  const raw = Array.isArray(definition?.nodes) ? definition?.nodes : [];
+  return [...raw]
+    .map((item: any, index) => ({
+      id: String(item?.id || item?.stepKey || `step-${index + 1}`),
+      title: String(item?.title || `步骤 ${index + 1}`),
+      type: String(item?.type || 'ai_task'),
+      order: Number(item?.order || index + 1),
+      skill: item?.skill ?? 'none',
+      ...item,
+    }))
+    .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+}
+
+function parseDefinitionText(value: string): Record<string, any> | null {
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== 'object') return { nodes: [], edges: [] };
+    return parsed as Record<string, any>;
+  } catch {
+    return null;
+  }
+}
+
+function buildDefinitionFromNodes(nodes: WorkflowTemplateNode[], base?: Record<string, any> | null) {
+  const nextNodes = nodes.map((item, index) => ({
+    ...item,
+    id: String(item.id || `step-${index + 1}`),
+    order: index + 1,
+  }));
+  const edges = nextNodes.slice(0, -1).map((item, index) => ({
+    id: `${item.id}->${nextNodes[index + 1].id}`,
+    source: item.id,
+    target: nextNodes[index + 1].id,
+  }));
+  return {
+    ...(base || {}),
+    nodes: nextNodes,
+    edges,
+  };
+}
+
+function buildWorkflowGraphEdges(nodes: WorkflowTemplateNode[]): Edge[] {
+  return nodes.slice(0, -1).map((node, index) => ({
+    id: `${node.id}->${nodes[index + 1].id}`,
+    source: node.id,
+    target: nodes[index + 1].id,
+    type: 'straight',
+    animated: node.type === 'image_generate',
+    markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
+    style: { strokeWidth: 2, stroke: node.type === 'image_generate' ? '#c026d3' : '#3b82f6' },
+  }));
+}
+
+interface WorkflowGraphNodeData {
+  title: string;
+  type: string;
+  skill?: string;
+  outputFile?: string;
+  isFinalOutput?: boolean;
+  sendToUser?: boolean;
+  [key: string]: unknown;
+}
+
+const WorkflowGraphNode = memo(({ data, selected }: NodeProps<Node<WorkflowGraphNodeData>>) => (
+  <div className={`relative min-w-[240px] rounded-2xl border-2 bg-white px-4 py-3 shadow-sm transition-all dark:bg-slate-900 ${selected ? 'ring-4 ring-blue-200/60 dark:ring-blue-800/30' : ''} ${workflowStepTone(data.type)}`}>
+    <Handle type="target" position={Position.Top} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-slate-400 dark:!border-slate-900" />
+    <Handle type="source" position={Position.Bottom} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-blue-500 dark:!border-slate-900" />
+    <div className="flex items-start gap-3">
+      <div className="mt-0.5 text-xl leading-none">{workflowNodeEmoji(data.type)}</div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <div className="truncate text-sm font-semibold text-slate-900 dark:text-white">{data.title}</div>
+          <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            {stepTypeLabel(data.type)}
+          </span>
+        </div>
+        <div className="mt-1 line-clamp-1 text-[11px] text-slate-500 dark:text-slate-400">
+          {data.skill && data.skill !== 'none' ? `技能：${data.skill}` : '无技能'}
+        </div>
+        {data.outputFile && (
+          <div className="mt-2 line-clamp-1 rounded-xl bg-white/70 px-2.5 py-1 text-[11px] text-slate-500 shadow-sm dark:bg-slate-800/80 dark:text-slate-400">
+            {data.outputFile}
+          </div>
+        )}
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {data.isFinalOutput && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">最终</span>}
+          {data.sendToUser && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">回传</span>}
+        </div>
+      </div>
+    </div>
+  </div>
+));
+WorkflowGraphNode.displayName = 'WorkflowGraphNode';
+
+const workflowNodeTypes = { workflowStepNode: WorkflowGraphNode };
+
+function layoutWorkflowNodes(nodes: Node[], edges: Edge[]): Node[] {
+  const graph = new dagre.graphlib.Graph();
+  graph.setGraph({ rankdir: 'TB', ranksep: 90, nodesep: 30, marginx: 20, marginy: 20 });
+  graph.setDefaultEdgeLabel(() => ({}));
+  nodes.forEach(node => graph.setNode(node.id, { width: WORKFLOW_NODE_WIDTH, height: WORKFLOW_NODE_HEIGHT }));
+  edges.forEach(edge => graph.setEdge(edge.source, edge.target));
+  dagre.layout(graph);
+  return nodes.map(node => {
+    const pos = graph.node(node.id);
+    return {
+      ...node,
+      draggable: true,
+      position: {
+        x: (pos?.x || 0) - WORKFLOW_NODE_WIDTH / 2,
+        y: (pos?.y || 0) - WORKFLOW_NODE_HEIGHT / 2,
+      },
+    };
+  });
+}
+
+function nodesHaveCustomPosition(nodes: WorkflowTemplateNode[]) {
+  return nodes.some(node => Number.isFinite(node.position?.x) && Number.isFinite(node.position?.y));
+}
+
+function buildWorkflowGraphNodesFromTemplate(nodes: WorkflowTemplateNode[], edges: Edge[]) {
+  const baseNodes: Node[] = nodes.map(node => ({
+    id: node.id,
+    type: 'workflowStepNode',
+    position: {
+      x: Number(node.position?.x || 0),
+      y: Number(node.position?.y || 0),
+    },
+    draggable: true,
+    data: {
+      title: node.title,
+      type: node.type,
+      skill: node.skill,
+      outputFile: node.outputFile,
+      isFinalOutput: Boolean(node.isFinalOutput),
+      sendToUser: Boolean(node.sendToUser),
+    },
+  }));
+  const laidOut = layoutWorkflowNodes(
+    nodes.map(node => ({
+      ...baseNodes.find(item => item.id === node.id)!,
+      position: { x: 0, y: 0 },
+    })),
+    edges,
+  );
+  return laidOut.map(node => {
+    const saved = nodes.find(item => item.id === node.id);
+    if (Number.isFinite(saved?.position?.x) && Number.isFinite(saved?.position?.y)) {
+      return {
+        ...node,
+        position: {
+          x: Number(saved?.position?.x || 0),
+          y: Number(saved?.position?.y || 0),
+        },
+      };
+    }
+    return node;
+  });
+}
+
 export default function Workflows() {
   const { uiMode } = (useOutletContext() as { uiMode?: 'modern' }) || {};
   const modern = uiMode === 'modern';
@@ -370,18 +712,65 @@ export default function Workflows() {
   const [runDetail, setRunDetail] = useState<WorkflowRun | null>(null);
   const [runEvents, setRunEvents] = useState<WorkflowEvent[]>([]);
   const [runInput, setRunInput] = useState('');
+  const [manualRunTarget, setManualRunTarget] = useState<ManualRunTarget>(DEFAULT_MANUAL_RUN_TARGET);
+  const [enabledChannels, setEnabledChannels] = useState<EnabledChannelOption[]>([]);
+  const [openClawWeixinAccounts, setOpenClawWeixinAccounts] = useState<OpenClawWeixinAccountOption[]>([]);
+  const [recentTargets, setRecentTargets] = useState<RecentTargetOption[]>([]);
+  const [selectedRecentTargetKey, setSelectedRecentTargetKey] = useState('');
+  const [showManualTargetFields, setShowManualTargetFields] = useState(false);
   const [runReply, setRunReply] = useState('');
   const [busyAction, setBusyAction] = useState('');
   const [previewState, setPreviewState] = useState<ArtifactPreviewState | null>(null);
   const [mdRender, setMdRender] = useState(true);
+  const [templateEditorMode, setTemplateEditorMode] = useState<'visual' | 'json'>('visual');
+  const [selectedTemplateNodeId, setSelectedTemplateNodeId] = useState('');
+  const [graphNodes, setGraphNodes, onGraphNodesChange] = useNodesState<Node>([]);
+  const [graphEdges, setGraphEdges, onGraphEdgesChange] = useEdgesState<Edge>([]);
 
   const selectedTemplate = useMemo(
     () => templates.find(item => item.id === selectedTemplateId) || null,
     [selectedTemplateId, templates],
   );
+  const parsedTemplateDefinition = useMemo(
+    () => parseDefinitionText(templateDefinitionText),
+    [templateDefinitionText],
+  );
+  const templateNodes = useMemo(
+    () => normalizeTemplateNodes(parsedTemplateDefinition),
+    [parsedTemplateDefinition],
+  );
+  const selectedTemplateNode = useMemo(
+    () => templateNodes.find(item => item.id === selectedTemplateNodeId) || null,
+    [templateNodes, selectedTemplateNodeId],
+  );
 
   const takeoverRuns = useMemo(() => runs.filter(run => isTakeoverRun(run)), [runs]);
   const activeTakeovers = useMemo(() => takeoverRuns.filter(run => isTakeoverActive(run)), [takeoverRuns]);
+  const configuredWeixinAccounts = useMemo(
+    () => openClawWeixinAccounts.filter(item => item.enabled !== false && item.configured !== false),
+    [openClawWeixinAccounts],
+  );
+  const recentTargetsForSelectedChannel = useMemo(
+    () => recentTargets.filter(item => item.channelId === manualRunTarget.channelId),
+    [recentTargets, manualRunTarget.channelId],
+  );
+  const weixinTargetsForSelectedChannel = useMemo(
+    () => configuredWeixinAccounts.map(item => ({
+      key: `openclaw-weixin:${item.accountId}:${item.userId || ''}`,
+      channelId: 'openclaw-weixin',
+      conversationId: item.accountId,
+      userId: item.userId || '',
+      label: item.userId ? `微信用户 · ${item.userId}` : `微信账号 · ${item.accountId}`,
+      meta: item.name ? `${item.name} · ${item.accountId}` : item.accountId,
+    })),
+    [configuredWeixinAccounts],
+  );
+  const targetOptionsForSelectedChannel = useMemo(
+    () => (isOpenClawWeixinChannel(manualRunTarget.channelId) && weixinTargetsForSelectedChannel.length > 0
+      ? weixinTargetsForSelectedChannel
+      : recentTargetsForSelectedChannel),
+    [manualRunTarget.channelId, recentTargetsForSelectedChannel, weixinTargetsForSelectedChannel],
+  );
 
   useEffect(() => {
     void loadAll();
@@ -391,7 +780,19 @@ export default function Workflows() {
     if (!selectedTemplate) return;
     setTemplateDraft(selectedTemplate);
     setTemplateDefinitionText(JSON.stringify(selectedTemplate.definition || { nodes: [], edges: [] }, null, 2));
+    const nodes = normalizeTemplateNodes(selectedTemplate.definition);
+    setSelectedTemplateNodeId(nodes[0]?.id || '');
   }, [selectedTemplate]);
+
+  useEffect(() => {
+    const edges = buildWorkflowGraphEdges(templateNodes);
+    const laidOut = buildWorkflowGraphNodesFromTemplate(templateNodes, edges);
+    setGraphNodes(laidOut);
+    setGraphEdges(edges);
+    if (!templateNodes.some(item => item.id === selectedTemplateNodeId)) {
+      setSelectedTemplateNodeId(templateNodes[0]?.id || '');
+    }
+  }, [templateNodes, selectedTemplateNodeId, setGraphEdges, setGraphNodes]);
 
   useEffect(() => {
     if (!selectedRunId) {
@@ -404,14 +805,162 @@ export default function Workflows() {
   }, [selectedRunId]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
+    const tick = () => {
+      if (document.hidden) return;
       void loadRuns();
       if (selectedRunId) {
         void loadRunDetail(selectedRunId);
       }
-    }, 3000);
-    return () => window.clearInterval(timer);
+    };
+    const timer = window.setInterval(tick, 3000);
+    const onVisible = () => { if (!document.hidden) tick(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, [selectedRunId, runFilter]);
+
+  useEffect(() => {
+    if (!isOpenClawWeixinChannel(manualRunTarget.channelId)) return;
+    if (manualRunTarget.userId || manualRunTarget.conversationId) return;
+    if (configuredWeixinAccounts.length !== 1) return;
+    const only = configuredWeixinAccounts[0];
+    setManualRunTarget(prev => ({
+      ...prev,
+      conversationId: only.accountId,
+      userId: only.userId || '',
+    }));
+    setSelectedRecentTargetKey(`openclaw-weixin:${only.accountId}:${only.userId || ''}`);
+  }, [configuredWeixinAccounts, manualRunTarget.channelId, manualRunTarget.conversationId, manualRunTarget.userId]);
+
+  const syncTemplateDefinition = (nextDefinition: Record<string, any>) => {
+    setTemplateDraft(prev => ({ ...prev, definition: nextDefinition }));
+    setTemplateDefinitionText(JSON.stringify(nextDefinition, null, 2));
+  };
+
+  const updateTemplateNodes = (updater: (nodes: WorkflowTemplateNode[]) => WorkflowTemplateNode[]) => {
+    const usedIds = new Set<string>();
+    const nextNodes = updater(templateNodes).map((node, index) => {
+      const baseId = sanitizeStepKey(String(node.id || node.title || `step-${index + 1}`), `step-${index + 1}`);
+      let uniqueId = baseId;
+      let suffix = 2;
+      while (usedIds.has(uniqueId)) {
+        uniqueId = `${baseId}-${suffix++}`;
+      }
+      usedIds.add(uniqueId);
+      return {
+        ...node,
+        id: uniqueId,
+        title: String(node.title || `步骤 ${index + 1}`),
+        type: String(node.type || 'ai_task'),
+        skill: node.skill ?? 'none',
+        order: index + 1,
+      };
+    });
+    const nextDefinition = buildDefinitionFromNodes(nextNodes, parsedTemplateDefinition);
+    syncTemplateDefinition(nextDefinition);
+  };
+
+  const updateSelectedTemplateNode = (patch: Partial<WorkflowTemplateNode>) => {
+    if (!selectedTemplateNodeId) return;
+    let nextSelectedId = selectedTemplateNodeId;
+    updateTemplateNodes(nodes => nodes.map(node => {
+      if (node.id !== selectedTemplateNodeId) return node;
+      const nextNode = { ...node, ...patch };
+      if (patch.title && (!patch.id || patch.id === node.id) && node.id === sanitizeStepKey(node.id, node.id)) {
+        nextNode.id = sanitizeStepKey(String(patch.title), node.id);
+      }
+      if (patch.id) {
+        nextNode.id = sanitizeStepKey(String(patch.id), node.id);
+      }
+      nextSelectedId = nextNode.id;
+      return nextNode;
+    }));
+    setSelectedTemplateNodeId(nextSelectedId);
+  };
+
+  const addTemplateNode = (type: string) => {
+    let insertedId = '';
+    updateTemplateNodes(nodes => {
+      const next = [...nodes];
+      const index = selectedTemplateNodeId ? next.findIndex(item => item.id === selectedTemplateNodeId) + 1 : next.length;
+      const insertAt = index >= 0 ? index : next.length;
+      const candidate = defaultNodeForType(type, insertAt);
+      let baseId = sanitizeStepKey(candidate.id, `step-${insertAt + 1}`);
+      let suffix = 2;
+      while (next.some(item => item.id === baseId)) {
+        baseId = `${sanitizeStepKey(candidate.id, `step-${insertAt + 1}`)}-${suffix++}`;
+      }
+      candidate.id = baseId;
+      insertedId = baseId;
+      next.splice(insertAt, 0, candidate);
+      return next;
+    });
+    if (insertedId) setSelectedTemplateNodeId(insertedId);
+  };
+
+  const duplicateSelectedTemplateNode = () => {
+    if (!selectedTemplateNode) return;
+    let duplicatedId = '';
+    updateTemplateNodes(nodes => {
+      const index = nodes.findIndex(item => item.id === selectedTemplateNode.id);
+      if (index < 0) return nodes;
+      const copyNode = { ...selectedTemplateNode, id: `${selectedTemplateNode.id}-copy`, title: `${selectedTemplateNode.title} 副本` };
+      duplicatedId = copyNode.id;
+      const next = [...nodes];
+      next.splice(index + 1, 0, copyNode);
+      return next;
+    });
+    if (duplicatedId) setSelectedTemplateNodeId(duplicatedId);
+  };
+
+  const removeSelectedTemplateNode = () => {
+    if (!selectedTemplateNode) return;
+    const currentIndex = templateNodes.findIndex(item => item.id === selectedTemplateNode.id);
+    updateTemplateNodes(nodes => nodes.filter(item => item.id !== selectedTemplateNode.id));
+    const fallback = templateNodes[currentIndex + 1]?.id || templateNodes[currentIndex - 1]?.id || '';
+    setSelectedTemplateNodeId(fallback);
+  };
+
+  const saveTemplateNodePosition = (nodeId: string, position: { x: number; y: number }) => {
+    const positionMap = new Map(
+      graphNodes.map(node => [
+        node.id,
+        {
+          x: Math.round(node.id === nodeId ? position.x : node.position.x),
+          y: Math.round(node.id === nodeId ? position.y : node.position.y),
+        },
+      ]),
+    );
+    updateTemplateNodes(nodes => nodes.map(node => ({
+      ...node,
+      position: positionMap.get(node.id) || node.position,
+    })));
+  };
+
+  const autoLayoutTemplateNodes = () => {
+    const edges = buildWorkflowGraphEdges(templateNodes);
+    const laidOut = layoutWorkflowNodes(
+      templateNodes.map(node => ({
+        id: node.id,
+        type: 'workflowStepNode',
+        position: { x: 0, y: 0 },
+        draggable: true,
+        data: {
+          title: node.title,
+          type: node.type,
+          skill: node.skill,
+          outputFile: node.outputFile,
+          isFinalOutput: Boolean(node.isFinalOutput),
+          sendToUser: Boolean(node.sendToUser),
+        },
+      })),
+      edges,
+    );
+    updateTemplateNodes(nodes => nodes.map(node => {
+      const positioned = laidOut.find(item => item.id === node.id);
+      return positioned ? { ...node, position: { x: Math.round(positioned.position.x), y: Math.round(positioned.position.y) } } : node;
+    }));
+    pushMessage('已自动整理节点布局');
+  };
 
   const pushMessage = (text: string) => {
     setMessage(text);
@@ -421,11 +970,14 @@ export default function Workflows() {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [settingsRes, templatesRes, runsRes, modelsRes] = await Promise.all([
+      const [settingsRes, templatesRes, runsRes, modelsRes, statusRes, allRunsRes, openClawWeixinRes] = await Promise.all([
         api.getWorkflowSettings(),
         api.getWorkflowTemplates(),
         api.getWorkflowRuns(runFilter || undefined),
         api.getModels(),
+        api.getStatus(),
+        api.getWorkflowRuns(),
+        api.getOpenClawWeixinStatus().catch(() => null),
       ]);
 
       if (settingsRes?.ok) {
@@ -440,6 +992,52 @@ export default function Workflows() {
         const nextRuns = runsRes.runs || [];
         setRuns(nextRuns);
         setSelectedRunId(prev => prev || nextRuns[0]?.id || '');
+      }
+      if (statusRes?.ok) {
+        const nextEnabledChannels = Array.isArray(statusRes.openclaw?.enabledChannels)
+          ? statusRes.openclaw.enabledChannels
+              .map((item: any) => ({
+                id: String(item?.id || '').trim(),
+                label: String(item?.label || channelLabel(String(item?.id || '').trim())).trim(),
+              }))
+              .filter((item: EnabledChannelOption) => item.id)
+          : [];
+        setEnabledChannels(nextEnabledChannels);
+      } else {
+        setEnabledChannels([]);
+      }
+      if (openClawWeixinRes?.ok && Array.isArray(openClawWeixinRes.accounts)) {
+        setOpenClawWeixinAccounts(openClawWeixinRes.accounts);
+      } else {
+        setOpenClawWeixinAccounts([]);
+      }
+      if (allRunsRes?.ok) {
+        const seen = new Set<string>();
+        const nextTargets: RecentTargetOption[] = [];
+        for (const item of allRunsRes.runs || []) {
+          const channelId = String(item?.channelId || '').trim();
+          const conversationId = String(item?.conversationId || '').trim();
+          const userId = String(item?.userId || '').trim();
+          if (!channelId || (!conversationId && !userId)) continue;
+          const key = `${channelId}__${conversationId}__${userId}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const primary = conversationId || userId || '-';
+          const runName = String(item?.name || '').trim();
+          const shortId = String(item?.shortId || '').trim();
+          nextTargets.push({
+            key,
+            channelId,
+            conversationId,
+            userId,
+            label: `${channelLabel(channelId)} · ${primary}`,
+            meta: [runName, shortId].filter(Boolean).join(' · '),
+            updatedAt: Number(item?.updatedAt || 0),
+          });
+        }
+        setRecentTargets(nextTargets);
+      } else {
+        setRecentTargets([]);
       }
       if (modelsRes?.ok) {
         setModelOptions(extractModelOptions(modelsRes));
@@ -477,6 +1075,7 @@ export default function Workflows() {
   };
 
   const resetTemplateDraft = () => {
+    const defaultDefinition = JSON.parse(DEFAULT_TEMPLATE_JSON);
     setSelectedTemplateId('');
     setTemplateDraft({
       id: '',
@@ -490,9 +1089,10 @@ export default function Workflows() {
         progressMode: settings.progressMode,
         tone: settings.tone,
       },
-      definition: { nodes: [], edges: [] },
+      definition: defaultDefinition,
     });
-    setTemplateDefinitionText(DEFAULT_TEMPLATE_JSON);
+    setTemplateDefinitionText(JSON.stringify(defaultDefinition, null, 2));
+    setSelectedTemplateNodeId(normalizeTemplateNodes(defaultDefinition)[0]?.id || '');
   };
 
   const saveSettings = async () => {
@@ -602,12 +1202,22 @@ export default function Workflows() {
     }
     setBusyAction('start');
     try {
-      const response = await api.startWorkflowRun(templateId, { input: runInput });
+      const payload = {
+        input: runInput,
+        channelId: manualRunTarget.channelId.trim() || undefined,
+        conversationId: manualRunTarget.conversationId.trim() || undefined,
+        userId: manualRunTarget.userId.trim() || undefined,
+        sourceMessage: manualRunTarget.sourceMessage.trim() || undefined,
+      };
+      const response = await api.startWorkflowRun(templateId, payload);
       if (response?.ok && response.run?.id) {
         pushMessage('工作流已启动');
         await loadRuns();
         setSelectedRunId(response.run.id);
         setRunInput('');
+        setManualRunTarget(DEFAULT_MANUAL_RUN_TARGET);
+        setSelectedRecentTargetKey('');
+        setShowManualTargetFields(false);
       } else {
         pushMessage(response?.error || '启动工作流失败');
       }
@@ -872,7 +1482,7 @@ export default function Workflows() {
                   <input type="checkbox" checked={settings.autoCreateRuns} onChange={e => setSettings(prev => ({ ...prev, autoCreateRuns: e.target.checked }))} />
                 </label>
                 <label className="page-modern-panel flex items-center justify-between px-4 py-3 text-sm">
-                  <span>同步推送进度到中心</span>
+                  <span>回写进度到原会话</span>
                   <input type="checkbox" checked={settings.pushProgress} onChange={e => setSettings(prev => ({ ...prev, pushProgress: e.target.checked }))} />
                 </label>
               </div>
@@ -960,10 +1570,209 @@ export default function Workflows() {
                     <textarea value={templateDraft.description || ''} onChange={e => setTemplateDraft(prev => ({ ...prev, description: e.target.value }))} rows={3} className="page-modern-control w-full" placeholder="描述这个工作流适合处理什么任务。" />
                   </label>
 
-                  <label className="space-y-2 text-sm block">
-                    <span>模板定义 JSON</span>
-                    <textarea value={templateDefinitionText} onChange={e => setTemplateDefinitionText(e.target.value)} rows={16} className="page-modern-control w-full font-mono text-xs" />
-                  </label>
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900 dark:text-white">流程设计</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">默认使用可拖拽画布编辑节点顺序和字段，JSON 保留给高级模式。</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setTemplateEditorMode('visual')}
+                          className={`px-3 py-1.5 text-xs rounded-xl border transition-colors ${templateEditorMode === 'visual' ? 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800/40 dark:bg-blue-950/20 dark:text-blue-300' : 'border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-400'}`}
+                        >
+                          可视化
+                        </button>
+                        <button
+                          onClick={() => setTemplateEditorMode('json')}
+                          className={`px-3 py-1.5 text-xs rounded-xl border transition-colors ${templateEditorMode === 'json' ? 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800/40 dark:bg-blue-950/20 dark:text-blue-300' : 'border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-400'}`}
+                        >
+                          JSON
+                        </button>
+                      </div>
+                    </div>
+
+                    {templateEditorMode === 'visual' ? (
+                      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.2fr)_360px] gap-4">
+                        <div className="rounded-3xl border border-slate-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(241,245,249,0.92))] p-4 shadow-sm dark:border-slate-800/70 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.94))]">
+                          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <div className="text-sm font-semibold text-slate-900 dark:text-white">工作流画布</div>
+                              <div className="text-xs text-slate-500 dark:text-slate-400">拖拽节点可以直接调整步骤顺序，线条按执行顺序自动重排。</div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button onClick={() => addTemplateNode('ai_task')} className="page-modern-action px-3 py-1.5 text-xs flex items-center gap-1.5"><Plus size={12} />AI 步骤</button>
+                              <button onClick={() => addTemplateNode('wait_user')} className="page-modern-action px-3 py-1.5 text-xs flex items-center gap-1.5"><Plus size={12} />等待</button>
+                              <button onClick={() => addTemplateNode('image_generate')} className="page-modern-action px-3 py-1.5 text-xs flex items-center gap-1.5"><ImageIcon size={12} />图片</button>
+                              <button onClick={() => addTemplateNode('end')} className="page-modern-action px-3 py-1.5 text-xs flex items-center gap-1.5"><Plus size={12} />结束</button>
+                              <button onClick={autoLayoutTemplateNodes} className="page-modern-action px-3 py-1.5 text-xs flex items-center gap-1.5"><PencilRuler size={12} />自动整理</button>
+                            </div>
+                          </div>
+                          <div className="h-[620px] overflow-hidden rounded-2xl border border-slate-200/70 bg-white/70 dark:border-slate-800/70 dark:bg-slate-950/50">
+                            <ReactFlow
+                              nodes={graphNodes}
+                              edges={graphEdges}
+                              nodeTypes={workflowNodeTypes}
+                              onNodesChange={onGraphNodesChange}
+                              onEdgesChange={onGraphEdgesChange}
+                              onNodeClick={(_, node) => setSelectedTemplateNodeId(node.id)}
+                              onNodeDragStop={(_, node) => saveTemplateNodePosition(node.id, node.position)}
+                              fitView
+                              fitViewOptions={{ padding: 0.18 }}
+                              proOptions={{ hideAttribution: true }}
+                              nodesDraggable
+                              nodesConnectable={false}
+                              elementsSelectable
+                              panOnDrag
+                            >
+                              <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#cbd5e1" className="dark:!bg-slate-950 !bg-slate-50" />
+                              <Controls position="bottom-right" className="!rounded-lg !border-slate-200 dark:!border-slate-700 !shadow-sm [&>button]:!rounded-md [&>button]:!border-slate-200 dark:[&>button]:!border-slate-600 dark:[&>button]:!bg-slate-800 dark:[&>button]:!text-slate-300" />
+                              <MiniMap pannable zoomable className="!rounded-xl !border !border-slate-200 dark:!border-slate-700 !bg-white/90 dark:!bg-slate-900/90" />
+                            </ReactFlow>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="rounded-3xl border border-slate-200/70 bg-white/90 p-5 shadow-sm dark:border-slate-800/70 dark:bg-slate-950/60">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className="text-sm font-semibold text-slate-900 dark:text-white">节点属性</div>
+                                <div className="text-xs text-slate-500 dark:text-slate-400">点击画布上的节点即可编辑。</div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button onClick={duplicateSelectedTemplateNode} disabled={!selectedTemplateNode} className="page-modern-action px-2.5 py-1.5 text-xs flex items-center gap-1.5 disabled:opacity-40"><Copy size={12} />复制</button>
+                                <button onClick={removeSelectedTemplateNode} disabled={!selectedTemplateNode || templateNodes.length <= 1} className="page-modern-danger px-2.5 py-1.5 text-xs flex items-center gap-1.5 disabled:opacity-40"><XCircle size={12} />删除</button>
+                              </div>
+                            </div>
+
+                            {!selectedTemplateNode ? (
+                              <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-10 text-center text-sm text-slate-400 dark:bg-slate-900/60">
+                                选择一个节点后，这里会显示详细配置。
+                              </div>
+                            ) : (
+                              <div className="mt-4 space-y-3">
+                                <div className="grid grid-cols-1 gap-3">
+                                  <label className="space-y-2 text-sm">
+                                    <span>步骤标题</span>
+                                    <input value={selectedTemplateNode.title || ''} onChange={e => updateSelectedTemplateNode({ title: e.target.value })} className="page-modern-control w-full" placeholder="例如：生成海报图片" />
+                                  </label>
+                                  <label className="space-y-2 text-sm">
+                                    <span>步骤 ID</span>
+                                    <input value={selectedTemplateNode.id || ''} onChange={e => updateSelectedTemplateNode({ id: sanitizeStepKey(e.target.value, selectedTemplateNode.id) })} className="page-modern-control w-full font-mono text-xs" />
+                                  </label>
+                                  <label className="space-y-2 text-sm">
+                                    <span>步骤类型</span>
+                                    <select value={selectedTemplateNode.type || 'ai_task'} onChange={e => updateSelectedTemplateNode({ type: e.target.value })} className="page-modern-control w-full">
+                                      {STEP_TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                    </select>
+                                  </label>
+                                  <label className="space-y-2 text-sm">
+                                    <span>技能</span>
+                                    <input value={selectedTemplateNode.skill || 'none'} onChange={e => updateSelectedTemplateNode({ skill: e.target.value || 'none' })} className="page-modern-control w-full" placeholder="none / poster-gemini-image / 其他技能" />
+                                  </label>
+                                </div>
+
+                                {['input', 'wait_user'].includes(selectedTemplateNode.type) && (
+                                  <>
+                                    <label className="space-y-2 text-sm block">
+                                      <span>提问内容</span>
+                                      <textarea value={selectedTemplateNode.question || ''} onChange={e => updateSelectedTemplateNode({ question: e.target.value })} rows={5} className="page-modern-control w-full" placeholder="用户会在这里收到的问题或补充提示。" />
+                                    </label>
+                                    <label className="space-y-2 text-sm block">
+                                      <span>必填字段</span>
+                                      <input
+                                        value={Array.isArray(selectedTemplateNode.requiredFields) ? selectedTemplateNode.requiredFields.join('，') : ''}
+                                        onChange={e => updateSelectedTemplateNode({ requiredFields: e.target.value.split(/[,，]/).map(item => item.trim()).filter(Boolean) })}
+                                        className="page-modern-control w-full"
+                                        placeholder="用逗号分隔，例如：活动名称，举办时间，地点"
+                                      />
+                                    </label>
+                                  </>
+                                )}
+
+                                {['ai_plan', 'ai_task', 'publish', 'summary', 'image_generate'].includes(selectedTemplateNode.type) && (
+                                  <>
+                                    <label className="space-y-2 text-sm block">
+                                      <span>{selectedTemplateNode.type === 'image_generate' ? '补充说明 / 提示' : '执行指令'}</span>
+                                      <textarea value={selectedTemplateNode.instruction || ''} onChange={e => updateSelectedTemplateNode({ instruction: e.target.value })} rows={5} className="page-modern-control w-full" placeholder={selectedTemplateNode.type === 'image_generate' ? '可选。给图片步骤补充说明，真正提示词可从前一步产物提取。' : '告诉模型这一步要输出什么。'} />
+                                    </label>
+                                    <div className="grid grid-cols-1 gap-3">
+                                      <label className="space-y-2 text-sm">
+                                        <span>输出文件</span>
+                                        <input value={selectedTemplateNode.outputFile || ''} onChange={e => updateSelectedTemplateNode({ outputFile: e.target.value })} className="page-modern-control w-full" placeholder="例如：05-活动海报.png" />
+                                      </label>
+                                      <label className="space-y-2 text-sm">
+                                        <span>产物名称</span>
+                                        <input value={selectedTemplateNode.artifactName || ''} onChange={e => updateSelectedTemplateNode({ artifactName: e.target.value })} className="page-modern-control w-full" placeholder="用户在面板里看到的名称" />
+                                      </label>
+                                    </div>
+                                  </>
+                                )}
+
+                                {['ai_plan', 'ai_task', 'publish', 'summary'].includes(selectedTemplateNode.type) && (
+                                  <label className="space-y-2 text-sm">
+                                    <span>输出格式</span>
+                                    <select value={selectedTemplateNode.outputFormat || 'markdown'} onChange={e => updateSelectedTemplateNode({ outputFormat: e.target.value })} className="page-modern-control w-full">
+                                      <option value="markdown">markdown</option>
+                                      <option value="text">text</option>
+                                      <option value="json">json</option>
+                                    </select>
+                                  </label>
+                                )}
+
+                                {selectedTemplateNode.type === 'image_generate' && (
+                                  <>
+                                    <div className="grid grid-cols-1 gap-3">
+                                      <label className="space-y-2 text-sm">
+                                        <span>提示词来源步骤</span>
+                                        <input value={selectedTemplateNode.promptStepKey || ''} onChange={e => updateSelectedTemplateNode({ promptStepKey: e.target.value })} className="page-modern-control w-full" placeholder="例如：poster_copy" />
+                                      </label>
+                                      <label className="space-y-2 text-sm">
+                                        <span>模型</span>
+                                        <input value={selectedTemplateNode.model || ''} onChange={e => updateSelectedTemplateNode({ model: e.target.value })} className="page-modern-control w-full" placeholder="例如：gemini-2.5-flash-image" />
+                                      </label>
+                                      <label className="space-y-2 text-sm">
+                                        <span>Provider ID</span>
+                                        <input value={selectedTemplateNode.providerId || ''} onChange={e => updateSelectedTemplateNode({ providerId: e.target.value })} className="page-modern-control w-full" placeholder="例如：chipcloud" />
+                                      </label>
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-2">
+                                      <label className="page-modern-panel flex items-center justify-between px-4 py-3 text-sm">
+                                        <span>标记为最终产物</span>
+                                        <input type="checkbox" checked={Boolean(selectedTemplateNode.isFinalOutput)} onChange={e => updateSelectedTemplateNode({ isFinalOutput: e.target.checked })} />
+                                      </label>
+                                      <label className="page-modern-panel flex items-center justify-between px-4 py-3 text-sm">
+                                        <span>步骤完成后直接回传用户</span>
+                                        <input type="checkbox" checked={Boolean(selectedTemplateNode.sendToUser)} onChange={e => updateSelectedTemplateNode({ sendToUser: e.target.checked })} />
+                                      </label>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="rounded-3xl border border-slate-200/70 bg-slate-50/80 p-4 text-xs text-slate-500 shadow-sm dark:border-slate-800/70 dark:bg-slate-900/50 dark:text-slate-400">
+                            <div className="flex items-center gap-2 text-slate-700 dark:text-slate-200">
+                              <PencilRuler size={14} />
+                              <span className="font-semibold">编辑提示</span>
+                            </div>
+                            <div className="mt-2 leading-6">
+                              1. 拖拽节点调整顺序，连线会自动按顺序重排。<br />
+                              2. `image_generate` 适合接在文案/提示词步骤后面，常配 `promptStepKey`。<br />
+                              3. 需要回传图片时，勾选“步骤完成后直接回传用户”。
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="space-y-2 text-sm block">
+                        <span>模板定义 JSON</span>
+                        <textarea value={templateDefinitionText} onChange={e => setTemplateDefinitionText(e.target.value)} rows={20} className="page-modern-control w-full font-mono text-xs" />
+                        {!parsedTemplateDefinition && <div className="text-xs text-red-500">当前 JSON 格式不正确，可视化编辑已暂时禁用，修正后会自动恢复。</div>}
+                      </label>
+                    )}
+                  </div>
 
                   <div className="flex flex-wrap gap-3">
                     <button onClick={saveTemplate} disabled={saving} className="page-modern-accent px-4 py-2 text-sm disabled:opacity-60 flex items-center gap-2">
@@ -994,6 +1803,126 @@ export default function Workflows() {
                       <h4 className="font-semibold">快速启动</h4>
                     </div>
                     <textarea value={runInput} onChange={e => setRunInput(e.target.value)} rows={5} className="page-modern-control w-full" placeholder="给当前模板补充一次运行输入，例如任务目标、上下文、交付要求。" />
+                    <div className="rounded-2xl border border-slate-200/70 px-4 py-4 dark:border-slate-800/70">
+                      <div className="text-sm font-semibold text-slate-900 dark:text-white">启动上下文</div>
+                      <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                        {isOpenClawWeixinChannel(manualRunTarget.channelId)
+                          ? '微信通道会优先使用当前已登录账号绑定的微信用户；只有多账号或特殊路由时才需要展开高级字段。'
+                          : '留空时仅在面板内运行；填写后会把当前实例绑定到指定通道 / 会话 / 用户，后续等待用户、进度回写、文件回传都会尝试回到这个目标。'}
+                      </p>
+                      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <label className="space-y-2 text-sm">
+                          <span>通道</span>
+                          <select
+                            value={manualRunTarget.channelId}
+                            onChange={e => {
+                              const nextChannelId = e.target.value;
+                              const onlyWeixinAccount = nextChannelId === 'openclaw-weixin' && configuredWeixinAccounts.length === 1
+                                ? configuredWeixinAccounts[0]
+                                : null;
+                              setManualRunTarget(prev => ({
+                                ...prev,
+                                channelId: nextChannelId,
+                                conversationId: onlyWeixinAccount?.accountId || '',
+                                userId: onlyWeixinAccount?.userId || '',
+                              }));
+                              setSelectedRecentTargetKey(onlyWeixinAccount ? `openclaw-weixin:${onlyWeixinAccount.accountId}:${onlyWeixinAccount.userId || ''}` : '');
+                              setShowManualTargetFields(false);
+                            }}
+                            className="page-modern-control w-full"
+                          >
+                            <option value="">仅面板内运行</option>
+                            {enabledChannels.map(option => (
+                              <option key={option.id} value={option.id}>{option.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        {manualRunTarget.channelId && (
+                          <label className="space-y-2 text-sm md:col-span-2">
+                            <span>{isOpenClawWeixinChannel(manualRunTarget.channelId) ? '微信用户目标' : '会话目标'}</span>
+                            {targetOptionsForSelectedChannel.length > 0 ? (
+                              <select
+                                value={selectedRecentTargetKey}
+                                onChange={e => {
+                                  const nextKey = e.target.value;
+                                  setSelectedRecentTargetKey(nextKey);
+                                  if (!nextKey) {
+                                    setManualRunTarget(prev => ({ ...prev, conversationId: '', userId: '' }));
+                                    return;
+                                  }
+                                  const selected = targetOptionsForSelectedChannel.find(item => item.key === nextKey);
+                                  if (selected) {
+                                    setManualRunTarget(prev => ({
+                                      ...prev,
+                                      conversationId: selected.conversationId,
+                                      userId: selected.userId,
+                                    }));
+                                  }
+                                }}
+                                className="page-modern-control w-full"
+                              >
+                                <option value="">{isOpenClawWeixinChannel(manualRunTarget.channelId) ? '选择当前已绑定的微信用户' : '选择最近使用过的会话目标'}</option>
+                                {targetOptionsForSelectedChannel.map(option => (
+                                  <option key={option.key} value={option.key}>
+                                    {option.meta ? `${option.label} · ${option.meta}` : option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <div className="rounded-2xl bg-slate-50 px-3 py-3 text-xs text-slate-500 dark:bg-slate-900/60 dark:text-slate-400">
+                                {isOpenClawWeixinChannel(manualRunTarget.channelId)
+                                  ? '当前没有可用的微信账号目标。请先在通道管理里完成微信登录并让目标用户建立会话。'
+                                  : '当前这个通道还没有可复用的历史会话目标。'}
+                              </div>
+                            )}
+                          </label>
+                        )}
+                        {manualRunTarget.channelId && (
+                          <div className="md:col-span-2 flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-3 text-xs text-slate-500 dark:bg-slate-900/60 dark:text-slate-400">
+                            <span>{isOpenClawWeixinChannel(manualRunTarget.channelId) ? '默认直接选当前微信用户。只有多账号或排查问题时，才需要手动填写微信账号 / 用户 ID。' : '默认只显示可选目标。确实没有目标可选时，再手动填写底层 ID。'}</span>
+                            <button
+                              type="button"
+                              onClick={() => setShowManualTargetFields(prev => !prev)}
+                              className="page-modern-action px-3 py-1.5 text-[11px]"
+                            >
+                              {showManualTargetFields ? '收起手动填写' : '手动填写'}
+                            </button>
+                          </div>
+                        )}
+                        {showManualTargetFields && manualRunTarget.channelId && (
+                          <>
+                            <label className="space-y-2 text-sm">
+                              <span>{isOpenClawWeixinChannel(manualRunTarget.channelId) ? '微信用户 ID' : '用户 ID'}</span>
+                              <input
+                                value={manualRunTarget.userId}
+                                onChange={e => setManualRunTarget(prev => ({ ...prev, userId: e.target.value }))}
+                                className="page-modern-control w-full"
+                                placeholder={isOpenClawWeixinChannel(manualRunTarget.channelId) ? '例如 oxxxx@im.wechat' : '例如 QQ 私聊用户 ID、飞书 open_id'}
+                              />
+                            </label>
+                            <label className="space-y-2 text-sm md:col-span-2">
+                              <span>{isOpenClawWeixinChannel(manualRunTarget.channelId) ? '微信账号 ID（高级）' : '会话 ID'}</span>
+                              <input
+                                value={manualRunTarget.conversationId}
+                                onChange={e => setManualRunTarget(prev => ({ ...prev, conversationId: e.target.value }))}
+                                className="page-modern-control w-full"
+                                placeholder={isOpenClawWeixinChannel(manualRunTarget.channelId) ? '留空时默认使用唯一已登录账号；多账号时可填写 accountId' : '例如 qq:group:123456、qq:private:10001、飞书 chat_id、企微 responseUrl'}
+                              />
+                            </label>
+                          </>
+                        )}
+                        <label className="space-y-2 text-sm md:col-span-2">
+                          <span>来源消息</span>
+                          <textarea
+                            value={manualRunTarget.sourceMessage}
+                            onChange={e => setManualRunTarget(prev => ({ ...prev, sourceMessage: e.target.value }))}
+                            rows={3}
+                            className="page-modern-control w-full"
+                            placeholder="可选。用于记录这次启动对应的原始需求或要回写给原会话的来源消息。"
+                          />
+                        </label>
+                      </div>
+                    </div>
                     <button onClick={startRun} disabled={busyAction === 'start'} className="page-modern-accent w-full justify-center px-4 py-2 text-sm disabled:opacity-60 flex items-center gap-2">
                       {busyAction === 'start' ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}启动当前模板
                     </button>

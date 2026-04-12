@@ -10,6 +10,53 @@ import type { LogEntry } from '../hooks/useWebSocket';
 import { useI18n } from '../i18n';
 import { resolveOpenClawRuntime } from '../lib/openclawRuntime';
 
+const DISPLAY_CHANNEL_IDS = new Set([
+  'qq', 'wechat', 'whatsapp', 'telegram', 'discord', 'irc', 'slack', 'signal', 'googlechat',
+  'bluebubbles', 'imessage', 'webchat', 'feishu', 'qqbot', 'dingtalk', 'wecom', 'wecom-app',
+  'msteams', 'mattermost', 'line', 'matrix', 'nextcloud-talk', 'nostr', 'qa-channel',
+  'synology-chat', 'tlon', 'twitch', 'voice-call', 'zalo', 'zalouser', 'openclaw-weixin',
+]);
+
+interface SessionActivityItem {
+  agentId?: string;
+  sessionId: string;
+  lastChannel?: string;
+  updatedAt: number;
+  originLabel?: string;
+  originProvider?: string;
+  lastTo?: string;
+  messageCount?: number;
+  chatType?: string;
+  recentMessages?: Array<{ id?: string; role?: string; content?: string; timestamp?: string }>;
+}
+
+interface RecentFeedItem {
+  id: string;
+  time: number;
+  source: string;
+  summary: string;
+  detail: string;
+  synthetic?: boolean;
+}
+
+interface TaskPressureSummary {
+  total?: number;
+  active?: number;
+  failures?: number;
+  visible?: number;
+  byStatus?: Record<string, number>;
+  byRuntime?: Record<string, number>;
+  focusTask?: {
+    taskId?: string;
+    label?: string;
+    task?: string;
+    status?: string;
+    progressSummary?: string;
+    terminalSummary?: string;
+    error?: string;
+  };
+}
+
 interface DashboardProps {
   logEntries: LogEntry[];
   refreshLog: () => void;
@@ -23,16 +70,36 @@ function DashboardPage({ logEntries, refreshLog }: DashboardProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const logRef = useRef<HTMLDivElement>(null);
+  const [sessionActivity, setSessionActivity] = useState<SessionActivityItem[]>([]);
 
   useEffect(() => {
     api.getStatus().then(r => { if (r.ok) setStatus(r); });
-    const t = setInterval(() => { api.getStatus().then(r => { if (r.ok) setStatus(r); }); }, 10000);
-    return () => clearInterval(t);
+    const poll = () => { if (!document.hidden) api.getStatus().then(r => { if (r.ok) setStatus(r); }); };
+    const t = setInterval(poll, 10000);
+    // Resume immediately when tab becomes visible again
+    const onVisible = () => { if (!document.hidden) poll(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVisible); };
+  }, []);
+
+  useEffect(() => {
+    const loadSessionActivity = () => {
+      if (document.hidden) return;
+      api.getSessions('all').then(r => {
+        if (!r.ok || !Array.isArray(r.sessions)) return;
+        setSessionActivity(dedupeSessionActivity(r.sessions as SessionActivityItem[]).slice(0, 100));
+      }).catch(() => {});
+    };
+    loadSessionActivity();
+    const t = setInterval(loadSessionActivity, 10000);
+    const onVisible = () => { if (!document.hidden) loadSessionActivity(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVisible); };
   }, []);
 
   useEffect(() => {
     if (autoScroll && logRef.current) logRef.current.scrollTop = 0;
-  }, [logEntries.length, autoScroll]);
+  }, [sessionActivity.length, logEntries.length, autoScroll]);
 
   const nc = status?.napcat || {};
   const wc = status?.wechat || {};
@@ -41,6 +108,7 @@ function DashboardPage({ logEntries, refreshLog }: DashboardProps) {
   const gateway = status?.gateway || {};
   const proc = status?.process || {};
   const adm = status?.admin || {};
+  const taskPressure: TaskPressureSummary = oc.taskPressure || {};
   const runtime = resolveOpenClawRuntime(oc, proc, gateway);
   const runtimeTone = !oc.configured
     ? 'amber'
@@ -50,21 +118,20 @@ function DashboardPage({ logEntries, refreshLog }: DashboardProps) {
         ? 'red'
         : 'amber';
 
-  const filteredLogs = useMemo(
-    () => logEntries.filter(entry => !isNoiseEvent(entry)),
-    [logEntries],
-  );
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayLogs = filteredLogs.filter(entry => entry.time >= todayStart.getTime());
-  const messageLogs = todayLogs.filter(entry => entry.source !== 'system');
-  const messageLogCount = messageLogs.length;
-  const inboundCount = messageLogs.filter(entry => entry.source === 'qq' || entry.source === 'wechat').length;
-  const botCount = messageLogs.filter(entry => entry.source === 'openclaw').length;
-  const getExpandableContent = (entry: LogEntry) => entry.detail?.trim() || entry.summary?.trim() || '';
+  const filteredLogs = useMemo(() => logEntries.filter(entry => !isNoiseEvent(entry)), [logEntries]);
+  const messageLogCount = sessionActivity.reduce((sum, item) => sum + (item.messageCount || 0), 0);
+  const inboundCount = sessionActivity.length;
+  const botCount = sessionActivity.filter(item => (item.messageCount || 0) > 1).length;
+  const recentFeed = useMemo(() => buildRecentFeed(filteredLogs, sessionActivity).slice(0, 100), [filteredLogs, sessionActivity]);
+  const getExpandableContent = (entry: RecentFeedItem) => entry.detail?.trim() || entry.summary?.trim() || '';
 
   // Build connected channels dynamically from enabledChannels returned by /api/status
-  const enabledChannels: { id: string; label: string; type: string }[] = oc.enabledChannels || [];
+  const enabledChannels: { id: string; label: string; type: string }[] = (oc.enabledChannels || [])
+    .map((ch: { id: string; label: string; type: string }) => ({
+      ...ch,
+      id: ch.id === 'qqbot-community' ? 'qqbot' : ch.id,
+    }))
+    .filter((ch: { id: string }) => DISPLAY_CHANNEL_IDS.has(ch.id));
   const connectedChannels: { name: string; status: string; details: { label: string; value: string }[] }[] = [];
 
   for (const ch of enabledChannels) {
@@ -103,13 +170,51 @@ function DashboardPage({ logEntries, refreshLog }: DashboardProps) {
     }
   }
 
+  const liveChannelCount = connectedChannels.filter((channel) => channel.status !== t.common.notLoggedIn).length;
+  const queuedTasks = Number(taskPressure.byStatus?.queued || 0);
+  const runningTasks = Number(taskPressure.byStatus?.running || 0);
+  const taskIssues = Number(taskPressure.failures || 0);
+  const taskFocusTitle = taskPressure.focusTask?.label || taskPressure.focusTask?.task || '';
+  const taskFocusDetail = taskPressure.focusTask?.error || taskPressure.focusTask?.progressSummary || taskPressure.focusTask?.terminalSummary || '';
+
   const [installingOC, setInstallingOC] = useState(false);
+  const [installOpenClawMsg, setInstallOpenClawMsg] = useState('');
+  const [installOpenClawErr, setInstallOpenClawErr] = useState('');
+
+  const pollOpenClawReady = async () => {
+    for (let i = 0; i < 12; i += 1) {
+      await new Promise(resolve => window.setTimeout(resolve, 5000));
+      try {
+        const r = await api.getStatus();
+        if (r?.ok) {
+          setStatus(r);
+          if (r?.openclaw?.configured) {
+            setInstallOpenClawMsg('OpenClaw 已检测到，面板状态已自动刷新。');
+            setInstallOpenClawErr('');
+            return;
+          }
+        }
+      } catch {
+        // ignore transient polling errors
+      }
+    }
+  };
+
   const handleInstallOpenClaw = async () => {
     setInstallingOC(true);
+    setInstallOpenClawMsg('');
+    setInstallOpenClawErr('');
     try {
       const r = await api.installSoftware('openclaw');
-      if (!r.ok) console.error(r.error);
-    } catch {}
+      if (!r?.ok) {
+        setInstallOpenClawErr(r?.error || 'OpenClaw 安装任务创建失败');
+        return;
+      }
+      setInstallOpenClawMsg(r?.message || 'OpenClaw 安装任务已创建，请在右上角消息中心查看实时进度。安装完成后会自动重新检测。');
+      void pollOpenClawReady();
+    } catch {
+      setInstallOpenClawErr('OpenClaw 安装请求失败，请检查网络或稍后重试');
+    }
     finally { setInstallingOC(false); }
   };
 
@@ -128,6 +233,8 @@ function DashboardPage({ logEntries, refreshLog }: DashboardProps) {
                 ? '当前 Lite 版本应自带 OpenClaw。若这里仍显示未就绪，请检查 Lite runtime 是否完整解压，或重新安装 Lite 包。'
                 : 'ClawPanel 需要 OpenClaw AI 引擎才能正常工作。安装后即可配置模型、管理技能和连接通道。'}
             </p>
+            {installOpenClawMsg && <p className="text-xs text-emerald-600 dark:text-emerald-300 mt-3 max-w-md mx-auto">{installOpenClawMsg}</p>}
+            {installOpenClawErr && <p className="text-xs text-red-600 dark:text-red-300 mt-3 max-w-md mx-auto">{installOpenClawErr}</p>}
           </div>
           {!isLiteEdition && (
             <>
@@ -181,6 +288,10 @@ function DashboardPage({ logEntries, refreshLog }: DashboardProps) {
           sub={gateway.running ? '消息链路可用' : '建议重启网关'}
           color={gateway.running ? 'text-blue-600' : 'text-amber-600'}
           bg={gateway.running ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-amber-50 dark:bg-amber-900/20'} modern={modern} />
+        <StatCard icon={Clock} label="后台任务" value={`${queuedTasks + runningTasks}`} unit="个"
+          sub={taskIssues > 0 ? `${taskIssues} 个异常` : `${queuedTasks} 排队 · ${runningTasks} 运行中`}
+          color={taskIssues > 0 ? 'text-red-600' : (queuedTasks + runningTasks) > 0 ? 'text-amber-600' : 'text-emerald-600'}
+          bg={taskIssues > 0 ? 'bg-red-50 dark:bg-red-900/20' : (queuedTasks + runningTasks) > 0 ? 'bg-amber-50 dark:bg-amber-900/20' : 'bg-emerald-50 dark:bg-emerald-900/20'} modern={modern} />
         <StatCard icon={Radio} label={t.dashboard.activeChannels} value={`${connectedChannels.length}`} unit={t.dashboard.channelUnit || undefined}
           sub={connectedChannels.length > 0 ? connectedChannels.map(c => c.name).join(', ') : t.dashboard.noChannels}
           color="text-emerald-600" bg="bg-emerald-50 dark:bg-emerald-900/20" modern={modern} />
@@ -193,10 +304,35 @@ function DashboardPage({ logEntries, refreshLog }: DashboardProps) {
         <StatCard icon={TrendingUp} label={t.dashboard.todayMessages} value={`${messageLogCount}`} unit={t.dashboard.msgUnit || undefined}
           sub={`${t.dashboard.received} ${inboundCount} / ${t.dashboard.sent} ${botCount}`} color="text-amber-600" bg="bg-amber-50 dark:bg-amber-900/20" modern={modern} />
         {modern && (
-          <StatCard icon={Users} label={t.dashboard.connectedChannels} value={`${connectedChannels.filter(c => c.status === t.common.connected).length}`} unit={t.dashboard.channelUnit || undefined}
+          <StatCard icon={Users} label={t.dashboard.connectedChannels} value={`${liveChannelCount}`} unit={t.dashboard.channelUnit || undefined}
             sub={connectedChannels.length > 0 ? 'Live status' : t.dashboard.noChannels} color="text-indigo-600" bg="bg-indigo-50 dark:bg-indigo-900/20" modern={modern} />
         )}
       </div>
+
+      {oc.configured && (queuedTasks + runningTasks > 0 || taskIssues > 0 || taskFocusTitle) && (
+        <div className={`${modern ? 'rounded-[28px] border border-white/60 dark:border-slate-700/50 bg-[linear-gradient(145deg,rgba(255,255,255,0.84),rgba(248,250,252,0.7))] dark:bg-[linear-gradient(145deg,rgba(15,23,42,0.92),rgba(51,65,85,0.22))] backdrop-blur-xl shadow-[0_22px_48px_rgba(15,23,42,0.06)]' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50'} p-5`}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white">OpenClaw 后台任务</h3>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {queuedTasks} 排队 · {runningTasks} 运行中 · {taskIssues} 异常
+              </p>
+            </div>
+            <button
+              onClick={() => window.location.assign('/tasks')}
+              className={`${modern ? 'page-modern-action px-3 py-1.5 text-xs' : 'px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors'}`}
+            >
+              查看任务账本
+            </button>
+          </div>
+          {taskFocusTitle && (
+            <div className="mt-4 rounded-2xl border border-slate-200/70 dark:border-slate-700/60 bg-white/70 dark:bg-slate-900/30 px-4 py-3">
+              <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">{taskFocusTitle}</div>
+              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{taskFocusDetail || '当前有后台任务活动，详细信息见任务账本。'}</div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Connected channel cards — only show connected */}
       {connectedChannels.length > 0 && (
@@ -240,7 +376,7 @@ function DashboardPage({ logEntries, refreshLog }: DashboardProps) {
               <h3 className="font-bold text-sm text-gray-900 dark:text-white">{t.dashboard.recentActivity}</h3>
               <div className="flex items-center gap-2 mt-1">
                 <p className="text-[10px] text-gray-500">{t.dashboard.realtimeLog}</p>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold border border-blue-100/80 bg-blue-50/80 text-blue-600 dark:border-blue-800/40 dark:bg-blue-900/20 dark:text-blue-300">{filteredLogs.length}</span>
+                 <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold border border-blue-100/80 bg-blue-50/80 text-blue-600 dark:border-blue-800/40 dark:bg-blue-900/20 dark:text-blue-300">{recentFeed.length}</span>
               </div>
             </div>
           </div>
@@ -256,13 +392,13 @@ function DashboardPage({ logEntries, refreshLog }: DashboardProps) {
           </div>
         </div>
         <div ref={logRef} className="flex-1 overflow-y-auto min-h-0 p-2 space-y-0.5">
-          {filteredLogs.length === 0 && (
+          {recentFeed.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-2">
               <Clock size={32} className="opacity-20" />
               <p className="text-xs">{t.dashboard.noActivity}</p>
             </div>
           )}
-          {filteredLogs.slice(0, 100).map((entry) => (
+          {recentFeed.map((entry) => (
             <div key={entry.id} className="group">
               <div
                 className={`flex items-start gap-3 py-2.5 px-3.5 rounded-xl transition-all duration-200 text-xs border border-transparent
@@ -326,9 +462,17 @@ function StatCard({ icon: Icon, label, value, unit, color, bg, sub, modern }: { 
 function sourceColor(s: string) {
   switch (s) {
     case 'qq': return 'bg-blue-100/90 border-blue-100 text-blue-700 dark:bg-blue-900/25 dark:border-blue-800/40 dark:text-blue-300';
+    case 'qqbot': return 'bg-indigo-100/90 border-indigo-100 text-indigo-700 dark:bg-indigo-900/25 dark:border-indigo-800/40 dark:text-indigo-300';
+    case 'wecom': return 'bg-emerald-100/90 border-emerald-100 text-emerald-700 dark:bg-emerald-900/25 dark:border-emerald-800/40 dark:text-emerald-300';
+    case 'feishu': return 'bg-cyan-100/90 border-cyan-100 text-cyan-700 dark:bg-cyan-900/25 dark:border-cyan-800/40 dark:text-cyan-300';
+    case 'telegram': return 'bg-sky-100/90 border-sky-100 text-sky-700 dark:bg-sky-900/25 dark:border-sky-800/40 dark:text-sky-300';
+    case 'discord': return 'bg-violet-100/90 border-violet-100 text-violet-700 dark:bg-violet-900/25 dark:border-violet-800/40 dark:text-violet-300';
+    case 'slack': return 'bg-pink-100/90 border-pink-100 text-pink-700 dark:bg-pink-900/25 dark:border-pink-800/40 dark:text-pink-300';
+    case 'line': return 'bg-green-100/90 border-green-100 text-green-700 dark:bg-green-900/25 dark:border-green-800/40 dark:text-green-300';
     case 'wechat': return 'bg-emerald-100/90 border-emerald-100 text-emerald-700 dark:bg-emerald-900/25 dark:border-emerald-800/40 dark:text-emerald-300';
     case 'system': return 'bg-slate-100/90 border-slate-200 text-slate-700 dark:bg-slate-800/70 dark:border-slate-700 dark:text-slate-300';
     case 'openclaw': return 'bg-sky-100/90 border-sky-100 text-sky-700 dark:bg-sky-900/25 dark:border-sky-800/40 dark:text-sky-300';
+    case 'workflow': return 'bg-amber-100/90 border-amber-100 text-amber-700 dark:bg-amber-900/25 dark:border-amber-800/40 dark:text-amber-300';
     default: return 'bg-slate-100/90 border-slate-200 text-slate-600';
   }
 }
@@ -336,9 +480,17 @@ function sourceColor(s: string) {
 function sourceLabel(s: string) {
   switch (s) {
     case 'qq': return 'QQ';
+    case 'qqbot': return 'QQBot';
+    case 'wecom': return '企微';
+    case 'feishu': return '飞书';
+    case 'telegram': return 'Telegram';
+    case 'discord': return 'Discord';
+    case 'slack': return 'Slack';
+    case 'line': return 'LINE';
     case 'wechat': return 'WeChat';
     case 'system': return 'SYS';
     case 'openclaw': return 'Bot';
+    case 'workflow': return 'Flow';
     default: return s;
   }
 }
@@ -353,12 +505,29 @@ function shortenModel(m: string) {
 
 function formatLogTime(ts: number) {
   const d = new Date(ts);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const now = new Date();
-  const isToday = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(d);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value || '00';
+  const nowParts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const isToday = get('year') === (nowParts.find((part) => part.type === 'year')?.value || '') &&
+    get('month') === (nowParts.find((part) => part.type === 'month')?.value || '') &&
+    get('day') === (nowParts.find((part) => part.type === 'day')?.value || '');
+  const time = `${get('hour')}:${get('minute')}:${get('second')}`;
   if (isToday) return time;
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${time}`;
+  return `${get('year')}-${get('month')}-${get('day')} ${time}`;
 }
 
 function formatUptime(s: number, t: any) {
@@ -370,6 +539,104 @@ function formatUptime(s: number, t: any) {
 
 function isNoiseEvent(entry: { source: string; type: string; summary: string }) {
   return entry.source === 'qq' && entry.type === 'notice.notify';
+}
+
+function dedupeSessionActivity(items: SessionActivityItem[]) {
+  const map = new Map<string, SessionActivityItem>();
+  items.forEach((item) => {
+    const key = `${item.agentId || 'main'}:${item.sessionId}`;
+    const current = map.get(key);
+    if (!current || (item.updatedAt || 0) > (current.updatedAt || 0)) {
+      map.set(key, item);
+    }
+  });
+  return Array.from(map.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+}
+
+function normalizeSessionChannel(raw: string) {
+  const channel = String(raw || '').trim().toLowerCase();
+  if (!channel) return 'agent';
+  if (channel === 'openclaw-weixin') return 'wechat';
+  if (channel === 'qqbot-community') return 'qqbot';
+  return channel;
+}
+
+function isSyntheticApprovalCallbackMessage(message: { role?: string; content?: string } | null | undefined) {
+  const text = String(message?.content || '').trim().toLowerCase();
+  if (!text) return false;
+  return (
+    text.includes('an async command the user already approved has completed') ||
+    text.includes('do not run the command again') ||
+    text.includes('exact completion details:') ||
+    text.includes('exec denied (') ||
+    text.includes('approval-timeout')
+  );
+}
+
+function buildRecentFeed(logs: LogEntry[], sessions: SessionActivityItem[]): RecentFeedItem[] {
+  const feed: RecentFeedItem[] = logs.map(entry => ({
+    id: String(entry.id),
+    time: entry.time,
+    source: entry.source,
+    summary: entry.summary,
+    detail: entry.detail || entry.summary || '',
+  }));
+
+  const normalizeForFingerprint = (text: string) => String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 180)
+    .toLowerCase();
+  const seenFingerprint = new Set(
+    feed.map(item => `${item.source}|${Math.floor(item.time / 5000)}|${normalizeForFingerprint(item.summary)}`),
+  );
+
+  sessions.forEach((session) => {
+    const key = `${session.agentId || 'main'}:${session.sessionId}`;
+    const channel = normalizeSessionChannel(session.lastChannel || session.originProvider || 'agent');
+    const recentMessages = Array.isArray(session.recentMessages) ? session.recentMessages : [];
+    if (recentMessages.length > 0) {
+      let skipNextAssistantReply = false;
+      recentMessages.forEach((msg, idx) => {
+        if (isSyntheticApprovalCallbackMessage(msg)) {
+          skipNextAssistantReply = true;
+          return;
+        }
+
+        const role = String(msg.role || 'user');
+        if (skipNextAssistantReply && role === 'assistant') {
+          skipNextAssistantReply = false;
+          return;
+        }
+        skipNextAssistantReply = false;
+
+        const ts = msg.timestamp ? new Date(msg.timestamp).getTime() : (session.updatedAt || 0) + idx;
+        const source = role === 'assistant' ? 'openclaw' : channel;
+        const content = String(msg.content || '').trim();
+        if (!content) return;
+        const fingerprint = `${source}|${Math.floor((Number.isFinite(ts) ? ts : (session.updatedAt || 0)) / 5000)}|${normalizeForFingerprint(content)}`;
+        if (seenFingerprint.has(fingerprint)) return;
+        seenFingerprint.add(fingerprint);
+        feed.push({
+          id: `session:${key}:${msg.id || idx}`,
+          time: Number.isFinite(ts) ? ts : (session.updatedAt || 0),
+          source,
+          summary: content,
+          detail: [
+            `通道: ${sourceLabel(channel)}`,
+            `智能体: ${session.agentId || 'main'}`,
+            `来源: ${session.originLabel || '-'}`,
+            `目标: ${session.lastTo || '-'}`,
+          ].join('\n'),
+          synthetic: true,
+        });
+      });
+      return;
+    }
+    if (channel === 'agent') return;
+  });
+
+  return feed.sort((a, b) => b.time - a.time);
 }
 
 export default memo(DashboardPage);

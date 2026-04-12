@@ -23,7 +23,7 @@ func newEditionConfig(edition string) editionConfig {
 			ServiceName:       "clawpanel-lite",
 			ServiceLabel:      "com.clawpanel.lite.service",
 			BinaryName:        "clawpanel-lite",
-			AccelUpdateJSON:   "http://47.76.58.84:16198/clawpanel/update-lite.json",
+			AccelUpdateJSON:   "http://127.0.0.1:19527/api/panel/update-mirror/lite",
 			GitHubReleasesAPI: "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases?per_page=20",
 			GitHubTagPrefix:   "lite-v",
 		}
@@ -33,7 +33,7 @@ func newEditionConfig(edition string) editionConfig {
 		ServiceName:       "clawpanel",
 		ServiceLabel:      "com.clawpanel.service",
 		BinaryName:        "clawpanel",
-		AccelUpdateJSON:   "http://47.76.58.84:16198/clawpanel/update-pro.json",
+		AccelUpdateJSON:   "http://127.0.0.1:19527/api/panel/update-mirror/pro",
 		GitHubReleasesAPI: "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases?per_page=20",
 		GitHubTagPrefix:   "pro-v",
 	}
@@ -64,7 +64,7 @@ func (c editionConfig) binaryAssetName(version, platformKey string) string {
 		prefix = "clawpanel-lite"
 	}
 	name := fmt.Sprintf("%s-v%s-%s", prefix, version, strings.ReplaceAll(platformKey, "_", "-"))
-	if runtime.GOOS == "windows" || strings.HasPrefix(platformKey, "windows_") {
+	if strings.HasPrefix(platformKey, "windows_") {
 		name += ".exe"
 	}
 	return name

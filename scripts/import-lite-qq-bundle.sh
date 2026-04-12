@@ -1,7 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-ACCEL_BASE="http://39.102.53.188:16198/clawpanel"
+CLAWPANEL_PUBLIC_BASE="${CLAWPANEL_PUBLIC_BASE:-http://43.248.142.249:19527}"
+CLAWPANEL_PUBLIC_BASE="${CLAWPANEL_PUBLIC_BASE%/}"
+ACCEL_BASE="${ACCEL_BASE:-${CLAWPANEL_PUBLIC_BASE}/api/panel/update-mirror}"
 VERSION=${VERSION:-0.1.4}
 BUNDLE_PATH=${1:-}
 TMP_DIR=$(mktemp -d)
@@ -10,9 +12,9 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 if [[ -z "$BUNDLE_PATH" ]]; then
   BUNDLE_PATH="$TMP_DIR/clawpanel-lite-qq-bundle-v${VERSION}-linux-amd64.tar.gz"
   if command -v curl >/dev/null 2>&1; then
-    curl -fSL "$ACCEL_BASE/releases/clawpanel-lite-qq-bundle-v${VERSION}-linux-amd64.tar.gz" -o "$BUNDLE_PATH"
+    curl -fSL "$ACCEL_BASE/lite/files/clawpanel-lite-qq-bundle-v${VERSION}-linux-amd64.tar.gz" -o "$BUNDLE_PATH"
   elif command -v wget >/dev/null 2>&1; then
-    wget -O "$BUNDLE_PATH" "$ACCEL_BASE/releases/clawpanel-lite-qq-bundle-v${VERSION}-linux-amd64.tar.gz"
+    wget -O "$BUNDLE_PATH" "$ACCEL_BASE/lite/files/clawpanel-lite-qq-bundle-v${VERSION}-linux-amd64.tar.gz"
   else
     echo "缺少 curl/wget，无法下载 Lite QQ Bundle" >&2
     exit 1

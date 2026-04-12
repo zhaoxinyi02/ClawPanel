@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+CLAWPANEL_PUBLIC_BASE="${CLAWPANEL_PUBLIC_BASE:-http://43.248.142.249:19527}"
+CLAWPANEL_PUBLIC_BASE="${CLAWPANEL_PUBLIC_BASE%/}"
 INSTALL_DIR="/opt/clawpanel-lite"
 SERVICE_NAME="clawpanel-lite"
 BIN_NAME="clawpanel-lite"
@@ -9,8 +11,8 @@ REPO="zhaoxinyi02/ClawPanel"
 GITEE_REPO="zxy000006/ClawPanel"
 TAG_PREFIX="lite-v"
 GITEE_RAW_BASE="https://gitee.com/${GITEE_REPO}/raw/main"
-ACCEL_BASE="http://47.76.58.84:16198/clawpanel"
-ACCEL_META_URL="${ACCEL_BASE}/update-lite.json"
+ACCEL_BASE="${ACCEL_BASE:-${CLAWPANEL_PUBLIC_BASE}/api/panel/update-mirror}"
+ACCEL_META_URL="${ACCEL_META_URL:-${ACCEL_BASE}/lite}"
 GITHUB_RELEASES_API="https://api.github.com/repos/${REPO}/releases?per_page=20"
 
 RED='\033[31m'
@@ -142,9 +144,9 @@ download_with_selected_source() {
   local primary_url secondary_url
   if [[ "$primary" == "github" ]]; then
     primary_url="https://github.com/${REPO}/releases/download/${TAG_PREFIX}${VERSION}/${package_name}"
-    secondary_url="${ACCEL_BASE}/releases/${package_name}"
+    secondary_url="${ACCEL_BASE}/lite/files/${package_name}"
   else
-    primary_url="${ACCEL_BASE}/releases/${package_name}"
+    primary_url="${ACCEL_BASE}/lite/files/${package_name}"
     secondary_url="https://github.com/${REPO}/releases/download/${TAG_PREFIX}${VERSION}/${package_name}"
   fi
   if download_file "$primary_url" "$dest"; then
@@ -216,15 +218,21 @@ log "下载完成 (${DOWNLOAD_SOURCE_ACTUAL})"
 
 step 3 $TOTAL_STEPS "部署 Lite 运行环境"
 systemctl stop "$SERVICE_NAME" >/dev/null 2>&1 || true
+DATA_OWNER=""
+if [[ -d "$INSTALL_DIR/data" ]] && command -v stat >/dev/null 2>&1; then
+  DATA_OWNER=$(stat -c '%u:%g' "$INSTALL_DIR/data" 2>/dev/null || true)
+fi
 rm -rf "$INSTALL_DIR"/*
 tar -xzf "$TMP_DIR/$PACKAGE_NAME" -C "$INSTALL_DIR"
-chown -R root:root "$INSTALL_DIR"
 chmod +x "$INSTALL_DIR/$BIN_NAME" "$INSTALL_DIR/bin/clawlite-openclaw"
 if [[ -f "$INSTALL_DIR/runtime/node/bin/node" ]]; then
   chmod +x "$INSTALL_DIR/runtime/node/bin/node"
 fi
 if [[ -f "$INSTALL_DIR/runtime/node/node" ]]; then
   chmod +x "$INSTALL_DIR/runtime/node/node"
+fi
+if [[ -n "$DATA_OWNER" ]] && [[ -d "$INSTALL_DIR/data" ]]; then
+  chown -R "$DATA_OWNER" "$INSTALL_DIR/data" 2>/dev/null || true
 fi
 ln -sf "$INSTALL_DIR/$BIN_NAME" /usr/local/bin/clawpanel-lite
 ln -sf "$INSTALL_DIR/bin/clawlite-openclaw" /usr/local/bin/clawlite-openclaw

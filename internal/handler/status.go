@@ -26,15 +26,46 @@ var startTime = time.Now()
 func GetStatus(db *sql.DB, cfg *config.Config, procMgr *process.Manager, napcatMon *monitor.NapCatMonitor) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ocConfig, _ := cfg.ReadOpenClawJSON()
+		normalizeOpenClawCompatConfig(ocConfig)
+		injectWecomVirtualChannel(cfg, ocConfig)
+		gatewayPort := cfg.DefaultGatewayPort()
+		if p := procMgr.GatewayPortInt(); p > 0 {
+			gatewayPort = p
+		}
 
 		// 提取已启用的通道
 		channelLabels := map[string]string{
-			"qq": "QQ (NapCat)", "wechat": "微信", "whatsapp": "WhatsApp",
-			"telegram": "Telegram", "discord": "Discord", "irc": "IRC",
-			"slack": "Slack", "signal": "Signal", "googlechat": "Google Chat",
-			"webchat": "WebChat", "feishu": "飞书 / Lark", "qqbot": "QQ 官方机器人",
-			"dingtalk": "钉钉", "wecom": "企业微信（智能机器人）", "wecom-app": "企业微信（自建应用）", "msteams": "Microsoft Teams",
-			"mattermost": "Mattermost", "line": "LINE", "matrix": "Matrix", "twitch": "Twitch",
+			"qq":              "QQ (NapCat)",
+			"wechat":          "微信",
+			"whatsapp":        "WhatsApp",
+			"telegram":        "Telegram",
+			"discord":         "Discord",
+			"irc":             "IRC",
+			"slack":           "Slack",
+			"signal":          "Signal",
+			"googlechat":      "Google Chat",
+			"bluebubbles":     "BlueBubbles",
+			"imessage":        "iMessage",
+			"webchat":         "WebChat",
+			"feishu":          "飞书 / Lark",
+			"qqbot":           "QQ 官方机器人",
+			"dingtalk":        "钉钉",
+			"wecom":           "企业微信（智能机器人）",
+			"wecom-app":       "企业微信（自建应用）",
+			"msteams":         "Microsoft Teams",
+			"mattermost":      "Mattermost",
+			"line":            "LINE",
+			"matrix":          "Matrix",
+			"nextcloud-talk":  "Nextcloud Talk",
+			"nostr":           "Nostr",
+			"qa-channel":      "QA Channel",
+			"synology-chat":   "Synology Chat",
+			"tlon":            "Tlon",
+			"twitch":          "Twitch",
+			"voice-call":      "Voice Call",
+			"zalo":            "Zalo",
+			"zalouser":        "Zalo User",
+			"openclaw-weixin": "微信（ClawBot）",
 		}
 
 		type enabledChannel struct {
@@ -62,14 +93,22 @@ func GetStatus(db *sql.DB, cfg *config.Config, procMgr *process.Manager, napcatM
 			// 扫描 plugins.entries
 			if plugins, ok := ocConfig["plugins"].(map[string]interface{}); ok {
 				if entries, ok := plugins["entries"].(map[string]interface{}); ok {
-					// 飞书别名映射：feishu-openclaw-plugin 映射为 feishu，避免重复
+					// 飞书别名映射：官方版插件 ID 映射为 feishu，避免重复
 					channelAliases := map[string]string{
-						"feishu-openclaw-plugin": "feishu",
+						canonicalFeishuOfficialPluginID: canonicalFeishuCommunityPluginID,
+						"wecom-openclaw-plugin":         "wecom",
+						"qqbot-community":               "qqbot",
 					}
 					for id, conf := range entries {
+						if id == "wecom-app" {
+							continue
+						}
 						canonicalID := id
 						if alias, ok := channelAliases[id]; ok {
 							canonicalID = alias
+						}
+						if _, known := channelLabels[canonicalID]; !known {
+							continue
 						}
 						// 检查是否已在 channels 中（用规范 ID 检查）
 						found := false
@@ -118,6 +157,27 @@ func GetStatus(db *sql.DB, cfg *config.Config, procMgr *process.Manager, napcatM
 		procStatus := procMgr.GetStatus()
 		gatewayRunning := procMgr.GatewayListening()
 		runtimeHealth := buildOpenClawRuntimeHealth(cfg.OpenClawInstalled(), procStatus, gatewayRunning)
+		taskPressure := openClawTaskPressureSummary{
+			ByStatus: map[string]int{
+				"queued":    0,
+				"running":   0,
+				"succeeded": 0,
+				"failed":    0,
+				"timed_out": 0,
+				"cancelled": 0,
+				"lost":      0,
+			},
+			ByRuntime: map[string]int{
+				"subagent": 0,
+				"acp":      0,
+				"cli":      0,
+				"cron":     0,
+			},
+			UpdatedAt: time.Now().UnixMilli(),
+		}
+		if records, err := readOpenClawTasks(cfg, 200); err == nil {
+			taskPressure = summarizeOpenClawTasks(records, time.Now())
+		}
 
 		// 内存使用
 		var memStats runtime.MemStats
@@ -184,11 +244,12 @@ func GetStatus(db *sql.DB, cfg *config.Config, procMgr *process.Manager, napcatM
 				"configured":      cfg.OpenClawInstalled(),
 				"currentModel":    currentModel,
 				"enabledChannels": channels,
+				"taskPressure":    taskPressure,
 				"runtime":         runtimeHealth,
 				"edition":         cfg.Edition,
 				"managedRuntime":  cfg.IsLiteEdition(),
 				"bundledRuntime":  cfg.IsLiteEdition(),
-				"gatewayPort":     cfg.DefaultGatewayPort(),
+				"gatewayPort":     gatewayPort,
 			},
 			"gateway": gin.H{
 				"running": gatewayRunning,

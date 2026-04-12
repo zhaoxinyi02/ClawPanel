@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Bell, X, CheckCircle, AlertTriangle, Loader2, ChevronDown, ChevronUp, Terminal } from 'lucide-react';
+import { useI18n } from '../i18n';
 
 export interface TaskInfo {
   id: string;
@@ -22,6 +23,7 @@ interface Props {
 }
 
 export default function MessageCenter({ tasks, taskLogs, onRefresh, mode = 'sidebar' }: Props) {
+  const { t, locale } = useI18n();
   const [open, setOpen] = useState(false);
   const [expandedTask, setExpandedTask] = useState<string | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -51,11 +53,11 @@ export default function MessageCenter({ tasks, taskLogs, onRefresh, mode = 'side
 
   const statusLabel = (status: string) => {
     switch (status) {
-      case 'pending': return '等待中';
-      case 'running': return '运行中';
-      case 'success': return '已完成';
-      case 'failed': return '失败';
-      case 'canceled': return '已取消';
+      case 'pending': return t.messageCenter.statusPending;
+      case 'running': return t.messageCenter.statusRunning;
+      case 'success': return t.messageCenter.statusSuccess;
+      case 'failed': return t.messageCenter.statusFailed;
+      case 'canceled': return t.messageCenter.statusCanceled;
       default: return status;
     }
   };
@@ -87,7 +89,7 @@ export default function MessageCenter({ tasks, taskLogs, onRefresh, mode = 'side
           : 'flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 border border-transparent w-full relative transition-all'}
       >
         <Bell size={16} />
-        {mode !== 'icon' && <span>消息中心</span>}
+        {mode !== 'icon' && <span>{t.messageCenter.title}</span>}
         {indicatorColor && <span className={`absolute ${mode === 'icon' ? 'top-2 right-2' : 'top-1 right-1'} w-2.5 h-2.5 rounded-full ${indicatorColor}`}></span>}
       </button>
 
@@ -98,10 +100,10 @@ export default function MessageCenter({ tasks, taskLogs, onRefresh, mode = 'side
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50">
             <div className="flex items-center gap-2">
               <Terminal size={16} className="text-violet-500" />
-              <span className="text-sm font-bold text-gray-900 dark:text-white">消息中心</span>
+              <span className="text-sm font-bold text-gray-900 dark:text-white">{t.messageCenter.title}</span>
               {runningCount > 0 && (
                 <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400">
-                  {runningCount} 运行中
+                  {runningCount} {t.messageCenter.statusRunning}
                 </span>
               )}
             </div>
@@ -113,7 +115,7 @@ export default function MessageCenter({ tasks, taskLogs, onRefresh, mode = 'side
           {/* Task List */}
           <div className="overflow-y-auto max-h-[460px] divide-y divide-gray-100 dark:divide-gray-800">
             {tasks.length === 0 ? (
-              <div className="py-12 text-center text-gray-400 text-sm">暂无任务</div>
+              <div className="py-12 text-center text-gray-400 text-sm">{t.messageCenter.noTasks}</div>
             ) : (
               tasks.map(task => {
                 const logs = taskLogs[task.id] || task.log || [];
@@ -139,8 +141,8 @@ export default function MessageCenter({ tasks, taskLogs, onRefresh, mode = 'side
                         )}
                         {task.error && <p className="text-[11px] text-red-500 mt-0.5 truncate">{task.error}</p>}
                         <p className="text-[10px] text-gray-400 mt-0.5">
-                          {new Date(task.createdAt).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                          {logs.length > 0 && ` · ${logs.length} 行日志`}
+                          {new Date(task.createdAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          {logs.length > 0 && ` · ${t.messageCenter.logLines.replace('{n}', String(logs.length))}`}
                         </p>
                       </div>
                       {isExpanded ? <ChevronUp size={14} className="text-gray-400 shrink-0" /> : <ChevronDown size={14} className="text-gray-400 shrink-0" />}

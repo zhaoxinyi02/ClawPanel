@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用问题 / 部署交流
+    url: https://github.com/zhaoxinyi02/ClawPanel/discussions
+    about: 安装问题、部署经验、功能讨论请优先使用 Discussions
+  - name: 文档与部署说明
+    url: https://github.com/zhaoxinyi02/ClawPanel/tree/main/docs
+    about: 先查看官方文档、FAQ 和部署指南

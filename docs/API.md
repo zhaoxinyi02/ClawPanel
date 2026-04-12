@@ -559,6 +559,8 @@ Authorization: Bearer <token>
 >   - `agentId = <旧值>`
 >   - `sessionTarget = "main"`
 > - 若 `sessionTarget` 为空，也会标准化为 `"main"`
+> - `delivery.mode=webhook` 统一使用 `delivery.to`（兼容读取 legacy `delivery.url` 并自动归一化）
+> - `sessionTarget=main` 下若收到 `delivery.mode=announce`，会自动降级为 `delivery.mode=none`（与 OpenClaw 运行时行为一致）
 > - 保存时会同时同步 `openclaw.json.cron.jobs` 与 `OPENCLAW_DIR/cron/jobs.json`
 > - `cron/jobs.json` 采用临时文件 + rename 的原子写入，避免半写入状态
 

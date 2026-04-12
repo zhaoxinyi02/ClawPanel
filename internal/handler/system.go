@@ -20,6 +20,7 @@ import (
 	"github.com/zhaoxinyi02/ClawPanel/internal/config"
 	"github.com/zhaoxinyi02/ClawPanel/internal/process"
 	"github.com/zhaoxinyi02/ClawPanel/internal/update"
+	"github.com/zhaoxinyi02/ClawPanel/internal/updatemirror"
 	updaterPkg "github.com/zhaoxinyi02/ClawPanel/internal/updater"
 )
 
@@ -32,7 +33,7 @@ func GetVersion(cfg *config.Config) gin.HandlerFunc {
 				currentVersion = detectOpenClawVersion(cfg)
 			}
 			if currentVersion == "unknown" || currentVersion == "" {
-				currentVersion = "2026.2.26"
+				currentVersion = pinnedOpenClawVersion
 			}
 			c.JSON(http.StatusOK, gin.H{
 				"ok":              true,
@@ -766,6 +767,80 @@ func ProxyUpdater(cfg *config.Config) gin.HandlerFunc {
 	}
 	return func(c *gin.Context) {
 		proxy.ServeHTTP(c.Writer, c.Request)
+	}
+}
+
+func panelMirrorSpec(edition string) (updatemirror.EditionSpec, error) {
+	edition = strings.ToLower(strings.TrimSpace(edition))
+	switch edition {
+	case "lite":
+		return updatemirror.EditionSpec{
+			Edition:           "lite",
+			GitHubReleasesAPI: "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases?per_page=20",
+			GitHubTagPrefix:   "lite-v",
+		}, nil
+	case "pro":
+		return updatemirror.EditionSpec{
+			Edition:           "pro",
+			GitHubReleasesAPI: "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases?per_page=20",
+			GitHubTagPrefix:   "pro-v",
+		}, nil
+	default:
+		return updatemirror.EditionSpec{}, fmt.Errorf("不支持的 edition: %s", edition)
+	}
+}
+
+func GetPanelUpdateMirror(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		spec, err := panelMirrorSpec(c.Param("edition"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		refresh := c.Query("refresh") == "1"
+		manifest, err := updatemirror.ResolveLatest(cfg.DataDir, spec, "/api/panel/update-mirror", refresh)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, manifest)
+	}
+}
+
+func GetPanelUpdateMirrorFile(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		spec, err := panelMirrorSpec(c.Param("edition"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		filename := filepath.Base(strings.TrimSpace(c.Param("name")))
+		if filename == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "文件名不能为空"})
+			return
+		}
+		manifest, err := updatemirror.ResolveLatest(cfg.DataDir, spec, "/api/panel/update-mirror", false)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		platformKey := ""
+		for key, assetName := range manifest.AssetNames {
+			if filepath.Base(assetName) == filename {
+				platformKey = key
+				break
+			}
+		}
+		if platformKey == "" {
+			c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "更新文件不存在"})
+			return
+		}
+		localPath, err := updatemirror.EnsureAsset(cfg.DataDir, spec, manifest, platformKey)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		c.File(localPath)
 	}
 }
 

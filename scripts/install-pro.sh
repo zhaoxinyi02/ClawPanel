@@ -1,7 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-ACCEL_RAW_BASE="http://47.76.58.84:16198/clawpanel"
+CLAWPANEL_PUBLIC_BASE="${CLAWPANEL_PUBLIC_BASE:-http://43.248.142.249:19527}"
+CLAWPANEL_PUBLIC_BASE="${CLAWPANEL_PUBLIC_BASE%/}"
+ACCEL_RAW_BASE="${ACCEL_RAW_BASE:-${CLAWPANEL_PUBLIC_BASE}}"
 GITHUB_RAW_BASE="https://raw.githubusercontent.com/zhaoxinyi02/ClawPanel/main"
 TMP_SCRIPT=$(mktemp)
 trap 'rm -f "$TMP_SCRIPT"' EXIT

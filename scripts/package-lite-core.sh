@@ -2,11 +2,11 @@
 set -euo pipefail
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-VERSION=${1:-${VERSION:-0.1.11}}
+VERSION=${1:-${VERSION:-0.1.16}}
 TARGET_OS=${TARGET_OS:-linux}
 TARGET_ARCH=${TARGET_ARCH:-amd64}
 NODE_VERSION=${NODE_VERSION:-22.22.1}
-OPENCLAW_VERSION=${OPENCLAW_VERSION:-2026.2.26}
+OPENCLAW_VERSION=${OPENCLAW_VERSION:-2026.4.8}
 NPM_REGISTRY=${NPM_REGISTRY:-https://registry.npmmirror.com}
 OUTPUT_DIR=${OUTPUT_DIR:-"$ROOT_DIR/release/lite/v$VERSION"}
 LITE_BINARY=${LITE_BINARY:-}
@@ -73,7 +73,8 @@ ensure_openclaw_runtime_ready() {
   if ! (cd "$root" && "$node_bin" -e 'import("./dist/entry.js").then(()=>process.exit(0)).catch(()=>process.exit(1))' >/dev/null 2>&1); then
     echo "==> 补装 OpenClaw runtime 依赖" >&2
     rm -rf "$root/node_modules" "$root/package-lock.json"
-    (cd "$root" && npm install --omit=dev --no-package-lock --registry="$NPM_REGISTRY" >/dev/null)
+    (cd "$root" && npm install --omit=dev --no-package-lock --registry="$NPM_REGISTRY" >/dev/null) || \
+      (cd "$root" && npm install --omit=dev --no-package-lock --registry="https://registry.npmjs.org" >/dev/null)
   fi
   if ! (cd "$root" && "$node_bin" -e 'import("./dist/entry.js").then(()=>process.exit(0)).catch((err)=>{console.error(err&&err.stack||err);process.exit(1)})'); then
     echo "OpenClaw runtime 校验失败: dist/entry.js 无法导入" >&2
@@ -111,6 +112,20 @@ resolve_node_root() {
     return 0
   fi
   printf '%s\n' "$(dirname "$dir")"
+}
+
+install_npm_package() {
+  local prefix="$1"
+  local package_spec="$2"
+  local primary_registry="${3:-$NPM_REGISTRY}"
+  local fallback_registry="${4:-https://registry.npmjs.org}"
+
+  if npm install --omit=dev --no-package-lock --registry="$primary_registry" --prefix "$prefix" "$package_spec" >/dev/null; then
+    return 0
+  fi
+
+  echo "==> npm 镜像源安装失败，回退官方 npm registry: $package_spec" >&2
+  npm install --omit=dev --no-package-lock --registry="$fallback_registry" --prefix "$prefix" "$package_spec" >/dev/null
 }
 
 download_node_runtime() {
@@ -202,7 +217,7 @@ prepare_openclaw_runtime() {
   fi
   echo "==> 安装 OpenClaw runtime: ${OPENCLAW_VERSION}"
   mkdir -p "$openclaw_stage/openclaw"
-  npm install --omit=dev --no-package-lock --registry="$NPM_REGISTRY" --prefix "$openclaw_stage/openclaw" "openclaw@${OPENCLAW_VERSION}" >/dev/null
+  install_npm_package "$openclaw_stage/openclaw" "openclaw@${OPENCLAW_VERSION}" "$NPM_REGISTRY" "https://registry.npmjs.org"
   if [[ -d "$openclaw_stage/openclaw/node_modules/openclaw" ]]; then
     tmp_extract="$openclaw_stage/.openclaw-pkg"
     rm -rf "$tmp_extract"

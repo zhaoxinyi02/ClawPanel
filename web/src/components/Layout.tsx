@@ -3,7 +3,7 @@ import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, ScrollText, Radio, Sparkles, Clock, Settings,
   Moon, Sun, LogOut, Menu, FolderOpen, Languages, MessageSquare,
-  RotateCw, RefreshCw, Power, Puzzle, Bot, Search, Bell, ChevronDown, GitBranch, Network, BriefcaseBusiness,
+  RotateCw, RefreshCw, Power, Puzzle, Bot, Search, Bell, ChevronDown, GitBranch, Network, BriefcaseBusiness, Activity,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import AIAssistant from './AIAssistant';
@@ -12,6 +12,13 @@ import { api } from '../lib/api';
 import { resolveOpenClawRuntime } from '../lib/openclawRuntime';
 
 interface Props { onLogout: () => void; napcatStatus: any; wechatStatus?: any; openclawStatus?: any; processStatus?: any; wsMessages?: any[]; }
+
+const DISPLAY_CHANNEL_IDS = new Set([
+  'qq', 'wechat', 'whatsapp', 'telegram', 'discord', 'irc', 'slack', 'signal', 'googlechat',
+  'bluebubbles', 'imessage', 'webchat', 'feishu', 'qqbot', 'dingtalk', 'wecom', 'wecom-app',
+  'msteams', 'mattermost', 'line', 'matrix', 'nextcloud-talk', 'nostr', 'qa-channel',
+  'synology-chat', 'tlon', 'twitch', 'voice-call', 'zalo', 'zalouser', 'openclaw-weixin',
+]);
 
 function mapWorkflowRunToTask(run: any): TaskInfo {
   let status: TaskInfo['status'] = 'pending';
@@ -82,7 +89,7 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
   const loadTasks = useCallback(async () => {
     try {
       const [taskRes, workflowRes] = await Promise.all([
-        api.getTasks(),
+        api.getPanelTasks(),
         api.getWorkflowRuns(),
       ]);
       const taskItems = taskRes?.ok ? (taskRes.tasks || []) : [];
@@ -134,6 +141,7 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
     { to: '/workflows', icon: GitBranch, label: locale === 'zh-CN' ? '工作流' : 'Workflows' },
     { to: '/company', icon: BriefcaseBusiness, label: locale === 'zh-CN' ? 'AI公司' : 'AI Company' },
     { to: '/cron', icon: Clock, label: t.nav.cronJobs },
+    { to: '/tasks', icon: Activity, label: locale === 'zh-CN' ? '后台任务' : 'Tasks' },
     { to: '/sessions', icon: MessageSquare, label: '会话管理' },
     { to: '/workspace', icon: FolderOpen, label: t.nav.workspace },
     { to: '/config', icon: Settings, label: t.nav.systemConfig },
@@ -202,6 +210,12 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
     { label: '通道配置 - QQ个人号', keywords: ['qq', 'napcat', 'qq个人号', 'qq personal'], path: '/channels?channel=qq' },
     { label: '通道配置 - 飞书', keywords: ['feishu', 'lark', '飞书'], path: '/channels?channel=feishu' },
     { label: '通道配置 - QQ官方机器人', keywords: ['qqbot', 'qq官方', 'qq 官方机器人'], path: '/channels?channel=qqbot' },
+    { label: '通道配置 - Matrix', keywords: ['matrix'], path: '/channels?channel=matrix' },
+    { label: '通道配置 - Mattermost', keywords: ['mattermost'], path: '/channels?channel=mattermost' },
+    { label: '通道配置 - LINE', keywords: ['line'], path: '/channels?channel=line' },
+    { label: '通道配置 - Microsoft Teams', keywords: ['msteams', 'teams'], path: '/channels?channel=msteams' },
+    { label: '通道配置 - Twitch', keywords: ['twitch'], path: '/channels?channel=twitch' },
+    { label: '通道配置 - WhatsApp', keywords: ['whatsapp'], path: '/channels?channel=whatsapp' },
     { label: '技能中心', keywords: ['skills', 'skill', '技能'], path: '/skills' },
     { label: '插件中心', keywords: ['plugins', 'plugin', '插件'], path: '/plugins' },
     ...(enableAgents ? [{ label: locale === 'zh-CN' ? '智能体' : 'Agents', keywords: ['agent', 'agents', '智能体'], path: '/agents' }] : []),
@@ -209,6 +223,7 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
     { label: locale === 'zh-CN' ? '工作流中心' : 'Workflow Center', keywords: ['workflow', 'workflows', '流程', '工作流'], path: '/workflows' },
     { label: locale === 'zh-CN' ? 'AI公司' : 'AI Company', keywords: ['company', 'ai company', '协作任务', '任务中心', '团队'], path: '/company' },
     { label: '定时任务', keywords: ['cron', 'jobs', '定时任务'], path: '/cron' },
+    { label: locale === 'zh-CN' ? '后台任务' : 'Background Tasks', keywords: ['tasks', 'background tasks', '任务账本', '后台任务'], path: '/tasks' },
     { label: '会话管理', keywords: ['session', 'sessions', '会话'], path: '/sessions' },
     { label: '工作区', keywords: ['workspace', '工作区', '文件'], path: '/workspace' },
     { label: '系统配置', keywords: ['config', 'settings', '系统配置'], path: '/config' },
@@ -231,7 +246,12 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
 
   // Build channel list from enabledChannels returned by /api/status
   const connectedChannels = useMemo(() => {
-    const enabledChannels: { id: string; label: string }[] = openclawStatus?.enabledChannels || [];
+    const enabledChannels: { id: string; label: string }[] = (openclawStatus?.enabledChannels || [])
+      .map((ch: { id: string; label: string }) => ({
+        ...ch,
+        id: ch.id === 'qqbot-community' ? 'qqbot' : ch.id,
+      }))
+      .filter((ch: { id: string }) => DISPLAY_CHANNEL_IDS.has(ch.id));
     const channels: { label: string; detail: string; connected: boolean }[] = [];
 
     for (const ch of enabledChannels) {
@@ -265,8 +285,11 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
       }
     }
 
-    return channels;
+    // Sort: connected channels first, then alphabetical; limit to 5
+    channels.sort((a, b) => (a.connected === b.connected ? a.label.localeCompare(b.label) : a.connected ? -1 : 1));
+    return channels.slice(0, 5);
   }, [locale, napcatStatus, openclawStatus, t, wechatStatus]);
+  const totalEnabledChannels = (openclawStatus?.enabledChannels || []).length;
   const runtime = useMemo(() => resolveOpenClawRuntime(openclawStatus, processStatus), [openclawStatus, processStatus]);
   const openClawRestartHint = processStatus?.managedExternally
     ? (locale === 'zh-CN' ? '当前 OpenClaw 由外部进程管理，请改用“网关”按钮或在外部环境中重启。' : 'OpenClaw is managed externally. Use “Gateway” or restart it outside the panel.')
@@ -308,6 +331,9 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
                 </div>
               </div>
             ))}
+            {totalEnabledChannels > connectedChannels.length && (
+              <div className="text-[10px] text-slate-400 pl-4">+{totalEnabledChannels - connectedChannels.length} {locale === 'zh-CN' ? '个通道' : 'more'}</div>
+            )}
           </div>
         )}
 

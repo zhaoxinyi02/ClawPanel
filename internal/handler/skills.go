@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,16 +18,33 @@ import (
 )
 
 type skillInfo struct {
-	ID          string                 `json:"id"`
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Version     string                 `json:"version,omitempty"`
-	Enabled     bool                   `json:"enabled"`
-	Path        string                 `json:"path"`
-	SkillKey    string                 `json:"skillKey,omitempty"`
-	Source      string                 `json:"source,omitempty"`
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
-	Requires    map[string]interface{} `json:"requires,omitempty"`
+	ID           string                 `json:"id"`
+	Name         string                 `json:"name"`
+	Description  string                 `json:"description"`
+	Version      string                 `json:"version,omitempty"`
+	Enabled      bool                   `json:"enabled"`
+	Path         string                 `json:"path"`
+	SkillKey     string                 `json:"skillKey,omitempty"`
+	Source       string                 `json:"source,omitempty"`
+	Metadata     map[string]interface{} `json:"metadata,omitempty"`
+	Requires     map[string]interface{} `json:"requires,omitempty"`
+	ConfigSchema []skillConfigField     `json:"configSchema,omitempty"`
+}
+
+type skillConfigField struct {
+	Key          string              `json:"key"`
+	Label        string              `json:"label,omitempty"`
+	Type         string              `json:"type,omitempty"`
+	Placeholder  string              `json:"placeholder,omitempty"`
+	Help         string              `json:"help,omitempty"`
+	Required     bool                `json:"required,omitempty"`
+	Options      []skillConfigOption `json:"options,omitempty"`
+	DefaultValue interface{}         `json:"defaultValue,omitempty"`
+}
+
+type skillConfigOption struct {
+	Label string      `json:"label,omitempty"`
+	Value interface{} `json:"value"`
 }
 
 type pluginInfo struct {
@@ -276,6 +294,96 @@ func UpdateSkillConfig(cfg *config.Config) gin.HandlerFunc {
 	}
 }
 
+// CopySkill copies an installed skill into another agent workspace or the global managed root.
+func CopySkill(cfg *config.Config) gin.HandlerFunc {
+	type reqBody struct {
+		SourceAgentID string `json:"sourceAgentId"`
+		TargetAgentID string `json:"targetAgentId"`
+		InstallTarget string `json:"installTarget,omitempty"`
+	}
+	return func(c *gin.Context) {
+		requested := strings.TrimSpace(c.Param("id"))
+		if requested == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "missing skill id"})
+			return
+		}
+
+		var req reqBody
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+
+		sourceAgentID, err := resolveRequestedAgentID(cfg, req.SourceAgentID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		targetAgentID := req.TargetAgentID
+		if normalizeSkillInstallTarget(req.InstallTarget) != "global" {
+			targetAgentID, err = resolveRequestedAgentID(cfg, req.TargetAgentID)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+				return
+			}
+		}
+
+		skill, _, err := resolveSkillConfigTarget(cfg, sourceAgentID, requested)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		if strings.TrimSpace(skill.Path) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "skill path not available"})
+			return
+		}
+		if err := ensureExistingPathChainSafe(skill.Path, true); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+
+		installBase, installTarget, err := resolveSkillInstallBase(cfg, targetAgentID, req.InstallTarget)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		destID := strings.TrimSpace(skill.ID)
+		if destID == "" {
+			destID = strings.TrimSpace(skill.SkillKey)
+		}
+		if destID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "skill id not available"})
+			return
+		}
+		destDir := filepath.Join(installBase, "skills", destID)
+		if err := ensureClawHubInstallTarget(installBase, destDir); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		if _, err := os.Stat(destDir); err == nil {
+			c.JSON(http.StatusConflict, gin.H{"ok": false, "error": fmt.Sprintf("skill %s is already installed", destID)})
+			return
+		} else if !os.IsNotExist(err) {
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		if err := copySkillDirectory(skill.Path, destDir); err != nil {
+			_ = os.RemoveAll(destDir)
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"ok":            true,
+			"skillId":       destID,
+			"skillKey":      skill.SkillKey,
+			"sourceAgentId": sourceAgentID,
+			"targetAgentId": targetAgentID,
+			"installTarget": installTarget,
+		})
+	}
+}
+
 // GetCronJobs returns cron jobs from openclaw.json cron.jobs.
 func GetCronJobs(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -304,10 +412,25 @@ func GetCronJobs(cfg *config.Config) gin.HandlerFunc {
 			if !ok {
 				continue
 			}
-			// If job already has canonical delivery.mode, skip; remove incomplete delivery objects
+			// If job already has delivery.mode, keep it and normalize webhook fields
+			// to canonical delivery.to (legacy delivery.url remains read-compatible).
 			if del, ok := job["delivery"].(map[string]interface{}); ok {
 				if m, hasMode := del["mode"]; hasMode {
-					if mStr, _ := m.(string); mStr != "" {
+					mode := strings.ToLower(strings.TrimSpace(toString(m)))
+					if mode != "" {
+						del["mode"] = mode
+						if mode == "webhook" {
+							target := strings.TrimSpace(toString(del["to"]))
+							if target == "" {
+								target = strings.TrimSpace(toString(del["url"]))
+							}
+							if target != "" {
+								del["to"] = target
+							}
+							delete(del, "url")
+						}
+						job["delivery"] = del
+						jobs[i] = job
 						continue
 					}
 				}
@@ -905,6 +1028,11 @@ func parseSkillInfo(skillPath, source string, skillEntries map[string]interface{
 		_ = json.Unmarshal(packageBytes, &pkg)
 	}
 
+	manifest := map[string]interface{}{}
+	if manifestBytes, err := os.ReadFile(filepath.Join(skillPath, "skill.json")); err == nil && len(manifestBytes) <= maxSkillFileSize {
+		_ = json.Unmarshal(manifestBytes, &manifest)
+	}
+
 	openClawMeta := resolveOpenClawMetadata(frontmatter)
 	skillKey := trimmedString(openClawMeta["skillKey"], id)
 	if skillKey == "" {
@@ -922,7 +1050,12 @@ func parseSkillInfo(skillPath, source string, skillEntries map[string]interface{
 	if anyBins := asStringSlice(requiresMap["anyBins"]); len(anyBins) > 0 {
 		requires["anyBins"] = anyBins
 	}
-	if configKeys := asStringSlice(requiresMap["config"]); len(configKeys) > 0 {
+	configSchema := normalizeSkillConfigSchema(manifest["config"])
+	configKeys := asStringSlice(requiresMap["config"])
+	if len(configSchema) > 0 {
+		configKeys = uniqueStrings(append(configKeys, skillConfigKeys(configSchema)...))
+	}
+	if len(configKeys) > 0 {
 		requires["config"] = configKeys
 	}
 
@@ -930,17 +1063,21 @@ func parseSkillInfo(skillPath, source string, skillEntries map[string]interface{
 	if len(openClawMeta) > 0 {
 		metadata["openclaw"] = openClawMeta
 	}
+	if manifestMeta := compactSkillManifestMetadata(manifest); len(manifestMeta) > 0 {
+		metadata["skill"] = manifestMeta
+	}
 
 	enabled := resolveSkillEnabled(skillEntries, legacyBlocklist, skillKey, id)
 	skill := skillInfo{
-		ID:          id,
-		Name:        trimmedString(frontmatter["name"], trimmedString(pkg["name"], id)),
-		Description: resolveSkillDescription(frontmatter, pkg, body),
-		Version:     resolveLocalSkillVersion(pkg, skillPath),
-		Enabled:     enabled,
-		Path:        skillPath,
-		SkillKey:    skillKey,
-		Source:      source,
+		ID:           id,
+		Name:         resolveSkillName(frontmatter, manifest, pkg, id),
+		Description:  resolveSkillDescription(frontmatter, manifest, pkg, body),
+		Version:      resolveLocalSkillVersion(pkg, manifest, skillPath),
+		Enabled:      enabled,
+		Path:         skillPath,
+		SkillKey:     skillKey,
+		Source:       source,
+		ConfigSchema: configSchema,
 	}
 	if len(metadata) > 0 {
 		skill.Metadata = metadata
@@ -949,6 +1086,113 @@ func parseSkillInfo(skillPath, source string, skillEntries map[string]interface{
 		skill.Requires = requires
 	}
 	return skill, true
+}
+
+func compactSkillManifestMetadata(manifest map[string]interface{}) map[string]interface{} {
+	if len(manifest) == 0 {
+		return nil
+	}
+	out := map[string]interface{}{}
+	for _, key := range []string{"name", "displayName", "description", "version", "author", "entry", "language"} {
+		if value := trimmedString(manifest[key], ""); value != "" {
+			out[key] = value
+		}
+	}
+	if tags := asStringSlice(manifest["tags"]); len(tags) > 0 {
+		out["tags"] = tags
+	}
+	return out
+}
+
+func normalizeSkillConfigSchema(value interface{}) []skillConfigField {
+	items, ok := value.([]interface{})
+	if !ok || len(items) == 0 {
+		return nil
+	}
+	out := make([]skillConfigField, 0, len(items))
+	seen := map[string]bool{}
+	for _, item := range items {
+		fieldMap := asMapAny(item)
+		key := trimmedString(fieldMap["key"], "")
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		field := skillConfigField{
+			Key:         key,
+			Label:       trimmedString(fieldMap["label"], ""),
+			Type:        normalizeSkillConfigType(trimmedString(fieldMap["type"], "text")),
+			Placeholder: trimmedString(fieldMap["placeholder"], ""),
+			Help:        trimmedString(fieldMap["help"], ""),
+			Required:    skillManifestBool(fieldMap["required"]),
+			Options:     normalizeSkillConfigOptions(fieldMap["options"]),
+		}
+		if defaultValue, ok := fieldMap["defaultValue"]; ok {
+			field.DefaultValue = defaultValue
+		} else if defaultValue, ok := fieldMap["default"]; ok {
+			field.DefaultValue = defaultValue
+		}
+		out = append(out, field)
+	}
+	return out
+}
+
+func normalizeSkillConfigType(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch value {
+	case "text", "password", "textarea", "select", "toggle", "number":
+		return value
+	default:
+		return "text"
+	}
+}
+
+func normalizeSkillConfigOptions(value interface{}) []skillConfigOption {
+	switch typed := value.(type) {
+	case []interface{}:
+		out := make([]skillConfigOption, 0, len(typed))
+		for _, item := range typed {
+			switch option := item.(type) {
+			case map[string]interface{}:
+				if rawValue, ok := option["value"]; ok {
+					out = append(out, skillConfigOption{Label: trimmedString(option["label"], trimmedString(rawValue, "")), Value: rawValue})
+					continue
+				}
+			case string:
+				option = strings.TrimSpace(option)
+				if option != "" {
+					out = append(out, skillConfigOption{Label: option, Value: option})
+				}
+				continue
+			}
+			text := trimmedString(item, "")
+			if text != "" {
+				out = append(out, skillConfigOption{Label: text, Value: text})
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func skillConfigKeys(fields []skillConfigField) []string {
+	out := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if field.Key != "" {
+			out = append(out, field.Key)
+		}
+	}
+	return out
+}
+
+func resolveSkillName(frontmatter, manifest, pkg map[string]interface{}, fallback string) string {
+	for _, value := range []interface{}{frontmatter["name"], manifest["displayName"], manifest["name"], pkg["name"]} {
+		if name := trimmedString(value, ""); name != "" {
+			return name
+		}
+	}
+	return fallback
 }
 
 func resolveOpenClawMetadata(frontmatter map[string]interface{}) map[string]interface{} {
@@ -966,8 +1210,11 @@ func resolveOpenClawMetadata(frontmatter map[string]interface{}) map[string]inte
 	return map[string]interface{}{}
 }
 
-func resolveSkillDescription(frontmatter, pkg map[string]interface{}, body string) string {
+func resolveSkillDescription(frontmatter, manifest, pkg map[string]interface{}, body string) string {
 	if desc := trimmedString(frontmatter["description"], ""); desc != "" {
+		return desc
+	}
+	if desc := trimmedString(manifest["description"], ""); desc != "" {
 		return desc
 	}
 	if desc := trimmedString(pkg["description"], ""); desc != "" {
@@ -983,8 +1230,11 @@ func resolveSkillDescription(frontmatter, pkg map[string]interface{}, body strin
 	return ""
 }
 
-func resolveLocalSkillVersion(pkg map[string]interface{}, skillPath string) string {
+func resolveLocalSkillVersion(pkg, manifest map[string]interface{}, skillPath string) string {
 	if version := trimmedString(pkg["version"], ""); version != "" {
+		return version
+	}
+	if version := trimmedString(manifest["version"], ""); version != "" {
 		return version
 	}
 	raw, err := os.ReadFile(filepath.Join(skillPath, ".clawhub", "origin.json"))
@@ -1156,22 +1406,50 @@ func validateCronJobsSessionTargets(cfg *config.Config, jobs []map[string]interf
 	// Validate delivery configuration
 	for _, job := range jobs {
 		if deliveryMap, ok := job["delivery"].(map[string]interface{}); ok {
-			mode, _ := deliveryMap["mode"].(string)
-			if mode == "webhook" {
-				url, _ := deliveryMap["url"].(string)
-				url = strings.TrimSpace(url)
-				if url == "" {
-					return fmt.Errorf("delivery.mode=webhook 时必须指定非空 url")
+			mode := strings.ToLower(strings.TrimSpace(toString(deliveryMap["mode"])))
+			target := strings.TrimSpace(toString(job["sessionTarget"]))
+			if target == "" {
+				// SaveCronJobs will normalize empty sessionTarget to "main".
+				target = "main"
+			}
+			switch mode {
+			case "":
+				return fmt.Errorf("delivery.mode 不能为空")
+			case "none":
+				deliveryMap["mode"] = "none"
+			case "announce":
+				if target == "main" {
+					// Backward-compat: official runtime strips non-webhook delivery on
+					// main session; normalize legacy announce configs to none.
+					deliveryMap["mode"] = "none"
+					for _, field := range []string{"channel", "to", "accountId", "bestEffort", "url", "failureDestination"} {
+						delete(deliveryMap, field)
+					}
+					continue
 				}
-				urlLower := strings.ToLower(url)
-				if !strings.HasPrefix(urlLower, "http://") && !strings.HasPrefix(urlLower, "https://") {
-					return fmt.Errorf("webhook url 必须以 http:// 或 https:// 开头")
+				deliveryMap["mode"] = "announce"
+			case "webhook":
+				target := strings.TrimSpace(toString(deliveryMap["to"]))
+				if target == "" {
+					target = strings.TrimSpace(toString(deliveryMap["url"]))
+				}
+				if target == "" {
+					return fmt.Errorf("delivery.mode=webhook 时必须指定非空 to")
+				}
+				targetLower := strings.ToLower(target)
+				if !strings.HasPrefix(targetLower, "http://") && !strings.HasPrefix(targetLower, "https://") {
+					return fmt.Errorf("webhook to 必须以 http:// 或 https:// 开头")
 				}
 				for _, blocked := range []string{"://localhost", "://127.0.0.1", "://0.0.0.0", "://[::1]", "://169.254.169.254"} {
-					if strings.Contains(urlLower, blocked) {
-						return fmt.Errorf("webhook url 不允许指向内部地址: %s", url)
+					if strings.Contains(targetLower, blocked) {
+						return fmt.Errorf("webhook to 不允许指向内部地址: %s", target)
 					}
 				}
+				deliveryMap["mode"] = "webhook"
+				deliveryMap["to"] = target
+				delete(deliveryMap, "url")
+			default:
+				return fmt.Errorf("delivery.mode %q 无效，有效值为 none/announce/webhook", mode)
 			}
 		}
 	}
@@ -1330,6 +1608,56 @@ func resolveSkillConfigTarget(cfg *config.Config, agentID, requested string) (sk
 	return skillInfo{}, ocConfig, fmt.Errorf("skill %q not found", requested)
 }
 
+func copySkillDirectory(src, dest string) error {
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return fmt.Errorf("create skill parent directory: %w", err)
+	}
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := dest
+		if rel != "." {
+			target = filepath.Join(dest, rel)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing to copy symlinked skill entry %s", path)
+		}
+		if info.IsDir() {
+			return os.MkdirAll(target, info.Mode().Perm())
+		}
+		if err := copySkillFile(path, target, info.Mode().Perm()); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func copySkillFile(src, dest string, mode os.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open source file: %w", err)
+	}
+	defer in.Close()
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return fmt.Errorf("create destination directory: %w", err)
+	}
+	out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	if err != nil {
+		return fmt.Errorf("create destination file: %w", err)
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, in); err != nil {
+		return fmt.Errorf("copy file: %w", err)
+	}
+	return nil
+}
+
 func configPathSegments(path string) ([]string, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -1464,4 +1792,15 @@ func trimmedString(value interface{}, fallback string) string {
 		return text
 	}
 	return fallback
+}
+
+func skillManifestBool(value interface{}) bool {
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		return strings.EqualFold(strings.TrimSpace(typed), "true")
+	default:
+		return false
+	}
 }
