@@ -336,6 +336,52 @@ export default function PanelChat() {
     }
   }, [draftMode, selectedSession, visibleSessions]);
 
+  useEffect(() => {
+    const sessionId = processingSessionId || selectedId;
+    if (!sessionId) return;
+    const stillProcessing = sessionId === processingSessionId || !!selectedSession?.processing;
+    if (!stillProcessing) return;
+
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const [detailRes, listRes] = await Promise.all([
+          api.getPanelChatSessionDetail(sessionId),
+          api.getPanelChatSessions(),
+        ]);
+
+        if (cancelled) return;
+
+        if (detailRes?.ok && selectedIdRef.current === sessionId) {
+          setMessages(Array.isArray(detailRes.messages) ? detailRes.messages : []);
+          setParticipants(Array.isArray(detailRes.participants) ? detailRes.participants : []);
+        }
+
+        if (listRes?.ok) {
+          const next = Array.isArray(listRes.sessions) ? listRes.sessions : [];
+          setSessions(next);
+          const updated = next.find((item: PanelChatSession) => item.id === sessionId);
+          if (!updated?.processing && processingSessionId === sessionId) {
+            setProcessingSessionId('');
+            setPendingUserMessage(null);
+          }
+        }
+      } catch {
+        // Ignore transient polling failures while a session is still running.
+      }
+    };
+
+    void tick();
+    const timer = window.setInterval(() => {
+      void tick();
+    }, 1200);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [processingSessionId, selectedId, selectedSession?.processing]);
+
   const toggleDraftAgent = useCallback((agentId: string) => {
     setSelectedAgentIds(current => {
       if (current.includes(agentId)) {
