@@ -1,13 +1,13 @@
 {
-  "latest_version": "5.4.1",
-  "release_time": "2026-04-10T03:15:00+08:00",
-  "release_note": "## ClawPanel Pro v5.4.1\n\n- 工作流中心新增可视化画布编辑：支持拖拽节点、位置持久化、一键自动整理，并可直接编辑 `image_generate` 节点\n- 工作流运行时补齐图片生成与产物回传：海报 PNG 可直接落到工作流目录，并回传到 QQ / 微信原会话\n- 修复微信工作流接管与会话展示问题：等待用户补充信息后可继续推进工作流，同时清理附件/系统噪音并统一东八区时间显示",
+  "latest_version": "5.4.3",
+  "release_time": "2026-04-12T23:10:00+08:00",
+  "release_note": "## ClawPanel Pro v5.4.3\n\n- 修复 Telegram 多实例通道（telegram:*）定义匹配异常\n- AI 助手补齐最小化/最大化窗口控制，优化关闭交互\n- 修复面板会话运行时与主会话目录间的消息读取回退，提升会话稳定性",
   "download_urls": {
-    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.1/clawpanel-v5.4.1-linux-amd64",
-    "linux_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.1/clawpanel-v5.4.1-linux-arm64",
-    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.1/clawpanel-v5.4.1-darwin-amd64",
-    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.1/clawpanel-v5.4.1-darwin-arm64",
-    "windows_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.1/clawpanel-v5.4.1-windows-amd64.exe"
+    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.3/clawpanel-v5.4.3-linux-amd64",
+    "linux_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.3/clawpanel-v5.4.3-linux-arm64",
+    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.3/clawpanel-v5.4.3-darwin-amd64",
+    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.3/clawpanel-v5.4.3-darwin-arm64",
+    "windows_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.3/clawpanel-v5.4.3-windows-amd64.exe"
   },
   "major_change": false,
   "change_warning": ""

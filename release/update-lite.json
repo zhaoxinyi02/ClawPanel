@@ -1,11 +1,11 @@
 {
-  "latest_version": "0.3.2",
-  "release_time": "2026-04-11T22:30:00+08:00",
-  "release_note": "## ClawPanel Lite v0.3.2\n\n- QQ 官方机器人页面支持内置版 / 社区版一键切换，并自动同步启用状态\n- QQBot 配置分为主配置与高级配置，默认只暴露 App ID / App Secret，降低配置门槛\n- 修复最近活动漏消息、日志来源归一化与筛选异常，提升活动日志可读性与稳定性",
+  "latest_version": "0.3.3",
+  "release_time": "2026-04-12T23:10:00+08:00",
+  "release_note": "## ClawPanel Lite v0.3.3\n\n- 修复 Telegram 多实例通道（telegram:*）定义匹配异常\n- AI 助手补齐最小化/最大化窗口控制，优化关闭交互\n- 修复面板会话运行时与主会话目录间的消息读取回退，提升会话稳定性",
   "download_urls": {
-    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.2/clawpanel-lite-core-v0.3.2-linux-amd64.tar.gz",
-    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.2/clawpanel-lite-core-v0.3.2-darwin-amd64.tar.gz",
-    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.2/clawpanel-lite-core-v0.3.2-darwin-arm64.tar.gz"
+    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.3/clawpanel-lite-core-v0.3.3-linux-amd64.tar.gz",
+    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.3/clawpanel-lite-core-v0.3.3-darwin-amd64.tar.gz",
+    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.3/clawpanel-lite-core-v0.3.3-darwin-arm64.tar.gz"
   },
   "major_change": false,
   "change_warning": ""
