@@ -58,6 +58,12 @@ type workflowBinaryArtifactRecord struct {
 	MimeType     string
 }
 
+type workflowDeliveryFile struct {
+	AbsolutePath string
+	FileName     string
+	DisplayName  string
+}
+
 type workflowRuntime struct {
 	db      *sql.DB
 	cfg     *config.Config
@@ -926,6 +932,14 @@ func openClawWeixinUploadURL(cdnBaseURL, uploadFullURL, uploadParam, fileKey str
 }
 
 func (rt *workflowRuntime) openClawWeixinPostJSON(baseURL, endpoint, token string, payload interface{}, out interface{}) error {
+	if body, ok := payload.(map[string]interface{}); ok {
+		if _, exists := body["base_info"]; !exists {
+			body["base_info"] = map[string]string{
+				"channel_version": openClawWeixinChannelVersion,
+			}
+		}
+		payload = body
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -963,6 +977,7 @@ func (rt *workflowRuntime) openClawWeixinPostJSON(baseURL, endpoint, token strin
 type openClawWeixinUploadedFile struct {
 	downloadEncryptedQueryParam string
 	aesKeyBase64                string
+	fileMD5Hex                  string
 	fileSize                    int
 	fileSizeCiphertext          int
 }
@@ -1037,9 +1052,12 @@ func (rt *workflowRuntime) uploadOpenClawWeixinArtifact(accountID, toUserID, abs
 	}
 	return &openClawWeixinUploadedFile{
 		downloadEncryptedQueryParam: encryptedParam,
-		aesKeyBase64:                base64.StdEncoding.EncodeToString(aesKey),
-		fileSize:                    rawSize,
-		fileSizeCiphertext:          len(ciphertext),
+		// Match the official plugin's outbound payload shape:
+		// CDNMedia.aes_key is sent as base64(hex-string), not base64(raw-bytes).
+		aesKeyBase64:       base64.StdEncoding.EncodeToString([]byte(aesKeyHex)),
+		fileMD5Hex:         hex.EncodeToString(rawMD5[:]),
+		fileSize:           rawSize,
+		fileSizeCiphertext: len(ciphertext),
 	}, nil
 }
 
@@ -1128,6 +1146,7 @@ func (rt *workflowRuntime) sendOpenClawWeixinFile(accountID, toUserID, contextTo
 				"encrypt_type":        openClawWeixinMediaEncryptType,
 			},
 			"file_name": fileName,
+			"md5":       uploaded.fileMD5Hex,
 			"len":       fmt.Sprintf("%d", uploaded.fileSize),
 		},
 	})
@@ -1352,6 +1371,30 @@ func selectedArtifactsForDelivery(run *model.WorkflowRun) []map[string]interface
 	if len(selected) == 0 {
 		selected = files
 	}
+	// When workflow ends with a generic publish wrapper artifact, deliver the real generated
+	// artifacts instead of a single synthetic "发布给用户" markdown.
+	if len(selected) == 1 && len(files) > 1 {
+		only := selected[0]
+		stepKey := strings.ToLower(strings.TrimSpace(toStringLocal(only["stepKey"])))
+		name := strings.TrimSpace(toStringLocal(only["artifactName"]))
+		fileName := strings.TrimSpace(toStringLocal(only["fileName"]))
+		isGenericPublish := strings.HasPrefix(stepKey, "publish_") ||
+			strings.EqualFold(name, "发布给用户") ||
+			strings.EqualFold(name, "publish to user") ||
+			strings.EqualFold(fileName, "publish.md")
+		if isGenericPublish {
+			expanded := make([]map[string]interface{}, 0, len(files)-1)
+			for _, item := range files {
+				if strings.EqualFold(strings.TrimSpace(toStringLocal(item["stepKey"])), stepKey) {
+					continue
+				}
+				expanded = append(expanded, item)
+			}
+			if len(expanded) > 0 {
+				return expanded
+			}
+		}
+	}
 	return selected
 }
 
@@ -1487,6 +1530,79 @@ func renderArtifactDeliveryNotice(run *model.WorkflowRun, sent []string, failed 
 	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
+func workflowExportScriptPath() string {
+	candidates := []string{
+		"/root/ClawPanel/scripts/workflow_export_artifact.cjs",
+		"/opt/clawpanel/scripts/workflow_export_artifact.cjs",
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func (rt *workflowRuntime) exportMarkdownArtifact(absPath, artifactName string) ([]workflowDeliveryFile, error) {
+	script := workflowExportScriptPath()
+	if script == "" {
+		return nil, fmt.Errorf("export script not found")
+	}
+	cmd := exec.Command("node", script, "--input", absPath, "--outDir", filepath.Dir(absPath), "--artifactName", strings.TrimSpace(artifactName))
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("artifact export failed: %v: %s", err, strings.TrimSpace(string(output)))
+	}
+	var resp struct {
+		OK    bool `json:"ok"`
+		Files []struct {
+			Type string `json:"type"`
+			Path string `json:"path"`
+		} `json:"files"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(output), &resp); err != nil {
+		return nil, fmt.Errorf("artifact export parse failed: %w", err)
+	}
+	files := make([]workflowDeliveryFile, 0, len(resp.Files))
+	for _, item := range resp.Files {
+		abs := strings.TrimSpace(item.Path)
+		if abs == "" {
+			continue
+		}
+		name := strings.TrimSpace(artifactName)
+		switch strings.ToLower(strings.TrimSpace(item.Type)) {
+		case "docx":
+			name = strings.TrimSpace(name + "（Word）")
+		case "xlsx":
+			name = strings.TrimSpace(name + "（Excel）")
+		}
+		files = append(files, workflowDeliveryFile{
+			AbsolutePath: abs,
+			FileName:     filepath.Base(abs),
+			DisplayName:  name,
+		})
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("artifact export produced no files")
+	}
+	return files, nil
+}
+
+func (rt *workflowRuntime) resolveDeliveryFiles(absPath, fileName, artifactName string) []workflowDeliveryFile {
+	base := []workflowDeliveryFile{{
+		AbsolutePath: absPath,
+		FileName:     fileName,
+		DisplayName:  artifactName,
+	}}
+	if strings.EqualFold(filepath.Ext(fileName), ".md") {
+		converted, err := rt.exportMarkdownArtifact(absPath, artifactName)
+		if err == nil && len(converted) > 0 {
+			return converted
+		}
+	}
+	return base
+}
+
 func (rt *workflowRuntime) resolveArtifactDeliveryTarget(run *model.WorkflowRun) (string, string) {
 	if run == nil {
 		return "", ""
@@ -1526,24 +1642,27 @@ func (rt *workflowRuntime) sendArtifactsToOrigin(run *model.WorkflowRun, selecte
 		if name == "" {
 			name = fileName
 		}
-		var err error
-		switch strings.TrimSpace(run.ChannelID) {
-		case "qq":
-			if targetMode == "group" {
-				err = rt.sendQQGroupArtifact(targetID, absPath, fileName)
-			} else {
-				err = rt.sendQQPrivateArtifact(targetID, absPath, fileName)
+		deliveryFiles := rt.resolveDeliveryFiles(absPath, fileName, name)
+		for _, file := range deliveryFiles {
+			var err error
+			switch strings.TrimSpace(run.ChannelID) {
+			case "qq":
+				if targetMode == "group" {
+					err = rt.sendQQGroupArtifact(targetID, file.AbsolutePath, file.FileName)
+				} else {
+					err = rt.sendQQPrivateArtifact(targetID, file.AbsolutePath, file.FileName)
+				}
+			case "openclaw-weixin":
+				err = rt.sendOpenClawWeixinArtifact(run.ConversationID, run.UserID, file.AbsolutePath, file.DisplayName)
+			default:
+				err = fmt.Errorf("channel not supported for artifact delivery: %s", run.ChannelID)
 			}
-		case "openclaw-weixin":
-			err = rt.sendOpenClawWeixinArtifact(run.ConversationID, run.UserID, absPath, name)
-		default:
-			err = fmt.Errorf("channel not supported for artifact delivery: %s", run.ChannelID)
+			if err != nil {
+				failed = append(failed, fmt.Sprintf("%s: %v", file.DisplayName, err))
+				continue
+			}
+			sent = append(sent, file.DisplayName)
 		}
-		if err != nil {
-			failed = append(failed, fmt.Sprintf("%s: %v", name, err))
-			continue
-		}
-		sent = append(sent, name)
 	}
 	rt.updateArtifactDeliveryState(run, selected, sent, failed, strings.TrimSpace(run.ChannelID), targetMode, targetID)
 	updated, _ := model.GetWorkflowRun(rt.db, run.ID)
