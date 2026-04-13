@@ -1,13 +1,13 @@
 {
-  "latest_version": "5.4.4",
-  "release_time": "2026-04-13T00:10:00+08:00",
-  "release_note": "## ClawPanel Pro v5.4.4\n\n- 新增 AI Company 协同编排能力：公司概览、团队管理、任务流与调度入口\n- Panel Chat 增强多参与者知识注入与共享上下文落库一致性\n- 修复群聊执行路径在合并后出现的编译问题，保障构建与 CI 稳定通过",
+  "latest_version": "5.4.5",
+  "release_time": "2026-04-13T10:35:00+08:00",
+  "release_note": "## ClawPanel Pro v5.4.5\n\n- 工作流产物回传链路支持 Markdown 自动导出为 Word/Excel，并优先套用活动方案与流程表模板\n- 修复微信文件回传字段，补齐文件 md5 与统一请求基线参数，提升文件下载成功率\n- 优化发布步骤产物选择策略：避免仅回传单个“发布给用户”包装文件，默认回传实际业务产物",
   "download_urls": {
-    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.4/clawpanel-v5.4.4-linux-amd64",
-    "linux_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.4/clawpanel-v5.4.4-linux-arm64",
-    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.4/clawpanel-v5.4.4-darwin-amd64",
-    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.4/clawpanel-v5.4.4-darwin-arm64",
-    "windows_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.4/clawpanel-v5.4.4-windows-amd64.exe"
+    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.5/clawpanel-v5.4.5-linux-amd64",
+    "linux_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.5/clawpanel-v5.4.5-linux-arm64",
+    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.5/clawpanel-v5.4.5-darwin-amd64",
+    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.5/clawpanel-v5.4.5-darwin-arm64",
+    "windows_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/pro-v5.4.5/clawpanel-v5.4.5-windows-amd64.exe"
   },
   "major_change": false,
   "change_warning": ""

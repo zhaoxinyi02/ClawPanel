@@ -1,11 +1,11 @@
 {
-  "latest_version": "0.3.4",
-  "release_time": "2026-04-13T00:10:00+08:00",
-  "release_note": "## ClawPanel Lite v0.3.4\n\n- 新增 AI Company 协同编排基础视图与任务入口，增强多角色协同体验\n- Panel Chat 增强多参与者知识注入与共享上下文一致性\n- 修复群聊执行路径在合并后出现的编译问题，保证 Lite 构建链路稳定",
+  "latest_version": "0.3.5",
+  "release_time": "2026-04-13T10:35:00+08:00",
+  "release_note": "## ClawPanel Lite v0.3.5\n\n- 工作流产物回传新增 Markdown 转 Word/Excel 导出能力，适配活动类模板化交付\n- 优化发布步骤产物回传策略，避免只发包装文件而遗漏真实产物\n- 加固文件通道兼容字段，提升跨通道文件回传稳定性",
   "download_urls": {
-    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.4/clawpanel-lite-core-v0.3.4-linux-amd64.tar.gz",
-    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.4/clawpanel-lite-core-v0.3.4-darwin-amd64.tar.gz",
-    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.4/clawpanel-lite-core-v0.3.4-darwin-arm64.tar.gz"
+    "linux_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.5/clawpanel-lite-core-v0.3.5-linux-amd64.tar.gz",
+    "darwin_amd64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.5/clawpanel-lite-core-v0.3.5-darwin-amd64.tar.gz",
+    "darwin_arm64": "https://github.com/zhaoxinyi02/ClawPanel/releases/download/lite-v0.3.5/clawpanel-lite-core-v0.3.5-darwin-arm64.tar.gz"
   },
   "major_change": false,
   "change_warning": ""
