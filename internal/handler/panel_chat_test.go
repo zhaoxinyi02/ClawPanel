@@ -279,6 +279,41 @@ func TestRewritePanelChatRuntimeConfigSynthesizesImplicitAgent(t *testing.T) {
 	}
 }
 
+func TestRewritePanelChatRuntimeConfigStripsLegacyRootKeys(t *testing.T) {
+	root := t.TempDir()
+	cfg := &config.Config{
+		DataDir:     filepath.Join(root, "data"),
+		OpenClawDir: filepath.Join(root, ".openclaw"),
+		Edition:     "pro",
+	}
+	if err := os.MkdirAll(filepath.Join(cfg.OpenClawDir, "agents", "main", "agent"), 0o755); err != nil {
+		t.Fatalf("mkdir agent dir failed: %v", err)
+	}
+	src := filepath.Join(root, "src-openclaw.json")
+	dst := filepath.Join(root, "dst-openclaw.json")
+	if err := os.WriteFile(src, []byte(`{"agents":{"defaults":{}},"model":"claude-3-5-sonnet","sessionDir":"/tmp/sessions"}`), 0o644); err != nil {
+		t.Fatalf("write src config failed: %v", err)
+	}
+	session := panelChatSession{ID: "panel-3", AgentID: "main"}
+	if err := rewritePanelChatRuntimeConfig(cfg, src, dst, session, ""); err != nil {
+		t.Fatalf("rewritePanelChatRuntimeConfig failed: %v", err)
+	}
+	data, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("read dst config failed: %v", err)
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		t.Fatalf("unmarshal dst config failed: %v", err)
+	}
+	if _, ok := obj["model"]; ok {
+		t.Fatalf("expected panel chat runtime config to omit model, got %#v", obj["model"])
+	}
+	if _, ok := obj["sessionDir"]; ok {
+		t.Fatalf("expected panel chat runtime config to omit sessionDir, got %#v", obj["sessionDir"])
+	}
+}
+
 func TestRewritePanelChatRuntimeConfigPreservesConfiguredWorkspace(t *testing.T) {
 	root := t.TempDir()
 	workspace := filepath.Join(root, "workspaces", "writer")
