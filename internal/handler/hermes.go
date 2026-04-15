@@ -492,18 +492,30 @@ func detectHermesProcessState() (running bool, gatewayRunning bool) {
 		return false, false
 	}
 	out := detectCmd("pgrep", "-af", "hermes")
-	if strings.TrimSpace(out) == "" {
+	return parseHermesProcessState(out)
+}
+
+func parseHermesProcessState(raw string) (running bool, gatewayRunning bool) {
+	if strings.TrimSpace(raw) == "" {
 		return false, false
 	}
-	running = true
-	for _, line := range strings.Split(out, "\n") {
-		lower := strings.ToLower(strings.TrimSpace(line))
-		if lower == "" {
+	for _, line := range strings.Split(raw, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		// Ignore the process inspection command itself to avoid false positives.
+		if strings.Contains(lower, "pgrep -af hermes") {
 			continue
 		}
 		if strings.Contains(lower, "hermes gateway") || strings.Contains(lower, "gateway start") || strings.Contains(lower, "gateway setup") {
+			running = true
 			gatewayRunning = true
-			break
+			continue
+		}
+		if strings.Contains(lower, " hermes ") || strings.HasSuffix(lower, " hermes") || strings.Contains(lower, "/hermes ") || strings.HasSuffix(lower, "/hermes") || strings.Contains(lower, "hermes-agent") {
+			running = true
 		}
 	}
 	return running, gatewayRunning

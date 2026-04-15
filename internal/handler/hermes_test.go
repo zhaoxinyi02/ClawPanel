@@ -114,6 +114,29 @@ func TestResolveHermesSessionPathRejectsPrefixEscape(t *testing.T) {
 	}
 }
 
+func TestParseHermesProcessStateIgnoresPgrepSelf(t *testing.T) {
+	t.Parallel()
+
+	out := "1234 pgrep -af hermes\n"
+	running, gateway := parseHermesProcessState(out)
+	if running || gateway {
+		t.Fatalf("expected false/false for pgrep-only output, got running=%v gateway=%v", running, gateway)
+	}
+}
+
+func TestParseHermesProcessStateDetectsRealProcesses(t *testing.T) {
+	t.Parallel()
+
+	out := strings.Join([]string{
+		"2222 /home/zhaoxinyi/.local/bin/hermes",
+		"3333 /home/zhaoxinyi/.local/bin/hermes gateway start",
+	}, "\n")
+	running, gateway := parseHermesProcessState(out)
+	if !running || !gateway {
+		t.Fatalf("expected true/true for real Hermes gateway output, got running=%v gateway=%v", running, gateway)
+	}
+}
+
 func TestSaveHermesConfigWritesFiles(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
