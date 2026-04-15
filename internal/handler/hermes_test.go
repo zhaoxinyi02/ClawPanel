@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -30,6 +31,86 @@ func TestBuildHermesActionScript(t *testing.T) {
 
 	if _, _, ok := buildHermesActionScript("unknown-action"); ok {
 		t.Fatalf("unexpected support for unknown Hermes action")
+	}
+
+	if strings.Contains(script, "/root") {
+		t.Fatalf("script should not hardcode /root home fallback")
+	}
+	if !strings.Contains(script, "${HOME:-$(cd ~ && pwd)}") {
+		t.Fatalf("expected script to use runtime HOME fallback")
+	}
+}
+
+func TestHermesHomeDirPrefersConfiguredWorkspaceUser(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	userHome := filepath.Join(root, "user-home")
+	if err := os.MkdirAll(userHome, 0755); err != nil {
+		t.Fatalf("mkdir user home: %v", err)
+	}
+
+	cfg := &config.Config{OpenClawDir: filepath.Join(userHome, ".openclaw")}
+	hermesDir := filepath.Join(userHome, ".hermes")
+	for _, p := range []string{
+		filepath.Join(hermesDir, "config.yaml"),
+		filepath.Join(hermesDir, ".env"),
+		filepath.Join(hermesDir, "state.db"),
+		filepath.Join(hermesDir, "state"),
+		filepath.Join(hermesDir, "sessions"),
+	} {
+		if strings.HasSuffix(p, "state") || strings.HasSuffix(p, "sessions") {
+			if err := os.MkdirAll(p, 0755); err != nil {
+				t.Fatalf("mkdir marker dir: %v", err)
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+			t.Fatalf("mkdir parent: %v", err)
+		}
+		if err := os.WriteFile(p, []byte("ok"), 0644); err != nil {
+			t.Fatalf("write marker file: %v", err)
+		}
+	}
+
+	got := hermesHomeDir(cfg)
+	if got != hermesDir {
+		t.Fatalf("expected configured hermes home %q, got %q", hermesDir, got)
+	}
+}
+
+func TestResolveHermesSessionPathRejectsPrefixEscape(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	homeDir := filepath.Join(root, "home")
+	if err := os.MkdirAll(homeDir, 0755); err != nil {
+		t.Fatalf("mkdir home: %v", err)
+	}
+	status := HermesStatus{HomeDir: homeDir}
+
+	valid := filepath.Join(homeDir, "sessions", "a.jsonl")
+	if err := os.MkdirAll(filepath.Dir(valid), 0755); err != nil {
+		t.Fatalf("mkdir valid dir: %v", err)
+	}
+	if err := os.WriteFile(valid, []byte("{}\n"), 0644); err != nil {
+		t.Fatalf("write valid session: %v", err)
+	}
+	validID := base64.RawURLEncoding.EncodeToString([]byte(valid))
+	if got := resolveHermesSessionPath(status, validID); got != valid {
+		t.Fatalf("expected valid path %q, got %q", valid, got)
+	}
+
+	escaped := filepath.Join(root, "home-backup", "sessions", "b.jsonl")
+	if err := os.MkdirAll(filepath.Dir(escaped), 0755); err != nil {
+		t.Fatalf("mkdir escaped dir: %v", err)
+	}
+	if err := os.WriteFile(escaped, []byte("{}\n"), 0644); err != nil {
+		t.Fatalf("write escaped session: %v", err)
+	}
+	escapedID := base64.RawURLEncoding.EncodeToString([]byte(escaped))
+	if got := resolveHermesSessionPath(status, escapedID); got != "" {
+		t.Fatalf("expected escaped path to be rejected, got %q", got)
 	}
 }
 

@@ -29,6 +29,15 @@ const (
 	hermesRepoURL = "https://github.com/NousResearch/hermes-agent"
 )
 
+func firstHermesConfig(cfgs ...*config.Config) *config.Config {
+	for _, cfg := range cfgs {
+		if cfg != nil {
+			return cfg
+		}
+	}
+	return nil
+}
+
 var hermesPlatformSpecs = []hermesPlatformSpec{
 	{ID: "telegram", Label: "Telegram", ConfigPaths: []string{"gateway.telegram"}, RequiredEnv: []string{"TELEGRAM_BOT_TOKEN"}, OptionalEnv: []string{"TELEGRAM_ALLOWED_USERS", "TELEGRAM_HOME_CHAT"}},
 	{ID: "discord", Label: "Discord", ConfigPaths: []string{"gateway.discord"}, RequiredEnv: []string{"DISCORD_BOT_TOKEN"}, OptionalEnv: []string{"DISCORD_ALLOWED_USERS", "DISCORD_HOME_CHANNEL"}},
@@ -351,28 +360,74 @@ type hermesPlatformSpec struct {
 	OptionalEnv []string
 }
 
-func hermesHomeDir() string {
+func hermesHomeDir(cfgs ...*config.Config) string {
 	if custom := strings.TrimSpace(os.Getenv("HERMES_HOME")); custom != "" {
 		return custom
 	}
-	home, _ := os.UserHomeDir()
-	if home == "" {
-		home = os.Getenv("HOME")
+
+	candidates := make([]string, 0, 8)
+	appendCandidate := func(home string) {
+		home = strings.TrimSpace(home)
+		if home == "" {
+			return
+		}
+		candidates = append(candidates, filepath.Join(home, ".hermes"))
 	}
-	if home == "" {
-		if runtime.GOOS == "windows" {
-			home = os.Getenv("USERPROFILE")
-		} else {
-			home = "/root"
+
+	if cfg := firstHermesConfig(cfgs...); cfg != nil {
+		appendCandidate(filepath.Dir(strings.TrimSpace(cfg.OpenClawDir)))
+	}
+
+	home, _ := os.UserHomeDir()
+	appendCandidate(home)
+	appendCandidate(os.Getenv("HOME"))
+	if runtime.GOOS == "windows" {
+		appendCandidate(os.Getenv("USERPROFILE"))
+	} else {
+		appendCandidate("/root")
+	}
+
+	if runtime.GOOS == "darwin" {
+		if entries, err := os.ReadDir("/Users"); err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() && entry.Name() != "Shared" {
+					appendCandidate(filepath.Join("/Users", entry.Name()))
+				}
+			}
 		}
 	}
-	if home == "" {
-		return ".hermes"
+
+	seen := map[string]struct{}{}
+	bestPath := ""
+	bestScore := -1
+	for _, candidate := range candidates {
+		cleaned := filepath.Clean(candidate)
+		if cleaned == "" || cleaned == "." {
+			continue
+		}
+		if _, ok := seen[cleaned]; ok {
+			continue
+		}
+		seen[cleaned] = struct{}{}
+		score := 0
+		for _, marker := range []string{"config.yaml", ".env", "state.db", "state", "sessions"} {
+			if _, err := os.Stat(filepath.Join(cleaned, marker)); err == nil {
+				score++
+			}
+		}
+		if score > bestScore {
+			bestScore = score
+			bestPath = cleaned
+		}
 	}
-	return filepath.Join(home, ".hermes")
+
+	if bestPath != "" {
+		return bestPath
+	}
+	return ".hermes"
 }
 
-func detectHermesBinaryPath() string {
+func detectHermesBinaryPath(cfgs ...*config.Config) string {
 	if runtime.GOOS == "windows" {
 		if out := detectCmd("where", "hermes"); out != "" {
 			return firstNonEmptyLine(out)
@@ -387,7 +442,7 @@ func detectHermesBinaryPath() string {
 		}
 	}
 
-	home := hermesHomeDir()
+	home := hermesHomeDir(cfgs...)
 	candidates := []string{
 		filepath.Join(filepath.Dir(home), ".local", "bin", hermesExecutableName()),
 		filepath.Join("/usr/local/bin", hermesExecutableName()),
@@ -418,11 +473,11 @@ func firstNonEmptyLine(raw string) string {
 	return ""
 }
 
-func detectHermesVersion() string {
+func detectHermesVersion(cfgs ...*config.Config) string {
 	if version := firstNonEmptyLine(detectCmd("hermes", "--version")); version != "" {
 		return version
 	}
-	if binaryPath := detectHermesBinaryPath(); binaryPath != "" {
+	if binaryPath := detectHermesBinaryPath(cfgs...); binaryPath != "" {
 		cmd := exec.Command(binaryPath, "--version")
 		cmd.Env = config.BuildExecEnv()
 		if out, err := cmd.Output(); err == nil {
@@ -454,16 +509,16 @@ func detectHermesProcessState() (running bool, gatewayRunning bool) {
 	return running, gatewayRunning
 }
 
-func detectHermesStatus() HermesStatus {
-	homeDir := hermesHomeDir()
+func detectHermesStatus(cfgs ...*config.Config) HermesStatus {
+	homeDir := hermesHomeDir(cfgs...)
 	configPath := filepath.Join(homeDir, "config.yaml")
 	envPath := filepath.Join(homeDir, ".env")
 	stateDir := filepath.Join(homeDir, "state")
 	sessionsDir := filepath.Join(homeDir, "sessions")
 	stateDBPath := filepath.Join(homeDir, "state.db")
 	authPath := filepath.Join(homeDir, "auth.json")
-	binaryPath := detectHermesBinaryPath()
-	version := detectHermesVersion()
+	binaryPath := detectHermesBinaryPath(cfgs...)
+	version := detectHermesVersion(cfgs...)
 	running, gatewayRunning := detectHermesProcessState()
 
 	configured := false
@@ -504,8 +559,8 @@ func readTextFile(path string) string {
 	return string(data)
 }
 
-func buildHermesConfigState() HermesConfigState {
-	status := detectHermesStatus()
+func buildHermesConfigState(cfgs ...*config.Config) HermesConfigState {
+	status := detectHermesStatus(cfgs...)
 	return HermesConfigState{
 		Status: status,
 		Files: HermesConfigFiles{
@@ -1263,7 +1318,7 @@ func ensureHermesBootstrap(status HermesStatus) error {
 }
 
 func fixHermesIssue(id string, cfg *config.Config) error {
-	status := detectHermesStatus()
+	status := detectHermesStatus(cfg)
 	switch id {
 	case "hermes-no-config":
 		return ensureHermesBootstrap(status)
@@ -1569,10 +1624,10 @@ func runHermesDoctorAndPersistSnapshot(cfg *config.Config, fix bool) (*HermesDoc
 		args = append(args, "--fix")
 	}
 	lines, err := runHermesCommandLines(120*time.Second, args...)
-	status := detectHermesStatus()
+	status := detectHermesStatus(cfg)
 	data := detectHermesDataSummary(status)
 	logFiles := listHermesLogFiles(status)
-	platforms := detectHermesPlatforms(buildHermesConfigState())
+	platforms := detectHermesPlatforms(buildHermesConfigState(cfg))
 	snapshot := buildHermesDoctorSnapshot(status, data, logFiles, platforms, HermesTaskSummary{ByStatus: map[string]int{}}, nil, fix)
 	snapshot.RawLines = lines
 	if err != nil {
@@ -1835,8 +1890,16 @@ func resolveHermesSessionPath(status HermesStatus, id string) string {
 	if err != nil {
 		return ""
 	}
-	path := string(raw)
-	if !strings.HasPrefix(path, status.HomeDir) {
+	path := filepath.Clean(string(raw))
+	if !filepath.IsAbs(path) {
+		return ""
+	}
+	home := filepath.Clean(status.HomeDir)
+	rel, err := filepath.Rel(home, path)
+	if err != nil {
+		return ""
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return ""
 	}
 	info, err := os.Stat(path)
@@ -1982,42 +2045,42 @@ func buildHermesActionScript(action string) (taskName string, script string, ok 
 	switch action {
 	case "setup":
 		return "Hermes Setup", `set -e
-export HOME="${HOME:-/root}"
+export HOME="${HOME:-$(cd ~ && pwd)}"
 export PATH="$HOME/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 hermes setup`, true
 	case "doctor":
 		return "Hermes Doctor", `set -e
-export HOME="${HOME:-/root}"
+export HOME="${HOME:-$(cd ~ && pwd)}"
 export PATH="$HOME/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 hermes doctor`, true
 	case "update":
 		return "Hermes Update", `set -e
-export HOME="${HOME:-/root}"
+export HOME="${HOME:-$(cd ~ && pwd)}"
 export PATH="$HOME/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 hermes update`, true
 	case "gateway-install":
 		return "Hermes Gateway Install", `set -e
-export HOME="${HOME:-/root}"
+export HOME="${HOME:-$(cd ~ && pwd)}"
 export PATH="$HOME/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 hermes gateway install`, true
 	case "gateway-start":
 		return "Hermes Gateway Start", `set -e
-export HOME="${HOME:-/root}"
+export HOME="${HOME:-$(cd ~ && pwd)}"
 export PATH="$HOME/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 hermes gateway start`, true
 	case "gateway-stop":
 		return "Hermes Gateway Stop", `set -e
-export HOME="${HOME:-/root}"
+export HOME="${HOME:-$(cd ~ && pwd)}"
 export PATH="$HOME/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 hermes gateway stop`, true
 	case "gateway-restart":
 		return "Hermes Gateway Restart", `set -e
-export HOME="${HOME:-/root}"
+export HOME="${HOME:-$(cd ~ && pwd)}"
 export PATH="$HOME/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 hermes gateway restart`, true
 	case "claw-migrate":
 		return "Hermes OpenClaw Migration", `set -e
-export HOME="${HOME:-/root}"
+export HOME="${HOME:-$(cd ~ && pwd)}"
 export PATH="$HOME/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 hermes claw migrate`, true
 	default:
@@ -2025,20 +2088,20 @@ hermes claw migrate`, true
 	}
 }
 
-func GetHermesStatus() gin.HandlerFunc {
+func GetHermesStatus(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"ok": true, "status": detectHermesStatus()})
+		c.JSON(http.StatusOK, gin.H{"ok": true, "status": detectHermesStatus(cfgs...)})
 	}
 }
 
-func GetHermesPersonality() gin.HandlerFunc {
+func GetHermesPersonality(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		status := detectHermesStatus()
+		status := detectHermesStatus(cfgs...)
 		c.JSON(http.StatusOK, gin.H{"ok": true, "personality": buildHermesPersonalityState(status)})
 	}
 }
 
-func SaveHermesPersonality() gin.HandlerFunc {
+func SaveHermesPersonality(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			SoulContent string `json:"soulContent"`
@@ -2047,7 +2110,7 @@ func SaveHermesPersonality() gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "参数错误"})
 			return
 		}
-		status := detectHermesStatus()
+		status := detectHermesStatus(cfgs...)
 		if err := os.MkdirAll(status.HomeDir, 0755); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": "创建 Hermes home 目录失败: " + err.Error()})
 			return
@@ -2060,16 +2123,16 @@ func SaveHermesPersonality() gin.HandlerFunc {
 	}
 }
 
-func GetHermesProfiles() gin.HandlerFunc {
+func GetHermesProfiles(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		status := detectHermesStatus()
+		status := detectHermesStatus(cfgs...)
 		c.JSON(http.StatusOK, gin.H{"ok": true, "profiles": listHermesProfiles(status)})
 	}
 }
 
-func GetHermesProfileDetail() gin.HandlerFunc {
+func GetHermesProfileDetail(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		status := detectHermesStatus()
+		status := detectHermesStatus(cfgs...)
 		name := sanitizeHermesProfileName(c.Param("name"))
 		if name == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "profile name required"})
@@ -2092,9 +2155,9 @@ func GetHermesProfileDetail() gin.HandlerFunc {
 	}
 }
 
-func SaveHermesProfileDetail() gin.HandlerFunc {
+func SaveHermesProfileDetail(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		status := detectHermesStatus()
+		status := detectHermesStatus(cfgs...)
 		name := sanitizeHermesProfileName(c.Param("name"))
 		if name == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "profile name required"})
@@ -2131,8 +2194,8 @@ func SaveHermesProfileDetail() gin.HandlerFunc {
 
 func CheckHermes(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		status := detectHermesStatus()
-		configState := buildHermesConfigState()
+		status := detectHermesStatus(cfg)
+		configState := buildHermesConfigState(cfg)
 		data := detectHermesDataSummary(status)
 		platforms := detectHermesPlatforms(configState)
 		doctor := readHermesDoctorSnapshot(cfg)
@@ -2180,15 +2243,15 @@ func FixHermes(cfg *config.Config) gin.HandlerFunc {
 	}
 }
 
-func GetHermesStructuredConfig() gin.HandlerFunc {
+func GetHermesStructuredConfig(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		configState := buildHermesConfigState()
+		configState := buildHermesConfigState(cfgs...)
 		raw := parseHermesYAMLFile(configState.Files.ConfigYAML)
 		c.JSON(http.StatusOK, gin.H{"ok": true, "config": buildHermesStructuredConfig(raw)})
 	}
 }
 
-func SaveHermesStructuredConfig() gin.HandlerFunc {
+func SaveHermesStructuredConfig(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			Model       map[string]interface{} `json:"model"`
@@ -2204,7 +2267,7 @@ func SaveHermesStructuredConfig() gin.HandlerFunc {
 			return
 		}
 
-		state := detectHermesStatus()
+		state := detectHermesStatus(cfgs...)
 		if err := os.MkdirAll(state.HomeDir, 0755); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": "创建 Hermes 配置目录失败: " + err.Error()})
 			return
@@ -2256,13 +2319,13 @@ func SaveHermesStructuredConfig() gin.HandlerFunc {
 	}
 }
 
-func GetHermesConfig() gin.HandlerFunc {
+func GetHermesConfig(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"ok": true, "config": buildHermesConfigState()})
+		c.JSON(http.StatusOK, gin.H{"ok": true, "config": buildHermesConfigState(cfgs...)})
 	}
 }
 
-func SaveHermesConfig() gin.HandlerFunc {
+func SaveHermesConfig(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			ConfigYAML *string `json:"configYaml"`
@@ -2273,7 +2336,7 @@ func SaveHermesConfig() gin.HandlerFunc {
 			return
 		}
 
-		state := detectHermesStatus()
+		state := detectHermesStatus(cfgs...)
 		if err := os.MkdirAll(state.HomeDir, 0755); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": "创建 Hermes 配置目录失败: " + err.Error()})
 			return
@@ -2301,7 +2364,7 @@ func SaveHermesConfig() gin.HandlerFunc {
 			}
 		}
 
-		c.JSON(http.StatusOK, gin.H{"ok": true, "config": buildHermesConfigState()})
+		c.JSON(http.StatusOK, gin.H{"ok": true, "config": buildHermesConfigState(cfgs...)})
 	}
 }
 
@@ -2313,8 +2376,8 @@ func GetHermesActions() gin.HandlerFunc {
 
 func GetHermesOverview(cfg *config.Config, tm *taskman.Manager) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		status := detectHermesStatus()
-		configState := buildHermesConfigState()
+		status := detectHermesStatus(cfg)
+		configState := buildHermesConfigState(cfg)
 		data := detectHermesDataSummary(status)
 		storage := scanHermesStorage(status)
 		platforms := detectHermesPlatforms(configState)
@@ -2342,9 +2405,9 @@ func GetHermesOverview(cfg *config.Config, tm *taskman.Manager) gin.HandlerFunc 
 	}
 }
 
-func GetHermesLogs() gin.HandlerFunc {
+func GetHermesLogs(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		status := detectHermesStatus()
+		status := detectHermesStatus(cfgs...)
 		files := listHermesLogFiles(status)
 		selectedPath := resolveHermesLogSelection(files, c.Query("path"))
 		lines := 120
@@ -2370,24 +2433,24 @@ func parseHermesInt(raw string) (int, error) {
 	return strconv.Atoi(strings.TrimSpace(raw))
 }
 
-func GetHermesStorage() gin.HandlerFunc {
+func GetHermesStorage(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		status := detectHermesStatus()
+		status := detectHermesStatus(cfgs...)
 		c.JSON(http.StatusOK, gin.H{"ok": true, "storage": scanHermesStorage(status)})
 	}
 }
 
-func GetHermesUsage() gin.HandlerFunc {
+func GetHermesUsage(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		status := detectHermesStatus()
+		status := detectHermesStatus(cfgs...)
 		storage := scanHermesStorage(status)
 		c.JSON(http.StatusOK, gin.H{"ok": true, "usage": storage.Usage, "db": storage.DB})
 	}
 }
 
-func GetHermesSessions() gin.HandlerFunc {
+func GetHermesSessions(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		status := detectHermesStatus()
+		status := detectHermesStatus(cfgs...)
 		limit := 100
 		if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
 			if n, err := parseHermesInt(raw); err == nil && n > 0 && n <= 1000 {
@@ -2398,9 +2461,9 @@ func GetHermesSessions() gin.HandlerFunc {
 	}
 }
 
-func GetHermesSessionDetail() gin.HandlerFunc {
+func GetHermesSessionDetail(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		status := detectHermesStatus()
+		status := detectHermesStatus(cfgs...)
 		path := resolveHermesSessionPath(status, c.Param("id"))
 		if path == "" {
 			c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "Hermes session not found"})
@@ -2421,7 +2484,7 @@ func GetHermesSessionDetail() gin.HandlerFunc {
 	}
 }
 
-func PreviewHermesSession() gin.HandlerFunc {
+func PreviewHermesSession(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			Platform string `json:"platform"`
@@ -2433,14 +2496,14 @@ func PreviewHermesSession() gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "参数错误"})
 			return
 		}
-		preview := previewHermesSession(buildHermesConfigState(), req.Platform, req.ChatType, req.ChatID, req.UserID)
+		preview := previewHermesSession(buildHermesConfigState(cfgs...), req.Platform, req.ChatType, req.ChatID, req.UserID)
 		c.JSON(http.StatusOK, gin.H{"ok": true, "preview": preview})
 	}
 }
 
-func GetHermesHealth() gin.HandlerFunc {
+func GetHermesHealth(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		status := detectHermesStatus()
+		status := detectHermesStatus(cfgs...)
 		data := detectHermesDataSummary(status)
 		logFiles := listHermesLogFiles(status)
 		health := buildHermesHealthSnapshot(status, data, logFiles, HermesTaskSummary{ByStatus: map[string]int{}})
@@ -2448,16 +2511,16 @@ func GetHermesHealth() gin.HandlerFunc {
 	}
 }
 
-func GetHermesPlatforms() gin.HandlerFunc {
+func GetHermesPlatforms(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		configState := buildHermesConfigState()
+		configState := buildHermesConfigState(cfgs...)
 		c.JSON(http.StatusOK, gin.H{"ok": true, "platforms": detectHermesPlatforms(configState)})
 	}
 }
 
-func GetHermesPlatformDetail() gin.HandlerFunc {
+func GetHermesPlatformDetail(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		configState := buildHermesConfigState()
+		configState := buildHermesConfigState(cfgs...)
 		detail, ok := buildHermesPlatformDetail(configState, c.Param("id"))
 		if !ok {
 			c.JSON(http.StatusNotFound, gin.H{"ok": false, "error": "Hermes platform not found"})
@@ -2467,7 +2530,7 @@ func GetHermesPlatformDetail() gin.HandlerFunc {
 	}
 }
 
-func SaveHermesPlatformDetail() gin.HandlerFunc {
+func SaveHermesPlatformDetail(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		spec := findHermesPlatformSpec(c.Param("id"))
 		if spec == nil {
@@ -2485,7 +2548,7 @@ func SaveHermesPlatformDetail() gin.HandlerFunc {
 			return
 		}
 
-		state := detectHermesStatus()
+		state := detectHermesStatus(cfgs...)
 		if err := os.MkdirAll(state.HomeDir, 0755); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": "创建 Hermes 配置目录失败: " + err.Error()})
 			return
@@ -2550,7 +2613,7 @@ func SaveHermesPlatformDetail() gin.HandlerFunc {
 			}
 		}
 
-		configState := buildHermesConfigState()
+		configState := buildHermesConfigState(cfgs...)
 		detail, ok := buildHermesPlatformDetail(configState, spec.ID)
 		if !ok {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": "平台保存后重新读取失败"})
@@ -2566,10 +2629,10 @@ func GetHermesDoctorSnapshot(cfg *config.Config, tm *taskman.Manager) gin.Handle
 			c.JSON(http.StatusOK, gin.H{"ok": true, "snapshot": snapshot})
 			return
 		}
-		status := detectHermesStatus()
+		status := detectHermesStatus(cfg)
 		data := detectHermesDataSummary(status)
 		logFiles := listHermesLogFiles(status)
-		platforms := detectHermesPlatforms(buildHermesConfigState())
+		platforms := detectHermesPlatforms(buildHermesConfigState(cfg))
 		_, summary := collectHermesTasks(tm)
 		snapshot := buildHermesDoctorSnapshot(status, data, logFiles, platforms, summary, nil, false)
 		c.JSON(http.StatusOK, gin.H{"ok": true, "snapshot": snapshot})
@@ -2623,15 +2686,15 @@ func RunHermesDoctor(cfg *config.Config, tm *taskman.Manager) gin.HandlerFunc {
 		}
 		task := tm.CreateTask("Hermes Doctor", taskType)
 		go func() {
-			script := "set -e\nexport HOME=\"${HOME:-/root}\"\nexport PATH=\"$HOME/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH\"\n" + command
+			script := "set -e\nexport HOME=\"${HOME:-$(cd ~ && pwd)}\"\nexport PATH=\"$HOME/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH\"\n" + command
 			err := tm.RunScript(task, script)
 			tm.FinishTask(task, err)
 
 			cloned := tm.GetTask(task.ID)
-			status := detectHermesStatus()
+			status := detectHermesStatus(cfg)
 			data := detectHermesDataSummary(status)
 			logFiles := listHermesLogFiles(status)
-			platforms := detectHermesPlatforms(buildHermesConfigState())
+			platforms := detectHermesPlatforms(buildHermesConfigState(cfg))
 			_, summary := collectHermesTasks(tm)
 			snapshot := buildHermesDoctorSnapshot(status, data, logFiles, platforms, summary, cloned, req.Fix)
 			writeHermesDoctorSnapshot(cfg, snapshot)
