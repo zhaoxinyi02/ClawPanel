@@ -331,6 +331,24 @@ func GetSoftwareList(cfg *config.Config) gin.HandlerFunc {
 				Version: ocVer, Installed: true, Installable: false,
 				Status: boolStatus(true), Category: "service", Icon: "brain",
 			})
+			hermesStatus := detectHermesStatus()
+			hermesInstalled := hermesStatus.Installed
+			hermesState := "not_installed"
+			if hermesInstalled {
+				switch {
+				case hermesStatus.GatewayRunning:
+					hermesState = "running"
+				case hermesStatus.Running:
+					hermesState = "running"
+				default:
+					hermesState = "installed"
+				}
+			}
+			list = append(list, SoftwareInfo{
+				ID: "hermes", Name: "Hermes Agent", Description: "Nous Research 的独立 AI Agent 运行时",
+				Version: hermesStatus.Version, Installed: hermesInstalled, Installable: true,
+				Status: hermesState, Category: "service", Icon: "sparkles",
+			})
 			c.JSON(http.StatusOK, gin.H{"ok": true, "software": list, "platform": runtime.GOOS})
 			return
 		}
@@ -373,6 +391,26 @@ func GetSoftwareList(cfg *config.Config) gin.HandlerFunc {
 			ID: "python", Name: "Python 3", Description: "Python 运行时",
 			Version: pythonVer, Installed: pythonVer != "", Installable: true,
 			Status: boolStatus(pythonVer != ""), Category: "runtime", Icon: "code",
+		})
+
+		// Hermes
+		hermesStatus := detectHermesStatus()
+		hermesInstalled := hermesStatus.Installed
+		hermesState := "not_installed"
+		if hermesInstalled {
+			switch {
+			case hermesStatus.GatewayRunning:
+				hermesState = "running"
+			case hermesStatus.Running:
+				hermesState = "running"
+			default:
+				hermesState = "installed"
+			}
+		}
+		list = append(list, SoftwareInfo{
+			ID: "hermes", Name: "Hermes Agent", Description: "Nous Research 的独立 AI Agent 运行时",
+			Version: hermesStatus.Version, Installed: hermesInstalled, Installable: true,
+			Status: hermesState, Category: "service", Icon: "sparkles",
 		})
 
 		// OpenClaw
@@ -1087,6 +1125,7 @@ func InstallSoftware(cfg *config.Config, tm *taskman.Manager) gin.HandlerFunc {
 
 		var script string
 		var taskName string
+		needsSudo := runtime.GOOS != "windows"
 
 		switch req.Software {
 		case "nodejs":
@@ -1886,6 +1925,49 @@ echo "✅ 全部完成"
 				script = buildNapCatInstallScript(cfg)
 			}
 
+		case "hermes":
+			taskName = "安装 Hermes Agent"
+			needsSudo = false
+			if runtime.GOOS == "windows" {
+				script = `
+$ErrorActionPreference = "Stop"
+Write-Output "❌ Hermes Agent 暂不支持原生 Windows 安装"
+Write-Output "请先安装 WSL2，然后在 Linux 环境中运行 Hermes 官方安装脚本"
+exit 1
+`
+			} else {
+				script = `
+set -e
+export HOME="${HOME:-/root}"
+export PATH="$HOME/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+
+echo "📦 安装 Hermes Agent..."
+if command -v hermes >/dev/null 2>&1; then
+  echo "⚠️ Hermes 已安装: $(hermes --version 2>/dev/null || echo installed)"
+  exit 0
+fi
+
+curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+
+export PATH="$HOME/.local/bin:$PATH"
+if command -v hermes >/dev/null 2>&1; then
+  echo "✅ Hermes $(hermes --version 2>/dev/null || echo installed) 安装完成"
+  echo "ℹ️ 下一步建议运行: hermes setup"
+  echo "ℹ️ 如需从 OpenClaw 迁移，可运行: hermes claw migrate"
+  exit 0
+fi
+
+if [ -x "$HOME/.local/bin/hermes" ]; then
+  echo "✅ Hermes 已安装到 $HOME/.local/bin/hermes"
+  "$HOME/.local/bin/hermes" --version 2>/dev/null || true
+  echo "⚠️ 当前 shell 可能尚未加载 ~/.local/bin 到 PATH"
+  exit 0
+fi
+
+echo "❌ Hermes 安装完成后仍未检测到 hermes 命令"
+exit 1
+`
+			}
 		case "wechat":
 			taskName = "安装微信机器人"
 			script = buildWeChatInstallScript(cfg)
@@ -1899,7 +1981,7 @@ echo "✅ 全部完成"
 
 		go func() {
 			var err error
-			if sudoPass != "" && runtime.GOOS != "windows" {
+			if needsSudo && sudoPass != "" && runtime.GOOS != "windows" {
 				// Linux/macOS installs need sudo (including OpenClaw which auto-installs Node.js)
 				err = tm.RunScriptWithSudo(task, sudoPass, script)
 			} else {

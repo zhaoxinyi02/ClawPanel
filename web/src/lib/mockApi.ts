@@ -599,6 +599,457 @@ export const mockApi = {
           message: 'OpenClaw 与网关均在线，消息处理与配置写入可正常进行。',
         },
       },
+      hermes: {
+        installed: true,
+        configured: true,
+        running: true,
+        gatewayRunning: true,
+        version: 'hermes-agent 0.9.0',
+        binaryPath: '/Users/demo/.local/bin/hermes',
+        homeDir: '/Users/demo/.hermes',
+        configPath: '/Users/demo/.hermes/config.yaml',
+        envPath: '/Users/demo/.hermes/.env',
+        stateDir: '/Users/demo/.hermes/state',
+        pythonVersion: 'Python 3.11.9',
+        docsUrl: 'https://hermes-agent.nousresearch.com/docs/',
+        repoUrl: 'https://github.com/NousResearch/hermes-agent',
+      },
+    };
+  },
+  getHermesStatus: async () => {
+    await delay(120);
+    return {
+      ok: true,
+      status: {
+        installed: true,
+        configured: true,
+        running: true,
+        gatewayRunning: true,
+        version: 'hermes-agent 0.9.0',
+        binaryPath: '/Users/demo/.local/bin/hermes',
+        homeDir: '/Users/demo/.hermes',
+        configPath: '/Users/demo/.hermes/config.yaml',
+        envPath: '/Users/demo/.hermes/.env',
+        stateDir: '/Users/demo/.hermes/state',
+        pythonVersion: 'Python 3.11.9',
+        docsUrl: 'https://hermes-agent.nousresearch.com/docs/',
+        repoUrl: 'https://github.com/NousResearch/hermes-agent',
+      },
+    };
+  },
+  getHermesOverview: async () => {
+    await delay(120);
+    return {
+      ok: true,
+      overview: {
+        status: {
+          installed: true,
+          configured: true,
+          running: true,
+          gatewayRunning: true,
+          version: 'hermes-agent 0.9.0',
+          binaryPath: '/Users/demo/.local/bin/hermes',
+          homeDir: '/Users/demo/.hermes',
+          configPath: '/Users/demo/.hermes/config.yaml',
+          envPath: '/Users/demo/.hermes/.env',
+          stateDir: '/Users/demo/.hermes/state',
+          pythonVersion: 'Python 3.11.9',
+          docsUrl: 'https://hermes-agent.nousresearch.com/docs/',
+          repoUrl: 'https://github.com/NousResearch/hermes-agent',
+        },
+        config: {
+          status: {
+            installed: true,
+            configured: true,
+            running: true,
+            gatewayRunning: true,
+            version: 'hermes-agent 0.9.0',
+            binaryPath: '/Users/demo/.local/bin/hermes',
+            homeDir: '/Users/demo/.hermes',
+            configPath: '/Users/demo/.hermes/config.yaml',
+            envPath: '/Users/demo/.hermes/.env',
+            stateDir: '/Users/demo/.hermes/state',
+            pythonVersion: 'Python 3.11.9',
+            docsUrl: 'https://hermes-agent.nousresearch.com/docs/',
+            repoUrl: 'https://github.com/NousResearch/hermes-agent',
+          },
+          files: {
+            configYaml: 'model:\n  provider: openrouter\n  name: anthropic/claude-sonnet-4-5\n',
+            envFile: 'OPENROUTER_API_KEY=sk-demo-hermes\nTELEGRAM_BOT_TOKEN=123456:demo\n',
+          },
+          exists: { homeDir: true, configPath: true, envPath: true, stateDir: true },
+        },
+        actions: [
+          { id: 'setup', label: 'Hermes Setup', description: '运行 Hermes 初始化向导', command: 'hermes setup' },
+          { id: 'doctor', label: 'Hermes Doctor', description: '诊断 Hermes 运行环境与依赖', command: 'hermes doctor' },
+          { id: 'update', label: 'Hermes Update', description: '更新 Hermes 到最新版本', command: 'hermes update' },
+        ],
+        data: {
+          homeDir: '/Users/demo/.hermes',
+          installDir: '/Users/demo/.hermes/hermes-agent',
+          logsDir: '/Users/demo/.hermes/logs',
+          skillsDir: '/Users/demo/.hermes/skills',
+          profilesDir: '/Users/demo/.hermes/profiles',
+          stateDir: '/Users/demo/.hermes/state',
+          installDirExists: true,
+          logsDirExists: true,
+          skillsDirExists: true,
+          profilesDirExists: true,
+          stateDirExists: true,
+          skillCount: 6,
+          profileCount: 2,
+          logFileCount: 2,
+          sqliteStoreCount: 1,
+          sessionArtifactCount: 3,
+          detectedSqliteStores: ['/Users/demo/.hermes/state/state.db'],
+          detectedSessionArtifacts: ['/Users/demo/.hermes/state/history/session-1.jsonl'],
+        },
+        logFiles: [
+          { name: 'gateway.log', path: '/Users/demo/.hermes/logs/gateway.log', size: 2048, modifiedAt: new Date().toISOString() },
+          { name: 'hermes.log', path: '/Users/demo/.hermes/logs/hermes.log', size: 4096, modifiedAt: new Date().toISOString() },
+        ],
+        recentTasks: [
+          { id: 'task-hermes-demo', name: 'Hermes Doctor', type: 'hermes_doctor', status: 'success', progress: 100, error: '', createdAt: new Date(Date.now() - 120000).toISOString(), updatedAt: new Date(Date.now() - 60000).toISOString(), log: ['doctor complete'] },
+        ],
+        taskSummary: { total: 1, byStatus: { success: 1 } },
+        warnings: [],
+      },
+    };
+  },
+  getHermesHealth: async () => {
+    await delay(80);
+    return {
+      ok: true,
+      health: {
+        summary: { total: 1, byStatus: { success: 1 } },
+        checks: [
+          { id: 'install', title: '安装状态', status: 'healthy', detail: '/Users/demo/.local/bin/hermes', fixHint: '先安装 Hermes' },
+          { id: 'config', title: '配置状态', status: 'healthy', detail: '/Users/demo/.hermes/config.yaml', fixHint: '运行 hermes setup 初始化配置' },
+          { id: 'runtime', title: '运行状态', status: 'healthy', detail: '检测到 Hermes Gateway 运行中', fixHint: '可通过 Hermes 动作执行 gateway start / restart' },
+          { id: 'python', title: 'Python 环境', status: 'healthy', detail: 'Python 3.11.9', fixHint: 'Hermes 依赖 Python 3.11+' },
+          { id: 'logs', title: '日志输出', status: 'healthy', detail: 'gateway.log, hermes.log', fixHint: '执行动作后观察日志输出' },
+          { id: 'storage', title: '存储快照', status: 'warning', detail: 'state 目录已存在。 SQLite: 1 会话产物: 3 技能目录: 6', fixHint: '完成真实对话后观察状态目录' },
+        ],
+      },
+    };
+  },
+  getHermesStorage: async () => {
+    await delay(80);
+    return {
+      ok: true,
+      storage: {
+        sqliteStores: ['/Users/demo/.hermes/state/state.db'],
+        conversationFiles: ['/Users/demo/.hermes/state/history/conversation-1.jsonl'],
+        sessionArtifacts: ['/Users/demo/.hermes/state/history/session-1.jsonl', '/Users/demo/.hermes/state/history/session-2.jsonl'],
+        conversationCount: 1,
+        sessionArtifactCount: 2,
+        previewSessions: [
+          {
+            id: 'conversation-1',
+            title: '帮我整理今天的任务安排',
+            path: '/Users/demo/.hermes/state/history/conversation-1.jsonl',
+            updatedAt: new Date().toISOString(),
+            messageCount: 4,
+            recentMessages: [
+              { role: 'user', content: '帮我整理今天的任务安排', timestamp: new Date(Date.now() - 60000).toISOString() },
+              { role: 'assistant', content: '今天建议优先处理 Hermes 接入和日志解析。', timestamp: new Date(Date.now() - 30000).toISOString() },
+            ],
+          },
+        ],
+      },
+    };
+  },
+  getHermesPlatforms: async () => {
+    await delay(80);
+    return {
+      ok: true,
+      platforms: {
+        configuredCount: 3,
+        enabledCount: 2,
+        platforms: [
+          { id: 'telegram', label: 'Telegram', configured: true, enabled: true, configPath: 'gateway.telegram', presentEnvKeys: ['TELEGRAM_BOT_TOKEN'], missingEnvKeys: [], detail: '检测到 config.yaml 配置。 环境变量: TELEGRAM_BOT_TOKEN' },
+          { id: 'discord', label: 'Discord', configured: false, enabled: false, configPath: 'gateway.discord', presentEnvKeys: [], missingEnvKeys: ['DISCORD_BOT_TOKEN'], detail: '缺失: DISCORD_BOT_TOKEN' },
+          { id: 'slack', label: 'Slack', configured: true, enabled: true, configPath: 'gateway.slack', presentEnvKeys: ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'], missingEnvKeys: [], detail: '检测到 config.yaml 配置。 环境变量: SLACK_BOT_TOKEN, SLACK_APP_TOKEN' },
+          { id: 'feishu', label: 'Feishu / Lark', configured: true, enabled: false, configPath: 'gateway.feishu', presentEnvKeys: ['FEISHU_APP_ID'], missingEnvKeys: ['FEISHU_ENABLED'], detail: '环境变量: FEISHU_APP_ID 缺失: FEISHU_ENABLED' },
+        ],
+      },
+    };
+  },
+  getHermesRouting: async () => {
+    await delay(80);
+    return {
+      ok: true,
+      routing: {
+        defaultProfile: 'default',
+        defaultPersonality: 'helpful',
+        defaultHomeTarget: 'telegram-home',
+        defaultOverrides: { groupPerUser: false },
+        rules: [
+          {
+            id: 'rule-1',
+            name: 'telegram-ops',
+            enabled: true,
+            priority: 10,
+            match: { platform: 'telegram', chatType: 'group', chatId: 'ops-room' },
+            profileName: 'ops',
+            personalityName: 'concise',
+            homeTarget: 'ops-room',
+            groupPerUser: true,
+            notes: '运维群单独路由',
+          },
+        ],
+      },
+    };
+  },
+  updateHermesRouting: async (_data: any) => {
+    await delay(120);
+    return { ok: true };
+  },
+  previewHermesRouting: async (data: { platform: string; chatType: string; chatId: string; userId?: string; message?: string }) => {
+    await delay(100);
+    return {
+      ok: true,
+      preview: {
+        base: {
+          platform: data.platform,
+          chatType: data.chatType,
+          chatId: data.chatId,
+          userId: data.userId || '',
+          groupPerUser: true,
+          usedFallback: false,
+          sessionKey: `${data.platform}:${data.chatType}:${data.chatId}${data.userId ? `:user:${data.userId}` : ''}`,
+          homeTarget: 'ops-room',
+          reason: 'group_sessions_per_user=true，且提供了 userId，因此按群/频道 + 用户拆分会话',
+        },
+        routedProfile: 'ops',
+        routedPersonality: 'concise',
+        routedHomeTarget: 'ops-room',
+        groupPerUser: true,
+        matchedRuleId: 'rule-1',
+        matchedBy: 'platform+chatType+chatId',
+        reason: '命中 Hermes 路由规则',
+      },
+    };
+  },
+  getHermesPersonality: async () => {
+    await delay(80);
+    return {
+      ok: true,
+      personality: {
+        soulPath: '/Users/demo/.hermes/SOUL.md',
+        soulExists: true,
+        soulContent: '# SOUL\n\nYou are Hermes.\n',
+        profiles: [
+          { name: 'default.md', path: '/Users/demo/.hermes/profiles/default.md', exists: true, size: 120, modifiedAt: new Date().toISOString() },
+          { name: 'ops.yaml', path: '/Users/demo/.hermes/profiles/ops.yaml', exists: true, size: 96, modifiedAt: new Date().toISOString() },
+        ],
+      },
+    };
+  },
+  updateHermesPersonality: async (_soulContent: string) => {
+    await delay(120);
+    return { ok: true };
+  },
+  getHermesProfiles: async () => {
+    await delay(80);
+    return {
+      ok: true,
+      profiles: [
+        { name: 'default.md', path: '/Users/demo/.hermes/profiles/default.md', exists: true, size: 120, modifiedAt: new Date().toISOString() },
+        { name: 'ops.yaml', path: '/Users/demo/.hermes/profiles/ops.yaml', exists: true, size: 96, modifiedAt: new Date().toISOString() },
+      ],
+    };
+  },
+  getHermesProfileDetail: async (name: string) => {
+    await delay(80);
+    return {
+      ok: true,
+      profile: {
+        name,
+        path: `/Users/demo/.hermes/profiles/${name}`,
+        exists: true,
+        size: 128,
+        modifiedAt: new Date().toISOString(),
+        content: name.endsWith('.yaml') ? 'name: ops\nsystem: concise\n' : '# default\n\nStay helpful.\n',
+      },
+    };
+  },
+  updateHermesProfileDetail: async (_name: string, _content: string) => {
+    await delay(120);
+    return { ok: true };
+  },
+  getHermesPlatformDetail: async (id: string) => {
+    await delay(80);
+    const all = [
+      { id: 'telegram', label: 'Telegram', configured: true, enabled: true, configPath: 'gateway.telegram', presentEnvKeys: ['TELEGRAM_BOT_TOKEN'], missingEnvKeys: [], runtimeStatus: 'healthy', lastEvidence: 'telegram connected successfully', lastError: '', detail: '检测到 config.yaml 配置。 环境变量: TELEGRAM_BOT_TOKEN 最近线索: telegram connected successfully' },
+      { id: 'slack', label: 'Slack', configured: true, enabled: true, configPath: 'gateway.slack', presentEnvKeys: ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'], missingEnvKeys: [], runtimeStatus: 'error', lastEvidence: '', lastError: 'slack error invalid token', detail: '检测到 config.yaml 配置。 环境变量: SLACK_BOT_TOKEN, SLACK_APP_TOKEN 错误线索: slack error invalid token' },
+    ];
+    const status = all.find(item => item.id === id);
+    if (!status) return { ok: false, error: 'not found' };
+    return {
+      ok: true,
+      platform: {
+        status,
+        config: id === 'telegram' ? { enabled: true, botName: 'demo-bot' } : { enabled: true, appLevelToken: 'xapp-demo' },
+        environment: id === 'telegram' ? { TELEGRAM_BOT_TOKEN: 'abc' } : { SLACK_BOT_TOKEN: 'xoxb-demo', SLACK_APP_TOKEN: 'xapp-demo' },
+      },
+    };
+  },
+  updateHermesPlatformDetail: async (_id: string, _data: { enabled?: boolean; config?: any; env?: Record<string, string> }) => {
+    await delay(120);
+    return { ok: true };
+  },
+  checkHermes: async () => {
+    await delay(80);
+    return {
+      ok: true,
+      issues: [
+        { id: 'hermes-platform-feishu-missing-env', severity: 'error', component: 'hermes', title: 'Hermes 平台 Feishu / Lark 缺少必要环境变量', description: '缺失变量: FEISHU_ENABLED', fixable: false },
+        { id: 'hermes-doctor-missing', severity: 'info', component: 'hermes', title: '尚未生成 Hermes 诊断快照', description: '建议先执行一次 Hermes doctor，生成后端可消费的结构化诊断结果', fixable: true },
+      ],
+      checked: 12,
+      problems: 1,
+    };
+  },
+  fixHermes: async (_issueIds: string[]) => {
+    await delay(120);
+    return { ok: true, fixed: _issueIds, failed: [] };
+  },
+  getHermesDoctorSnapshot: async () => {
+    await delay(80);
+    return {
+      ok: true,
+      snapshot: {
+        updatedAt: new Date().toISOString(),
+        fixApplied: false,
+        taskId: 'task-hermes-doctor',
+        taskStatus: 'success',
+        error: '',
+        rawLines: ['Hermes doctor started', 'Python OK', 'Config OK', 'Gateway check warning'],
+        statusLines: ['Hermes running', 'Gateway connected: telegram, slack'],
+        health: {
+          summary: { total: 1, byStatus: { success: 1 } },
+          checks: [
+            { id: 'install', title: '安装状态', status: 'healthy', detail: '/Users/demo/.local/bin/hermes', fixHint: '先安装 Hermes' },
+            { id: 'config', title: '配置状态', status: 'healthy', detail: '/Users/demo/.hermes/config.yaml', fixHint: '运行 hermes setup 初始化配置' },
+          ],
+        },
+        warnings: ['Hermes 主进程已运行，但未检测到部分平台网关'],
+      },
+    };
+  },
+  runHermesDoctor: async (_fix = false) => {
+    await delay(120);
+    return { ok: true, taskId: 'task-hermes-doctor' };
+  },
+  getHermesConfig: async () => {
+    await delay(120);
+    return {
+      ok: true,
+      config: {
+        status: {
+          installed: true,
+          configured: true,
+          running: true,
+          gatewayRunning: true,
+          version: 'hermes-agent 0.9.0',
+          binaryPath: '/Users/demo/.local/bin/hermes',
+          homeDir: '/Users/demo/.hermes',
+          configPath: '/Users/demo/.hermes/config.yaml',
+          envPath: '/Users/demo/.hermes/.env',
+          stateDir: '/Users/demo/.hermes/state',
+          pythonVersion: 'Python 3.11.9',
+          docsUrl: 'https://hermes-agent.nousresearch.com/docs/',
+          repoUrl: 'https://github.com/NousResearch/hermes-agent',
+        },
+        files: {
+          configYaml: `model:
+  provider: openrouter
+  name: anthropic/claude-sonnet-4-5
+gateway:
+  telegram:
+    enabled: true`,
+          envFile: `OPENROUTER_API_KEY=sk-demo-hermes
+TELEGRAM_BOT_TOKEN=123456:demo`,
+        },
+        exists: {
+          homeDir: true,
+          configPath: true,
+          envPath: true,
+          stateDir: true,
+        },
+      },
+    };
+  },
+  getHermesStructuredConfig: async () => {
+    await delay(80);
+    return {
+      ok: true,
+      config: {
+        model: { provider: 'openrouter', name: 'anthropic/claude-sonnet-4-5' },
+        gateway: { telegram: { enabled: true, botName: 'demo-bot' }, slack: { enabled: true } },
+        tools: { shell: { enabled: true } },
+        memory: { enabled: true },
+        personality: { profile: 'helpful' },
+        profiles: { default: { name: 'default' } },
+        raw: { gateway: { telegram: { enabled: true } } },
+      },
+    };
+  },
+  updateHermesStructuredConfig: async (_data: { model?: any; gateway?: any; tools?: any; memory?: any; personality?: any; profiles?: any }) => {
+    await delay(120);
+    return { ok: true };
+  },
+  updateHermesConfig: async (_data: { configYaml?: string; envFile?: string }) => {
+    await delay(160);
+    return { ok: true };
+  },
+  getHermesLogs: async (_path?: string, _lines?: number) => {
+    await delay(80);
+    return {
+      ok: true,
+      files: [
+        { name: 'gateway.log', path: '/Users/demo/.hermes/logs/gateway.log', size: 2048, modifiedAt: new Date().toISOString() },
+        { name: 'hermes.log', path: '/Users/demo/.hermes/logs/hermes.log', size: 4096, modifiedAt: new Date().toISOString() },
+      ],
+      selectedPath: '/Users/demo/.hermes/logs/gateway.log',
+      lines: ['[info] gateway starting', '[info] gateway connected'],
+    };
+  },
+  getHermesActions: async () => {
+    await delay(80);
+    return {
+      ok: true,
+      actions: [
+        { id: 'setup', label: 'Hermes Setup', description: '运行 Hermes 初始化向导', command: 'hermes setup' },
+        { id: 'doctor', label: 'Hermes Doctor', description: '诊断 Hermes 运行环境与依赖', command: 'hermes doctor' },
+        { id: 'update', label: 'Hermes Update', description: '更新 Hermes 到最新版本', command: 'hermes update' },
+        { id: 'gateway-install', label: 'Hermes Gateway Install', description: '安装 Hermes 消息网关依赖', command: 'hermes gateway install' },
+        { id: 'gateway-start', label: 'Hermes Gateway Start', description: '启动 Hermes 消息网关', command: 'hermes gateway start' },
+        { id: 'gateway-stop', label: 'Hermes Gateway Stop', description: '停止 Hermes 消息网关', command: 'hermes gateway stop' },
+        { id: 'gateway-restart', label: 'Hermes Gateway Restart', description: '重启 Hermes 消息网关', command: 'hermes gateway restart' },
+        { id: 'claw-migrate', label: 'Migrate From OpenClaw', description: '从 OpenClaw 迁移配置与数据到 Hermes', command: 'hermes claw migrate' },
+      ],
+    };
+  },
+  runHermesAction: async (_action: string) => {
+    await delay(120);
+    return { ok: true, taskId: 'task-hermes-demo' };
+  },
+  getHermesTasks: async () => {
+    await delay(80);
+    return { ok: true, tasks: [{ id: 'task-hermes-demo', name: 'Hermes Doctor', type: 'hermes_doctor', status: 'success', progress: 100, error: '', createdAt: new Date(Date.now() - 120000).toISOString(), updatedAt: new Date(Date.now() - 60000).toISOString(), log: ['doctor complete'] }], summary: { total: 1, byStatus: { success: 1 } } };
+  },
+  getHermesTaskDetail: async (_id: string) => {
+    await delay(80);
+    return { ok: true, task: { id: 'task-hermes-demo', name: 'Hermes Doctor', type: 'hermes_doctor', status: 'success', progress: 100, error: '', createdAt: new Date(Date.now() - 120000).toISOString(), updatedAt: new Date(Date.now() - 60000).toISOString(), log: ['doctor complete'] } };
+  },
+  getHermesUsage: async () => {
+    await delay(80);
+    return {
+      ok: true,
+      usage: { inputTokens: 1200, outputTokens: 460, totalTokens: 1660, rows: 12 },
+      db: { path: '/Users/demo/.hermes/state.db', exists: true, tables: [{ name: 'conversations', columns: ['id', 'input_tokens', 'output_tokens', 'total_tokens'], rowCount: 12 }], sessionTableCandidates: ['conversations'], usage: { inputTokens: 1200, outputTokens: 460, totalTokens: 1660, rows: 12 } },
     };
   },
   getOpenClawConfig: async () => { await delay(200); return { ok: true, config: JSON.parse(JSON.stringify(FAKE_CONFIG)) }; },
@@ -928,7 +1379,7 @@ export const mockApi = {
   },
 
   // --- Software & OpenClaw Instances ---
-  getSoftwareList: async () => { await delay(300); return { ok: true, software: [{ id: 'openclaw', name: 'OpenClaw', version: '4.2.1', installed: true }, { id: 'napcat', name: 'NapCat', version: '2.5.0', installed: true }, { id: 'node', name: 'Node.js', version: 'v20.11.0', installed: true }] }; },
+  getSoftwareList: async () => { await delay(300); return { ok: true, software: [{ id: 'openclaw', name: 'OpenClaw', version: '4.2.1', installed: true }, { id: 'hermes', name: 'Hermes Agent', version: 'hermes-agent 0.9.0', installed: true }, { id: 'napcat', name: 'NapCat', version: '2.5.0', installed: true }, { id: 'node', name: 'Node.js', version: 'v20.11.0', installed: true }, { id: 'python', name: 'Python 3', version: 'Python 3.11.9', installed: true }] }; },
   getOpenClawInstances: async () => { await delay(200); return { ok: true, instances: [{ path: '/usr/local/bin/openclaw', version: '4.2.1', active: true }] }; },
   installSoftware: async (_software: string) => { await delay(3000); return { ok: true }; },
 
