@@ -254,6 +254,7 @@ func GetStatus(db *sql.DB, cfg *config.Config, procMgr *process.Manager, napcatM
 			"gateway": gin.H{
 				"running": gatewayRunning,
 			},
+			"hermes":  detectHermesStatus(),
 			"napcat":  napcatInfo,
 			"process": procStatus,
 			"admin": gin.H{

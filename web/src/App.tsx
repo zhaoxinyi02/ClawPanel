@@ -21,6 +21,12 @@ const Sessions = lazy(() => import('./pages/Sessions'));
 const Tasks = lazy(() => import('./pages/Tasks'));
 const Workspace = lazy(() => import('./pages/Workspace'));
 const Monitor = lazy(() => import('./pages/Monitor'));
+const HermesOverview = lazy(() => import('./pages/HermesOverview'));
+const HermesConfig = lazy(() => import('./pages/HermesConfig'));
+const HermesHealth = lazy(() => import('./pages/HermesHealth'));
+const HermesPlatforms = lazy(() => import('./pages/HermesPlatforms'));
+const HermesSessions = lazy(() => import('./pages/HermesSessions'));
+const HermesPersonality = lazy(() => import('./pages/HermesPersonality'));
 const CompanyOverview = lazy(() => import('./pages/CompanyOverview'));
 const CompanyTasks = lazy(() => import('./pages/CompanyTasks'));
 const CompanyTaskDetail = lazy(() => import('./pages/CompanyTaskDetail'));
@@ -84,6 +90,12 @@ export default function App() {
         <Route path="/sessions" element={<OpenClawRequired openclawStatus={ws.openclawStatus} processStatus={ws.processStatus}><Suspense fallback={<RouteLoadingFallback />}><Sessions /></Suspense></OpenClawRequired>} />
         <Route path="/config" element={<Suspense fallback={<RouteLoadingFallback />}><SystemConfig /></Suspense>} />
         <Route path="/workspace" element={<Suspense fallback={<RouteLoadingFallback />}><Workspace /></Suspense>} />
+        <Route path="/hermes" element={<Suspense fallback={<RouteLoadingFallback />}><HermesOverview /></Suspense>} />
+        <Route path="/hermes/health" element={<Suspense fallback={<RouteLoadingFallback />}><HermesHealth /></Suspense>} />
+        <Route path="/hermes/platforms" element={<Suspense fallback={<RouteLoadingFallback />}><HermesPlatforms /></Suspense>} />
+        <Route path="/hermes/sessions" element={<Suspense fallback={<RouteLoadingFallback />}><HermesSessions /></Suspense>} />
+        <Route path="/hermes/personality" element={<Suspense fallback={<RouteLoadingFallback />}><HermesPersonality /></Suspense>} />
+        <Route path="/hermes/config" element={<Suspense fallback={<RouteLoadingFallback />}><HermesConfig /></Suspense>} />
       </Route>
       <Route path="/login" element={<Navigate to="/" />} />
       {/* Legacy redirects */}

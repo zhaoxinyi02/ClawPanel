@@ -3,7 +3,7 @@ import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, ScrollText, Radio, Sparkles, Clock, Settings,
   Moon, Sun, LogOut, Menu, FolderOpen, Languages, MessageSquare,
-  RotateCw, RefreshCw, Power, Puzzle, Bot, Search, Bell, ChevronDown, GitBranch, Network, BriefcaseBusiness, Activity,
+  RotateCw, RefreshCw, Power, Puzzle, Bot, Search, Bell, ChevronDown, GitBranch, Network, BriefcaseBusiness, Activity, Brain,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import AIAssistant from './AIAssistant';
@@ -85,6 +85,7 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
   const [profileOpen, setProfileOpen] = useState(false);
   const searchRef = useRef<HTMLDivElement | null>(null);
   const profileRef = useRef<HTMLDivElement | null>(null);
+  const isHermesBoard = location.pathname === '/hermes' || location.pathname.startsWith('/hermes/');
 
   const loadTasks = useCallback(async () => {
     try {
@@ -129,7 +130,7 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
     }
   }, [wsMessages]);
 
-  const navItems = useMemo(() => [
+  const openClawNavItems = useMemo(() => [
     { to: '/', icon: LayoutDashboard, label: t.nav.dashboard },
     { to: '/chat', icon: MessageSquare, label: t.nav.panelChat },
     { to: '/logs', icon: ScrollText, label: t.nav.activityLog },
@@ -147,7 +148,16 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
     { to: '/config', icon: Settings, label: t.nav.systemConfig },
   ], [enableAgents, locale, t]);
 
-  const mobileNavItems = useMemo(() => [
+  const hermesNavItems = useMemo(() => [
+    { to: '/hermes', icon: Brain, label: locale === 'zh-CN' ? 'Hermes 概览' : 'Hermes Overview' },
+    { to: '/hermes/health', icon: Bell, label: locale === 'zh-CN' ? 'Hermes 健康' : 'Hermes Health' },
+    { to: '/hermes/platforms', icon: Radio, label: locale === 'zh-CN' ? 'Hermes 平台' : 'Hermes Platforms' },
+    { to: '/hermes/sessions', icon: MessageSquare, label: locale === 'zh-CN' ? 'Hermes 会话' : 'Hermes Sessions' },
+    { to: '/hermes/personality', icon: Bot, label: locale === 'zh-CN' ? '人格与路由' : 'Personality & Routing' },
+    { to: '/hermes/config', icon: Settings, label: locale === 'zh-CN' ? 'Hermes 配置' : 'Hermes Config' },
+  ], [locale]);
+
+  const openClawMobileNavItems = useMemo(() => [
     { to: '/', icon: LayoutDashboard, label: t.nav.dashboard },
     { to: '/chat', icon: MessageSquare, label: t.nav.panelChat },
     { to: '/channels', icon: Radio, label: t.nav.channels },
@@ -156,6 +166,16 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
     { to: '/workflows', icon: GitBranch, label: locale === 'zh-CN' ? '工作流' : 'Flows' },
     { to: '/config', icon: Settings, label: t.nav.systemConfig },
   ], [enableAgents, locale, t]);
+
+  const hermesMobileNavItems = useMemo(() => [
+    { to: '/hermes', icon: Brain, label: locale === 'zh-CN' ? '概览' : 'Overview' },
+    { to: '/hermes/health', icon: Bell, label: locale === 'zh-CN' ? '健康' : 'Health' },
+    { to: '/hermes/platforms', icon: Radio, label: locale === 'zh-CN' ? '平台' : 'Platforms' },
+    { to: '/hermes/sessions', icon: MessageSquare, label: locale === 'zh-CN' ? '会话' : 'Sessions' },
+  ], [locale]);
+
+  const navItems = isHermesBoard ? hermesNavItems : openClawNavItems;
+  const mobileNavItems = isHermesBoard ? hermesMobileNavItems : openClawMobileNavItems;
 
   const [dark, setDark] = useState(() => {
     const s = localStorage.getItem('theme');
@@ -205,6 +225,12 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
 
   const commandItems = useMemo(() => [
     { label: '仪表盘', keywords: ['dashboard', 'home', '首页', '仪表盘'], path: '/' },
+    { label: locale === 'zh-CN' ? 'Hermes 概览' : 'Hermes Overview', keywords: ['hermes', 'hermes board', 'nous', 'agent', '运行时'], path: '/hermes' },
+    { label: locale === 'zh-CN' ? 'Hermes 健康' : 'Hermes Health', keywords: ['hermes health', 'doctor', 'check', '诊断', '健康检查'], path: '/hermes/health' },
+    { label: locale === 'zh-CN' ? 'Hermes 平台' : 'Hermes Platforms', keywords: ['hermes platform', 'gateway', 'telegram', 'discord', 'slack', '平台'], path: '/hermes/platforms' },
+    { label: locale === 'zh-CN' ? 'Hermes 会话' : 'Hermes Sessions', keywords: ['hermes sessions', 'conversation', 'history', '会话', '历史'], path: '/hermes/sessions' },
+    { label: locale === 'zh-CN' ? 'Hermes 人格与路由' : 'Hermes Personality & Routing', keywords: ['hermes personality', 'profiles', 'routing', 'soul', 'profile', '路由', '人格'], path: '/hermes/personality' },
+    { label: locale === 'zh-CN' ? 'Hermes 配置' : 'Hermes Config', keywords: ['hermes config', 'hermes setup', '配置', 'setup'], path: '/hermes/config' },
     { label: locale === 'zh-CN' ? '面板聊天' : 'Panel Chat', keywords: ['chat', 'panel chat', '对话', '聊天', '本地聊天'], path: '/chat' },
     { label: '活动日志', keywords: ['log', 'logs', '日志', '活动日志'], path: '/logs' },
     { label: '通道配置 - QQ个人号', keywords: ['qq', 'napcat', 'qq个人号', 'qq personal'], path: '/channels?channel=qq' },
@@ -310,13 +336,21 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
             </div>
             <div>
               <h1 className="font-bold text-sm tracking-tight text-gray-900 dark:text-white">ClawPanel</h1>
-              <p className="text-[10px] font-medium -mt-0.5 text-slate-500">{t.nav.subtitle}</p>
+              <p className="text-[10px] font-medium -mt-0.5 text-slate-500">{isHermesBoard ? (locale === 'zh-CN' ? 'Hermes 板块' : 'Hermes Board') : t.nav.subtitle}</p>
             </div>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl border border-slate-200/70 bg-white/70 p-1 dark:border-slate-700/70 dark:bg-slate-900/60">
+            <button onClick={() => handleSearchGo('/')} className={`rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${!isHermesBoard ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}>
+              OpenClaw
+            </button>
+            <button onClick={() => handleSearchGo('/hermes')} className={`rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${isHermesBoard ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}>
+              Hermes
+            </button>
           </div>
         </div>
 
         {/* Connected channel indicators — only show if any connected */}
-        {connectedChannels.length > 0 && (
+        {!isHermesBoard && connectedChannels.length > 0 && (
           <div className="px-4 py-3 border-b space-y-1.5 border-slate-200/70">
             <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5 text-slate-400">{t.nav.runningStatus}</div>
             {connectedChannels.map(ch => (
@@ -340,7 +374,7 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
         {/* Navigation */}
         <nav className="flex-1 space-y-1 overflow-y-auto p-3 ui-modern-scrollbar">
           {navItems.map(({ to, icon: Icon, label }) => (
-            <NavLink key={to} to={to} end={to === '/'} onClick={() => setOpen(false)}
+            <NavLink key={to} to={to} end={to === '/' || to === '/hermes'} onClick={() => setOpen(false)}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[13px] transition-all duration-200 group border ${isActive ? 'ui-modern-nav-link active font-semibold translate-x-0.5' : 'ui-modern-nav-link border-transparent hover:-translate-y-0.5 hover:translate-x-0.5 hover:border-blue-100/80 hover:text-slate-900'}`
               }>
@@ -357,51 +391,79 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
           </button>
           {/* Quick actions */}
           <div className="flex items-center gap-1 px-1 py-1">
-            <button
-              onClick={async () => {
-                if (openClawRestartDisabled) {
-                  window.alert(openClawRestartHint);
-                  return;
-                }
-                if (!confirm(locale === 'zh-CN' ? '确定重启 OpenClaw？' : 'Restart OpenClaw?')) return;
-                try {
-                  const r = await api.restartProcess();
-                  if (!r?.ok) window.alert(r?.error || (locale === 'zh-CN' ? '重启 OpenClaw 失败' : 'Failed to restart OpenClaw'));
-                } catch {
-                  window.alert(locale === 'zh-CN' ? '重启 OpenClaw 失败' : 'Failed to restart OpenClaw');
-                }
-              }}
-              aria-disabled={openClawRestartDisabled}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
-                openClawRestartDisabled
-                  ? 'text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800/60'
-                  : 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30'
-              }`}
-              title={openClawRestartHint || (locale === 'zh-CN' ? '重启 OpenClaw' : 'Restart OpenClaw')}
-            >
-              <RotateCw size={13} /><span>OpenClaw</span>
-            </button>
-            <button
-              onClick={async () => {
-                try {
-                  const r = await api.restartGateway();
-                  if (!r?.ok) window.alert(r?.error || (locale === 'zh-CN' ? '重启网关失败' : 'Failed to restart gateway'));
-                } catch {
-                  window.alert(locale === 'zh-CN' ? '重启网关失败' : 'Failed to restart gateway');
-                }
-              }}
-              className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
-              title={locale === 'zh-CN' ? '重启网关' : 'Restart Gateway'}
-            >
-              <RefreshCw size={13} /><span>{locale === 'zh-CN' ? '网关' : 'Gateway'}</span>
-            </button>
-            <button
-              onClick={async () => { if (!confirm(locale === 'zh-CN' ? '确定重启 ClawPanel？页面将短暂断开。' : 'Restart ClawPanel? Page will briefly disconnect.')) return; try { await api.restartPanel(); setTimeout(() => window.location.reload(), 3000); } catch {} }}
-              className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
-              title={locale === 'zh-CN' ? '重启面板' : 'Restart Panel'}
-            >
-              <Power size={13} /><span>{locale === 'zh-CN' ? '面板' : 'Panel'}</span>
-            </button>
+            {isHermesBoard ? (
+              <>
+                <button
+                  onClick={() => handleSearchGo('/hermes')}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
+                  title="Hermes"
+                >
+                  <Brain size={13} /><span>Hermes</span>
+                </button>
+                <button
+                  onClick={() => window.open('https://hermes-agent.nousresearch.com/docs/', '_blank', 'noopener,noreferrer')}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
+                  title={locale === 'zh-CN' ? 'Hermes 文档' : 'Hermes Docs'}
+                >
+                  <Search size={13} /><span>{locale === 'zh-CN' ? '文档' : 'Docs'}</span>
+                </button>
+                <button
+                  onClick={async () => { if (!confirm(locale === 'zh-CN' ? '确定重启 ClawPanel？页面将短暂断开。' : 'Restart ClawPanel? Page will briefly disconnect.')) return; try { await api.restartPanel(); setTimeout(() => window.location.reload(), 3000); } catch {} }}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
+                  title={locale === 'zh-CN' ? '重启面板' : 'Restart Panel'}
+                >
+                  <Power size={13} /><span>{locale === 'zh-CN' ? '面板' : 'Panel'}</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={async () => {
+                    if (openClawRestartDisabled) {
+                      window.alert(openClawRestartHint);
+                      return;
+                    }
+                    if (!confirm(locale === 'zh-CN' ? '确定重启 OpenClaw？' : 'Restart OpenClaw?')) return;
+                    try {
+                      const r = await api.restartProcess();
+                      if (!r?.ok) window.alert(r?.error || (locale === 'zh-CN' ? '重启 OpenClaw 失败' : 'Failed to restart OpenClaw'));
+                    } catch {
+                      window.alert(locale === 'zh-CN' ? '重启 OpenClaw 失败' : 'Failed to restart OpenClaw');
+                    }
+                  }}
+                  aria-disabled={openClawRestartDisabled}
+                  className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
+                    openClawRestartDisabled
+                      ? 'text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800/60'
+                      : 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30'
+                  }`}
+                  title={openClawRestartHint || (locale === 'zh-CN' ? '重启 OpenClaw' : 'Restart OpenClaw')}
+                >
+                  <RotateCw size={13} /><span>OpenClaw</span>
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      const r = await api.restartGateway();
+                      if (!r?.ok) window.alert(r?.error || (locale === 'zh-CN' ? '重启网关失败' : 'Failed to restart gateway'));
+                    } catch {
+                      window.alert(locale === 'zh-CN' ? '重启网关失败' : 'Failed to restart gateway');
+                    }
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
+                  title={locale === 'zh-CN' ? '重启网关' : 'Restart Gateway'}
+                >
+                  <RefreshCw size={13} /><span>{locale === 'zh-CN' ? '网关' : 'Gateway'}</span>
+                </button>
+                <button
+                  onClick={async () => { if (!confirm(locale === 'zh-CN' ? '确定重启 ClawPanel？页面将短暂断开。' : 'Restart ClawPanel? Page will briefly disconnect.')) return; try { await api.restartPanel(); setTimeout(() => window.location.reload(), 3000); } catch {} }}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
+                  title={locale === 'zh-CN' ? '重启面板' : 'Restart Panel'}
+                >
+                  <Power size={13} /><span>{locale === 'zh-CN' ? '面板' : 'Panel'}</span>
+                </button>
+              </>
+            )}
           </div>
           <button onClick={onLogout} className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 w-full">
             <LogOut size={16} />{t.nav.logout}
@@ -464,13 +526,17 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
               <img src="/logo.jpg" alt="ClawPanel" className="h-9 w-9 rounded-xl object-cover shadow-sm" />
               <div className="min-w-0">
                 <div className="truncate text-sm font-bold tracking-tight text-slate-900 dark:text-white">ClawPanel</div>
-                <div className="truncate text-[11px] text-slate-500 dark:text-slate-400">{locale === 'zh-CN' ? '移动端控制台' : 'Mobile Console'}</div>
+                <div className="truncate text-[11px] text-slate-500 dark:text-slate-400">{isHermesBoard ? (locale === 'zh-CN' ? 'Hermes 板块' : 'Hermes Board') : (locale === 'zh-CN' ? '移动端控制台' : 'Mobile Console')}</div>
               </div>
             </div>
             <button onClick={toggleDark} className="page-modern-action h-11 w-11 rounded-2xl p-0">
               {dark ? <Sun size={17} /> : <Moon size={17} />}
             </button>
             <MessageCenter tasks={tasks} taskLogs={taskLogs} onRefresh={loadTasks} mode="icon" />
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl border border-blue-100/70 bg-white/64 p-1 shadow-[0_14px_32px_rgba(15,23,42,0.05)] backdrop-blur-xl dark:border-blue-400/15 dark:bg-slate-900/48">
+            <button onClick={() => handleSearchGo('/')} className={`rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${!isHermesBoard ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}>OpenClaw</button>
+            <button onClick={() => handleSearchGo('/hermes')} className={`rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${isHermesBoard ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}>Hermes</button>
           </div>
           <div ref={searchRef} className="relative mt-3">
             <div className="flex items-center gap-3 rounded-2xl border border-blue-100/70 bg-white/64 px-4 py-3 shadow-[0_14px_32px_rgba(15,23,42,0.05)] backdrop-blur-xl dark:border-blue-400/15 dark:bg-slate-900/48">
@@ -489,7 +555,7 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
             )}
           </div>
         </header>
-        {openclawStatus?.configured && !runtime.healthy && (
+        {!isHermesBoard && openclawStatus?.configured && !runtime.healthy && (
           <div className="px-3 pt-3 sm:px-4 lg:px-6 xl:px-7">
             <div className={`rounded-[24px] border px-4 py-3 shadow-[0_16px_34px_rgba(15,23,42,0.06)] backdrop-blur-xl ${runtime.state === 'offline' ? 'border-red-200/80 dark:border-red-900/40 bg-[linear-gradient(135deg,rgba(254,242,242,0.96),rgba(255,237,213,0.88))] dark:bg-[linear-gradient(135deg,rgba(127,29,29,0.24),rgba(120,53,15,0.18))]' : 'border-amber-200/80 dark:border-amber-900/40 bg-[linear-gradient(135deg,rgba(255,251,235,0.96),rgba(254,249,195,0.86))] dark:bg-[linear-gradient(135deg,rgba(120,53,15,0.22),rgba(113,63,18,0.16))]'}`}>
               <div className="flex items-start gap-3">
@@ -507,9 +573,11 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
         <div className="ui-modern-content flex-1 overflow-y-auto ui-modern-scrollbar p-3 pb-24 sm:p-4 sm:pb-28 lg:p-6 lg:pb-6 xl:p-7"><Outlet context={outletContext} /></div>
       </main>
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-blue-100/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(239,246,255,0.84))] px-3 pb-[max(0.6rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-2xl dark:border-blue-400/15 dark:bg-[linear-gradient(180deg,rgba(7,17,31,0.96),rgba(11,26,46,0.92))] lg:hidden">
-        <div className="grid grid-cols-5 gap-2">
+        <div className={`grid gap-2 ${isHermesBoard ? 'grid-cols-5' : 'grid-cols-5'}`}>
           {mobileNavItems.map(({ to, icon: Icon, label }) => {
-            const active = location.pathname === to || (to !== '/' && location.pathname.startsWith(to));
+            const active = to === '/hermes'
+              ? location.pathname === '/hermes'
+              : location.pathname === to || (to !== '/' && location.pathname.startsWith(to));
             return (
               <button key={to} onClick={() => handleSearchGo(to)} className={`flex min-h-[62px] flex-col items-center justify-center gap-1 rounded-2xl border text-[11px] font-medium transition-all ${active ? 'border-blue-200/80 bg-[linear-gradient(135deg,rgba(59,130,246,0.18),rgba(14,165,233,0.12))] text-blue-700 shadow-[0_12px_24px_rgba(37,99,235,0.12)] dark:border-blue-400/20 dark:bg-[linear-gradient(135deg,rgba(37,99,235,0.24),rgba(14,165,233,0.12))] dark:text-blue-100' : 'border-transparent bg-white/40 text-slate-500 dark:bg-slate-900/28 dark:text-slate-400'}`}>
                 <Icon size={17} />
