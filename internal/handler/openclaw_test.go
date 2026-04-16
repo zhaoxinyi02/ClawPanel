@@ -1017,6 +1017,42 @@ func TestNormalizeFeishuChannelConfigToleratesLegacyRequireMentionOpen(t *testin
 	}
 }
 
+func TestNormalizeFeishuChannelConfigNormalizesThreadAndDynamicFields(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]interface{}{
+		"threadSession":        true,
+		"replyInThread":        true,
+		"dynamicAgentCreation": false,
+		"botName":              "legacy-top-level",
+		"requireMention":       "true",
+		"defaultAccount":       "default",
+		"accounts":             map[string]interface{}{"default": map[string]interface{}{"appId": "cli_x", "appSecret": "sec_x"}},
+	}
+
+	got := normalizeFeishuChannelConfig(input)
+
+	if got["topicSessionMode"] != "enabled" {
+		t.Fatalf("expected threadSession=true to migrate to topicSessionMode=enabled, got %#v", got["topicSessionMode"])
+	}
+	if got["replyInThread"] != "enabled" {
+		t.Fatalf("expected replyInThread=true to normalize to enabled, got %#v", got["replyInThread"])
+	}
+	dynamicCfg, _ := got["dynamicAgentCreation"].(map[string]interface{})
+	if dynamicCfg == nil {
+		t.Fatalf("expected dynamicAgentCreation bool to normalize to object, got %#v", got["dynamicAgentCreation"])
+	}
+	if enabled, ok := dynamicCfg["enabled"].(bool); !ok || enabled {
+		t.Fatalf("expected dynamicAgentCreation.enabled=false, got %#v", dynamicCfg["enabled"])
+	}
+	if _, exists := got["threadSession"]; exists {
+		t.Fatalf("expected legacy threadSession to be removed, got %#v", got["threadSession"])
+	}
+	if _, exists := got["botName"]; exists {
+		t.Fatalf("expected top-level botName to be removed, got %#v", got["botName"])
+	}
+}
+
 func TestNormalizeWeComChannelConfigCallbackMode(t *testing.T) {
 	t.Parallel()
 
