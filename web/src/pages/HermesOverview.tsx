@@ -43,13 +43,13 @@ export default function HermesOverview() {
 
   const loadStatus = async () => {
     setLoading(true);
+    setErr('');
     try {
-      const [statusRes, overviewRes] = await Promise.all([
-        api.getHermesStatus(),
-        api.getHermesOverview(),
-      ]);
-      if (statusRes.ok) setStatus(statusRes.status || {});
-      if (overviewRes.ok) setOverview(overviewRes.overview || {});
+      const overviewRes = await api.getHermesOverview();
+      if (overviewRes.ok) {
+        setOverview(overviewRes.overview || {});
+        setStatus(overviewRes.overview?.status || {});
+      }
     } catch {
       setErr(locale === 'zh-CN' ? '加载 Hermes 状态失败' : 'Failed to load Hermes status');
     } finally {
@@ -129,6 +129,12 @@ export default function HermesOverview() {
         return 'border-gray-100 dark:border-gray-700/50';
     }
   };
+  const runtimeTone = !status?.installed ? 'amber' : status?.gatewayRunning || status?.running ? 'emerald' : status?.configured ? 'amber' : 'slate';
+  const runtimeToneClass = runtimeTone === 'emerald'
+    ? 'border-emerald-200/60 dark:border-emerald-800/40 bg-[linear-gradient(135deg,rgba(255,255,255,0.72),rgba(236,253,245,0.78))] dark:bg-[linear-gradient(135deg,rgba(6,78,59,0.26),rgba(15,23,42,0.78))]'
+    : runtimeTone === 'amber'
+      ? 'border-amber-200/70 dark:border-amber-800/40 bg-[linear-gradient(135deg,rgba(255,255,255,0.72),rgba(255,251,235,0.86))] dark:bg-[linear-gradient(135deg,rgba(120,53,15,0.24),rgba(15,23,42,0.82))]'
+      : 'border-slate-200/70 dark:border-slate-700/40 bg-[linear-gradient(135deg,rgba(255,255,255,0.72),rgba(241,245,249,0.82))] dark:bg-[linear-gradient(135deg,rgba(30,41,59,0.4),rgba(15,23,42,0.82))]';
 
   return (
     <div className={`space-y-6 ${modern ? 'page-modern' : ''}`}>
@@ -137,8 +143,8 @@ export default function HermesOverview() {
           <h2 className={`${modern ? 'page-modern-title text-xl' : 'text-xl font-bold text-gray-900 dark:text-white'}`}>Hermes</h2>
           <p className={`${modern ? 'page-modern-subtitle mt-1 text-sm' : 'text-sm text-gray-500 mt-1'}`}>
             {locale === 'zh-CN'
-              ? 'Hermes 作为与 OpenClaw 并列的独立 Agent 板块接入。第一阶段先提供状态、安装和配置入口。'
-              : 'Hermes is integrated as a runtime board parallel to OpenClaw. Phase 1 focuses on status, installation, and configuration entry points.'}
+              ? 'Hermes 作为与 OpenClaw 并列的独立 Agent 控制台接入，状态、平台、日志、任务、动作与 Profiles 都可以在这里统一管理。'
+              : 'Hermes is integrated as an independent agent console alongside OpenClaw, with status, platforms, logs, tasks, actions, and profiles managed here.'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -149,6 +155,34 @@ export default function HermesOverview() {
             {installing ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
             {locale === 'zh-CN' ? '安装 Hermes' : 'Install Hermes'}
           </button>
+        </div>
+      </div>
+
+      <div className={`flex items-center justify-between gap-3 rounded-[28px] border px-5 py-4 backdrop-blur-xl shadow-[0_16px_36px_rgba(15,23,42,0.06)] ${runtimeToneClass}`}>
+        <div className="flex items-center gap-3">
+          <span className="flex h-3 w-3 relative">
+            <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-70 ${runtimeTone === 'emerald' ? 'bg-emerald-400' : runtimeTone === 'amber' ? 'bg-amber-400' : 'bg-slate-400'}`} />
+            <span className={`relative inline-flex h-3 w-3 rounded-full ${runtimeTone === 'emerald' ? 'bg-emerald-500' : runtimeTone === 'amber' ? 'bg-amber-500' : 'bg-slate-500'}`} />
+          </span>
+          <div>
+            <div className="text-sm font-semibold text-slate-900 dark:text-white">
+              {locale === 'zh-CN'
+                ? (status?.gatewayRunning ? 'Hermes Gateway 正在运行' : status?.running ? 'Hermes 进程正在运行' : status?.installed ? 'Hermes 已安装，等待运行' : 'Hermes 尚未安装')
+                : (status?.gatewayRunning ? 'Hermes gateway is running' : status?.running ? 'Hermes process is running' : status?.installed ? 'Hermes is installed and waiting to run' : 'Hermes is not installed yet')}
+            </div>
+            <div className="mt-1 text-xs text-slate-500 dark:text-slate-300">
+              {locale === 'zh-CN'
+                ? `Version ${status?.version || '-'} · Doctor ${overview?.doctor?.taskStatus || '-'}`
+                : `Version ${status?.version || '-'} · Doctor ${overview?.doctor?.taskStatus || '-'}`}
+            </div>
+          </div>
+        </div>
+        <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 dark:text-slate-300">
+          <span>{locale === 'zh-CN' ? '平台' : 'Platforms'} {overview?.platforms?.configuredCount ?? 0}</span>
+          <span>·</span>
+          <span>{locale === 'zh-CN' ? '动作' : 'Actions'} {(overview?.actions || []).length}</span>
+          <span>·</span>
+          <span>{locale === 'zh-CN' ? '会话' : 'Sessions'} {overview?.storage?.conversationCount ?? overview?.storage?.sessionArtifactCount ?? 0}</span>
         </div>
       </div>
 
@@ -208,6 +242,18 @@ export default function HermesOverview() {
             <span>{locale === 'zh-CN' ? '平台管理' : 'Platforms'}</span>
             <Radio size={14} />
           </button>
+          <button onClick={() => navigate('/hermes/logs')} className="w-full inline-flex items-center justify-between rounded-xl border border-gray-100 dark:border-gray-700/50 px-4 py-3 text-sm hover:bg-gray-50 dark:hover:bg-gray-900/40">
+            <span>{locale === 'zh-CN' ? '日志与诊断' : 'Logs & Diagnostics'}</span>
+            <Terminal size={14} />
+          </button>
+          <button onClick={() => navigate('/hermes/actions')} className="w-full inline-flex items-center justify-between rounded-xl border border-gray-100 dark:border-gray-700/50 px-4 py-3 text-sm hover:bg-gray-50 dark:hover:bg-gray-900/40">
+            <span>{locale === 'zh-CN' ? '动作中心' : 'Actions'}</span>
+            <Wrench size={14} />
+          </button>
+          <button onClick={() => navigate('/hermes/tasks')} className="w-full inline-flex items-center justify-between rounded-xl border border-gray-100 dark:border-gray-700/50 px-4 py-3 text-sm hover:bg-gray-50 dark:hover:bg-gray-900/40">
+            <span>{locale === 'zh-CN' ? '任务与账本' : 'Tasks & Ledger'}</span>
+            <Bell size={14} />
+          </button>
           <button onClick={() => navigate('/hermes/sessions')} className="w-full inline-flex items-center justify-between rounded-xl border border-gray-100 dark:border-gray-700/50 px-4 py-3 text-sm hover:bg-gray-50 dark:hover:bg-gray-900/40">
             <span>{locale === 'zh-CN' ? '会话与 Usage' : 'Sessions & Usage'}</span>
             <MessageSquare size={14} />
@@ -215,6 +261,10 @@ export default function HermesOverview() {
           <button onClick={() => navigate('/hermes/personality')} className="w-full inline-flex items-center justify-between rounded-xl border border-gray-100 dark:border-gray-700/50 px-4 py-3 text-sm hover:bg-gray-50 dark:hover:bg-gray-900/40">
             <span>{locale === 'zh-CN' ? '人格与路由' : 'Personality & Routing'}</span>
             <GitBranch size={14} />
+          </button>
+          <button onClick={() => navigate('/hermes/profiles')} className="w-full inline-flex items-center justify-between rounded-xl border border-gray-100 dark:border-gray-700/50 px-4 py-3 text-sm hover:bg-gray-50 dark:hover:bg-gray-900/40">
+            <span>{locale === 'zh-CN' ? 'Profiles 编辑' : 'Profiles Editor'}</span>
+            <Settings size={14} />
           </button>
           <button onClick={() => navigate('/hermes/config')} className="w-full inline-flex items-center justify-between rounded-xl border border-gray-100 dark:border-gray-700/50 px-4 py-3 text-sm hover:bg-gray-50 dark:hover:bg-gray-900/40">
             <span>{locale === 'zh-CN' ? '结构化配置' : 'Structured Config'}</span>
@@ -230,8 +280,8 @@ export default function HermesOverview() {
           </button>
           <div className="rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-xs leading-6 text-blue-700 dark:border-blue-900/30 dark:bg-blue-900/10 dark:text-blue-300">
             {locale === 'zh-CN'
-              ? '这一阶段先提供 Hermes 的独立入口与状态可视化，不会影响现有 OpenClaw 的配置与使用。'
-              : 'Phase 1 keeps Hermes isolated from OpenClaw. Existing OpenClaw configuration and workflows stay untouched.'}
+              ? 'Hermes 与 OpenClaw 现在是并列视图；切到 Hermes 后，常见的状态、运行、日志、任务和配置操作都可以在这一套面板里完成，不会影响现有 OpenClaw 配置。'
+              : 'Hermes and OpenClaw now live as peer views. Once switched to Hermes, common status, runtime, logs, tasks, and configuration work can all stay inside this board without affecting OpenClaw.'}
           </div>
         </div>
       </div>

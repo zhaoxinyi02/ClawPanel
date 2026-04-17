@@ -42,6 +42,8 @@ var hermesPlatformSpecs = []hermesPlatformSpec{
 	{ID: "telegram", Label: "Telegram", ConfigPaths: []string{"gateway.telegram"}, RequiredEnv: []string{"TELEGRAM_BOT_TOKEN"}, OptionalEnv: []string{"TELEGRAM_ALLOWED_USERS", "TELEGRAM_HOME_CHAT"}},
 	{ID: "discord", Label: "Discord", ConfigPaths: []string{"gateway.discord"}, RequiredEnv: []string{"DISCORD_BOT_TOKEN"}, OptionalEnv: []string{"DISCORD_ALLOWED_USERS", "DISCORD_HOME_CHANNEL"}},
 	{ID: "slack", Label: "Slack", ConfigPaths: []string{"gateway.slack"}, RequiredEnv: []string{"SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"}, OptionalEnv: []string{"SLACK_ALLOWED_USERS", "SLACK_HOME_CHANNEL"}},
+	{ID: "weixin", Label: "Weixin / WeChat", ConfigPaths: []string{"gateway.weixin"}, RequiredEnv: []string{"WEIXIN_ACCOUNT_ID", "WEIXIN_TOKEN"}, OptionalEnv: []string{"WEIXIN_HOME_CHANNEL", "WEIXIN_HOME_CHANNEL_NAME", "WEIXIN_ALLOWED_USERS"}},
+	{ID: "wecom", Label: "WeCom", ConfigPaths: []string{"gateway.wecom"}, RequiredEnv: []string{"WECOM_BOT_ID", "WECOM_SECRET"}, OptionalEnv: []string{"WECOM_HOME_CHANNEL", "WECOM_HOME_CHANNEL_NAME", "WECOM_ALLOWED_USERS"}},
 	{ID: "whatsapp", Label: "WhatsApp", ConfigPaths: []string{"gateway.whatsapp"}, RequiredEnv: []string{"WHATSAPP_ENABLED"}, OptionalEnv: []string{"WHATSAPP_ALLOWED_USERS", "WHATSAPP_HOME_CONTACT"}},
 	{ID: "signal", Label: "Signal", ConfigPaths: []string{"gateway.signal"}, RequiredEnv: []string{"SIGNAL_ENABLED"}, OptionalEnv: []string{"SIGNAL_ALLOWED_USERS", "SIGNAL_HOME_CONTACT"}},
 	{ID: "webhook", Label: "Webhooks", ConfigPaths: []string{"gateway.webhook", "gateway.webhooks", "webhooks"}, RequiredEnv: []string{"WEBHOOK_ENABLED"}, OptionalEnv: []string{"WEBHOOK_PORT", "WEBHOOK_SECRET"}},
@@ -444,7 +446,9 @@ func detectHermesBinaryPath(cfgs ...*config.Config) string {
 
 	home := hermesHomeDir(cfgs...)
 	candidates := []string{
+		filepath.Join(filepath.Dir(home), "bin", hermesExecutableName()),
 		filepath.Join(filepath.Dir(home), ".local", "bin", hermesExecutableName()),
+		filepath.Join(filepath.Dir(home), "hermes-agent", "venv", "bin", hermesExecutableName()),
 		filepath.Join("/usr/local/bin", hermesExecutableName()),
 		filepath.Join("/usr/bin", hermesExecutableName()),
 	}
@@ -491,7 +495,7 @@ func detectHermesProcessState() (running bool, gatewayRunning bool) {
 	if runtime.GOOS == "windows" {
 		return false, false
 	}
-	out := detectCmd("pgrep", "-af", "hermes")
+	out := detectCmd("ps", "-axo", "pid=,command=")
 	return parseHermesProcessState(out)
 }
 
@@ -505,16 +509,19 @@ func parseHermesProcessState(raw string) (running bool, gatewayRunning bool) {
 			continue
 		}
 		lower := strings.ToLower(trimmed)
-		// Ignore the process inspection command itself to avoid false positives.
-		if strings.Contains(lower, "pgrep -af hermes") {
+		// Ignore process inspection commands and temporary Hermes snapshots to avoid false positives.
+		if strings.Contains(lower, "pgrep -af hermes") || strings.Contains(lower, "ps -axo") || strings.Contains(lower, "grep hermes") || strings.Contains(lower, "egrep hermes") {
 			continue
 		}
-		if strings.Contains(lower, "hermes gateway") || strings.Contains(lower, "gateway start") || strings.Contains(lower, "gateway setup") {
+		if strings.Contains(lower, "hermes-snap-") || strings.Contains(lower, "__hermes_") {
+			continue
+		}
+		if strings.Contains(lower, "-m hermes_cli.main gateway run") || strings.Contains(lower, "hermes gateway") || strings.Contains(lower, "gateway start") || strings.Contains(lower, "gateway setup") {
 			running = true
 			gatewayRunning = true
 			continue
 		}
-		if strings.Contains(lower, " hermes ") || strings.HasSuffix(lower, " hermes") || strings.Contains(lower, "/hermes ") || strings.HasSuffix(lower, "/hermes") || strings.Contains(lower, "hermes-agent") {
+		if strings.Contains(lower, "-m hermes_cli.main") || strings.Contains(lower, " hermes ") || strings.HasSuffix(lower, " hermes") || strings.Contains(lower, "/hermes ") || strings.HasSuffix(lower, "/hermes") {
 			running = true
 		}
 	}
@@ -1108,6 +1115,8 @@ func analyzeHermesPlatformEvidence(platformID string, status HermesStatus) (runt
 		"telegram": {"telegram", "tg"},
 		"discord":  {"discord"},
 		"slack":    {"slack"},
+		"weixin":   {"weixin", "wechat", "we chat", "wx"},
+		"wecom":    {"wecom", "work wechat", "qywx", "enterprise wechat"},
 		"whatsapp": {"whatsapp"},
 		"signal":   {"signal"},
 		"webhook":  {"webhook"},
@@ -1218,6 +1227,12 @@ func detectHermesPlatforms(configState HermesConfigState) HermesPlatformsSnapsho
 		item.Configured = configConfigured || len(item.PresentEnvKeys) > 0
 		item.Enabled = configEnabled || (len(item.PresentEnvKeys) > 0 && len(item.MissingEnvKeys) == 0)
 		item.RuntimeStatus, item.LastEvidence, item.LastError = analyzeHermesPlatformEvidence(spec.ID, status)
+		if !item.Configured && (item.LastEvidence != "" || item.LastError != "") {
+			item.Configured = true
+		}
+		if !item.Enabled && status.GatewayRunning && (item.RuntimeStatus == "healthy" || item.RuntimeStatus == "warning" || item.RuntimeStatus == "error") {
+			item.Enabled = true
+		}
 		item.Detail = strings.TrimSpace(strings.Join([]string{
 			ternary(configConfigured, "检测到 config.yaml 配置。", ""),
 			ternary(len(item.PresentEnvKeys) > 0, "环境变量: "+strings.Join(item.PresentEnvKeys, ", "), ""),

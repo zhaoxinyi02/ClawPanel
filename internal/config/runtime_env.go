@@ -213,6 +213,7 @@ func computeRuntimeExtraBinPathsForOS(goos, home string) []string {
 		"/snap/bin",
 		"/opt/homebrew/bin",
 		"/opt/homebrew/sbin",
+		filepath.Join(home, "bin"),
 		filepath.Join(home, ".local", "bin"),
 		filepath.Join(home, ".npm-global", "bin"),
 		filepath.Join(home, ".volta", "bin"),

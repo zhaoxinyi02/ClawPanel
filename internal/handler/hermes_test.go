@@ -129,11 +129,21 @@ func TestParseHermesProcessStateDetectsRealProcesses(t *testing.T) {
 
 	out := strings.Join([]string{
 		"2222 /home/zhaoxinyi/.local/bin/hermes",
-		"3333 /home/zhaoxinyi/.local/bin/hermes gateway start",
+		"3333 /home/zhaoxinyi/hermes-agent/venv/bin/python -m hermes_cli.main gateway run --replace",
 	}, "\n")
 	running, gateway := parseHermesProcessState(out)
 	if !running || !gateway {
 		t.Fatalf("expected true/true for real Hermes gateway output, got running=%v gateway=%v", running, gateway)
+	}
+}
+
+func TestParseHermesProcessStateIgnoresHermesSnapshotShell(t *testing.T) {
+	t.Parallel()
+
+	out := "44185 /bin/bash -c source /tmp/hermes-snap-abcd.sh && cd /Users/demo/hermes-agent && python3 src/gradio_app.py\n"
+	running, gateway := parseHermesProcessState(out)
+	if running || gateway {
+		t.Fatalf("expected false/false for hermes snapshot shell, got running=%v gateway=%v", running, gateway)
 	}
 }
 

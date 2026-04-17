@@ -3,7 +3,7 @@ import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, ScrollText, Radio, Sparkles, Clock, Settings,
   Moon, Sun, LogOut, Menu, FolderOpen, Languages, MessageSquare,
-  RotateCw, RefreshCw, Power, Puzzle, Bot, Search, Bell, ChevronDown, GitBranch, Network, BriefcaseBusiness, Activity, Brain,
+  RotateCw, RefreshCw, Power, Puzzle, Bot, Search, Bell, ChevronDown, GitBranch, Network, BriefcaseBusiness, Activity, Brain, TerminalSquare, FileStack,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import AIAssistant from './AIAssistant';
@@ -12,6 +12,14 @@ import { api } from '../lib/api';
 import { resolveOpenClawRuntime } from '../lib/openclawRuntime';
 
 interface Props { onLogout: () => void; napcatStatus: any; wechatStatus?: any; openclawStatus?: any; processStatus?: any; wsMessages?: any[]; }
+
+const ACTIVE_AGENT_KEY = 'clawpanel-active-agent';
+
+interface RuntimeChannelSummary {
+  label: string;
+  detail: string;
+  connected: boolean;
+}
 
 const DISPLAY_CHANNEL_IDS = new Set([
   'qq', 'wechat', 'whatsapp', 'telegram', 'discord', 'irc', 'slack', 'signal', 'googlechat',
@@ -83,6 +91,7 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [hermesOverview, setHermesOverview] = useState<any | null>(null);
   const searchRef = useRef<HTMLDivElement | null>(null);
   const profileRef = useRef<HTMLDivElement | null>(null);
   const isHermesBoard = location.pathname === '/hermes' || location.pathname.startsWith('/hermes/');
@@ -149,12 +158,16 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
   ], [enableAgents, locale, t]);
 
   const hermesNavItems = useMemo(() => [
-    { to: '/hermes', icon: Brain, label: locale === 'zh-CN' ? 'Hermes 概览' : 'Hermes Overview' },
-    { to: '/hermes/health', icon: Bell, label: locale === 'zh-CN' ? 'Hermes 健康' : 'Hermes Health' },
-    { to: '/hermes/platforms', icon: Radio, label: locale === 'zh-CN' ? 'Hermes 平台' : 'Hermes Platforms' },
-    { to: '/hermes/sessions', icon: MessageSquare, label: locale === 'zh-CN' ? 'Hermes 会话' : 'Hermes Sessions' },
+    { to: '/hermes', icon: Brain, label: locale === 'zh-CN' ? '概览' : 'Overview' },
+    { to: '/hermes/health', icon: Bell, label: locale === 'zh-CN' ? '健康' : 'Health' },
+    { to: '/hermes/platforms', icon: Radio, label: locale === 'zh-CN' ? '平台' : 'Platforms' },
+    { to: '/hermes/logs', icon: ScrollText, label: locale === 'zh-CN' ? '日志' : 'Logs' },
+    { to: '/hermes/actions', icon: TerminalSquare, label: locale === 'zh-CN' ? '动作' : 'Actions' },
+    { to: '/hermes/tasks', icon: Activity, label: locale === 'zh-CN' ? '任务' : 'Tasks' },
+    { to: '/hermes/sessions', icon: MessageSquare, label: locale === 'zh-CN' ? '会话' : 'Sessions' },
     { to: '/hermes/personality', icon: Bot, label: locale === 'zh-CN' ? '人格与路由' : 'Personality & Routing' },
-    { to: '/hermes/config', icon: Settings, label: locale === 'zh-CN' ? 'Hermes 配置' : 'Hermes Config' },
+    { to: '/hermes/profiles', icon: FileStack, label: 'Profiles' },
+    { to: '/hermes/config', icon: Settings, label: locale === 'zh-CN' ? '配置' : 'Config' },
   ], [locale]);
 
   const openClawMobileNavItems = useMemo(() => [
@@ -171,11 +184,22 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
     { to: '/hermes', icon: Brain, label: locale === 'zh-CN' ? '概览' : 'Overview' },
     { to: '/hermes/health', icon: Bell, label: locale === 'zh-CN' ? '健康' : 'Health' },
     { to: '/hermes/platforms', icon: Radio, label: locale === 'zh-CN' ? '平台' : 'Platforms' },
-    { to: '/hermes/sessions', icon: MessageSquare, label: locale === 'zh-CN' ? '会话' : 'Sessions' },
+    { to: '/hermes/tasks', icon: Activity, label: locale === 'zh-CN' ? '任务' : 'Tasks' },
   ], [locale]);
 
   const navItems = isHermesBoard ? hermesNavItems : openClawNavItems;
   const mobileNavItems = isHermesBoard ? hermesMobileNavItems : openClawMobileNavItems;
+  const activeAgent = isHermesBoard
+    ? {
+        id: 'hermes',
+        name: 'Hermes',
+        subtitle: locale === 'zh-CN' ? '独立 Agent 控制台' : 'Independent Agent Console',
+      }
+    : {
+        id: 'openclaw',
+        name: 'OpenClaw',
+        subtitle: locale === 'zh-CN' ? '可视化管理面板' : 'Visual Control Panel',
+      };
 
   const [dark, setDark] = useState(() => {
     const s = localStorage.getItem('theme');
@@ -194,6 +218,33 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
       delete document.body.dataset.uiMode;
     };
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ACTIVE_AGENT_KEY, isHermesBoard ? 'hermes' : 'openclaw');
+    } catch {}
+  }, [isHermesBoard]);
+
+  useEffect(() => {
+    if (!isHermesBoard) return;
+    let cancelled = false;
+
+    const loadHermesOverview = async () => {
+      try {
+        const res = await api.getHermesOverview();
+        if (!cancelled && res?.ok) {
+          setHermesOverview(res.overview || null);
+        }
+      } catch {}
+    };
+
+    void loadHermesOverview();
+    const timer = window.setInterval(loadHermesOverview, 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [isHermesBoard]);
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -228,8 +279,12 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
     { label: locale === 'zh-CN' ? 'Hermes 概览' : 'Hermes Overview', keywords: ['hermes', 'hermes board', 'nous', 'agent', '运行时'], path: '/hermes' },
     { label: locale === 'zh-CN' ? 'Hermes 健康' : 'Hermes Health', keywords: ['hermes health', 'doctor', 'check', '诊断', '健康检查'], path: '/hermes/health' },
     { label: locale === 'zh-CN' ? 'Hermes 平台' : 'Hermes Platforms', keywords: ['hermes platform', 'gateway', 'telegram', 'discord', 'slack', '平台'], path: '/hermes/platforms' },
+    { label: locale === 'zh-CN' ? 'Hermes 日志' : 'Hermes Logs', keywords: ['hermes logs', 'gateway log', 'log tail', '日志', 'gateway.error.log'], path: '/hermes/logs' },
+    { label: locale === 'zh-CN' ? 'Hermes 动作' : 'Hermes Actions', keywords: ['hermes action', 'doctor', 'update', 'gateway restart', '动作'], path: '/hermes/actions' },
+    { label: locale === 'zh-CN' ? 'Hermes 任务' : 'Hermes Tasks', keywords: ['hermes task', 'tasks', 'ledger', '任务', '后台任务'], path: '/hermes/tasks' },
     { label: locale === 'zh-CN' ? 'Hermes 会话' : 'Hermes Sessions', keywords: ['hermes sessions', 'conversation', 'history', '会话', '历史'], path: '/hermes/sessions' },
     { label: locale === 'zh-CN' ? 'Hermes 人格与路由' : 'Hermes Personality & Routing', keywords: ['hermes personality', 'profiles', 'routing', 'soul', 'profile', '路由', '人格'], path: '/hermes/personality' },
+    { label: locale === 'zh-CN' ? 'Hermes Profiles' : 'Hermes Profiles', keywords: ['hermes profile', 'profiles', 'persona', 'yaml', 'markdown'], path: '/hermes/profiles' },
     { label: locale === 'zh-CN' ? 'Hermes 配置' : 'Hermes Config', keywords: ['hermes config', 'hermes setup', '配置', 'setup'], path: '/hermes/config' },
     { label: locale === 'zh-CN' ? '面板聊天' : 'Panel Chat', keywords: ['chat', 'panel chat', '对话', '聊天', '本地聊天'], path: '/chat' },
     { label: '活动日志', keywords: ['log', 'logs', '日志', '活动日志'], path: '/logs' },
@@ -263,6 +318,9 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
     : commandItems.slice(0, 6), [commandItems, searchQuery]);
 
   const handleSearchGo = (path: string) => {
+    try {
+      localStorage.setItem(ACTIVE_AGENT_KEY, path === '/hermes' || path.startsWith('/hermes/') ? 'hermes' : 'openclaw');
+    } catch {}
     navigate(path);
     setSearchQuery('');
     setSearchOpen(false);
@@ -272,13 +330,39 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
 
   // Build channel list from enabledChannels returned by /api/status
   const connectedChannels = useMemo(() => {
+    if (isHermesBoard) {
+      const hermesPlatforms = Array.isArray(hermesOverview?.platforms?.platforms) ? hermesOverview.platforms.platforms : [];
+      const hermesChannels: RuntimeChannelSummary[] = hermesPlatforms
+        .filter((platform: any) => platform?.configured || platform?.enabled || platform?.runtimeStatus === 'healthy' || platform?.runtimeStatus === 'warning' || platform?.runtimeStatus === 'error')
+        .map((platform: any) => {
+          const connected = platform?.runtimeStatus === 'healthy' || platform?.runtimeStatus === 'warning';
+          const detail = platform?.lastError
+            ? platform.lastError
+            : platform?.lastEvidence
+              ? platform.lastEvidence
+              : platform?.enabled
+                ? t.common.enabled
+                : locale === 'zh-CN'
+                  ? '未启用'
+                  : 'Not enabled';
+          return {
+            label: platform?.label || platform?.id || 'Platform',
+            detail,
+            connected,
+          };
+        });
+
+      hermesChannels.sort((a: RuntimeChannelSummary, b: RuntimeChannelSummary) => (a.connected === b.connected ? a.label.localeCompare(b.label) : a.connected ? -1 : 1));
+      return hermesChannels.slice(0, 5);
+    }
+
     const enabledChannels: { id: string; label: string }[] = (openclawStatus?.enabledChannels || [])
       .map((ch: { id: string; label: string }) => ({
         ...ch,
         id: ch.id === 'qqbot-community' ? 'qqbot' : ch.id,
       }))
       .filter((ch: { id: string }) => DISPLAY_CHANNEL_IDS.has(ch.id));
-    const channels: { label: string; detail: string; connected: boolean }[] = [];
+    const channels: RuntimeChannelSummary[] = [];
 
     for (const ch of enabledChannels) {
       if (ch.id === 'qq') {
@@ -314,8 +398,10 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
     // Sort: connected channels first, then alphabetical; limit to 5
     channels.sort((a, b) => (a.connected === b.connected ? a.label.localeCompare(b.label) : a.connected ? -1 : 1));
     return channels.slice(0, 5);
-  }, [locale, napcatStatus, openclawStatus, t, wechatStatus]);
-  const totalEnabledChannels = (openclawStatus?.enabledChannels || []).length;
+  }, [hermesOverview, isHermesBoard, locale, napcatStatus, openclawStatus, t, wechatStatus]);
+  const totalEnabledChannels = isHermesBoard
+    ? (hermesOverview?.platforms?.platforms || []).filter((platform: any) => platform?.configured || platform?.enabled || platform?.runtimeStatus === 'healthy' || platform?.runtimeStatus === 'warning' || platform?.runtimeStatus === 'error').length
+    : (openclawStatus?.enabledChannels || []).length;
   const runtime = useMemo(() => resolveOpenClawRuntime(openclawStatus, processStatus), [openclawStatus, processStatus]);
   const openClawRestartHint = processStatus?.managedExternally
     ? (locale === 'zh-CN' ? '当前 OpenClaw 由外部进程管理，请改用“网关”按钮或在外部环境中重启。' : 'OpenClaw is managed externally. Use “Gateway” or restart it outside the panel.')
@@ -336,24 +422,18 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
             </div>
             <div>
               <h1 className="font-bold text-sm tracking-tight text-gray-900 dark:text-white">ClawPanel</h1>
-              <p className="text-[10px] font-medium -mt-0.5 text-slate-500">{isHermesBoard ? (locale === 'zh-CN' ? 'Hermes 板块' : 'Hermes Board') : t.nav.subtitle}</p>
+              <p className="text-[10px] font-medium -mt-0.5 text-slate-500">{activeAgent.name} · {activeAgent.subtitle}</p>
             </div>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl border border-slate-200/70 bg-white/70 p-1 dark:border-slate-700/70 dark:bg-slate-900/60">
-            <button onClick={() => handleSearchGo('/')} className={`rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${!isHermesBoard ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}>
-              OpenClaw
-            </button>
-            <button onClick={() => handleSearchGo('/hermes')} className={`rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${isHermesBoard ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}>
-              Hermes
-            </button>
           </div>
         </div>
 
-        {/* Connected channel indicators — only show if any connected */}
-        {!isHermesBoard && connectedChannels.length > 0 && (
+        {/* Connected channel indicators */}
+        {connectedChannels.length > 0 && (
           <div className="px-4 py-3 border-b space-y-1.5 border-slate-200/70">
-            <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5 text-slate-400">{t.nav.runningStatus}</div>
-            {connectedChannels.map(ch => (
+            <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5 text-slate-400">
+              {isHermesBoard ? (locale === 'zh-CN' ? '运行中的平台' : 'Active Platforms') : t.nav.runningStatus}
+            </div>
+            {connectedChannels.map((ch: RuntimeChannelSummary) => (
               <div key={ch.label} className="flex items-center gap-2 text-xs">
                 <span className={`relative flex h-2 w-2 shrink-0`}>
                   <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${ch.connected ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
@@ -494,21 +574,64 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <button onClick={toggleDark} className="w-10 h-10 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:text-slate-700 dark:hover:text-white transition-colors inline-flex items-center justify-center">
+            <button onClick={toggleDark} className="w-10 h-10 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:text-slate-700 dark:hover:text-white transition-colors inline-flex items-center justify-center">
                 {dark ? <Sun size={17} /> : <Moon size={17} />}
               </button>
               <MessageCenter tasks={tasks} taskLogs={taskLogs} onRefresh={loadTasks} mode="icon" />
               <div ref={profileRef} className="relative">
                 <button onClick={() => setProfileOpen(v => !v)} className="flex items-center gap-3 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 pl-2 pr-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                   <img src="/logo.jpg" alt="avatar" className="w-8 h-8 rounded-full object-cover" />
-                    <div className="text-right leading-tight">
-                      <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">Admin</div>
-                      <div className="text-[10px] text-slate-400 dark:text-slate-500">ClawPanel</div>
+                  <div className="text-left leading-tight">
+                    <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">{activeAgent.name}</div>
+                    <div className="text-[10px] text-slate-400 dark:text-slate-500">
+                      {locale === 'zh-CN' ? '切换 Agent 视图' : 'Switch agent view'}
                     </div>
+                  </div>
                   <ChevronDown size={14} className="text-slate-400" />
                 </button>
                 {profileOpen && (
-                  <div className="absolute top-full right-0 mt-2 w-44 rounded-2xl ui-modern-card p-2 z-50">
+                  <div className="absolute top-full right-0 mt-2 w-64 rounded-2xl ui-modern-card p-2 z-50">
+                    <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      {locale === 'zh-CN' ? 'Agent 视图' : 'Agent Views'}
+                    </div>
+                    <button
+                      onClick={() => {
+                        setProfileOpen(false);
+                        handleSearchGo('/');
+                      }}
+                      className={`mb-1 flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
+                        !isHermesBoard ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-200' : 'hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <LayoutDashboard size={16} className="mt-0.5 shrink-0" />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold">OpenClaw</span>
+                        <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+                          {locale === 'zh-CN' ? 'OpenClaw 可视化管理面板' : 'OpenClaw visual management board'}
+                        </span>
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setProfileOpen(false);
+                        handleSearchGo('/hermes');
+                      }}
+                      className={`mb-2 flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
+                        isHermesBoard ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-200' : 'hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <Brain size={16} className="mt-0.5 shrink-0" />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold">Hermes</span>
+                        <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+                          {locale === 'zh-CN' ? 'Hermes 独立 Agent 控制台' : 'Hermes independent agent console'}
+                        </span>
+                      </span>
+                    </button>
+                    <div className="mx-2 mb-2 border-t border-slate-200/80 dark:border-slate-700/80" />
+                    <div className="px-3 pb-2 text-[11px] text-slate-400">
+                      Admin
+                    </div>
                     <button onClick={() => { setProfileOpen(false); onLogout(); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-red-600 hover:bg-red-50 transition-colors">
                       <LogOut size={15} /> 退出登录
                     </button>
@@ -533,10 +656,6 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
               {dark ? <Sun size={17} /> : <Moon size={17} />}
             </button>
             <MessageCenter tasks={tasks} taskLogs={taskLogs} onRefresh={loadTasks} mode="icon" />
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl border border-blue-100/70 bg-white/64 p-1 shadow-[0_14px_32px_rgba(15,23,42,0.05)] backdrop-blur-xl dark:border-blue-400/15 dark:bg-slate-900/48">
-            <button onClick={() => handleSearchGo('/')} className={`rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${!isHermesBoard ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}>OpenClaw</button>
-            <button onClick={() => handleSearchGo('/hermes')} className={`rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${isHermesBoard ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}>Hermes</button>
           </div>
           <div ref={searchRef} className="relative mt-3">
             <div className="flex items-center gap-3 rounded-2xl border border-blue-100/70 bg-white/64 px-4 py-3 shadow-[0_14px_32px_rgba(15,23,42,0.05)] backdrop-blur-xl dark:border-blue-400/15 dark:bg-slate-900/48">

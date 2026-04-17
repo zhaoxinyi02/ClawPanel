@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import { useWebSocket } from './hooks/useWebSocket';
@@ -8,25 +8,53 @@ import UpdatePopup from './components/UpdatePopup';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 
-const ActivityLog = lazy(() => import('./pages/ActivityLog'));
-const PanelChat = lazy(() => import('./pages/PanelChat'));
-const Channels = lazy(() => import('./pages/Channels'));
-const CronJobs = lazy(() => import('./pages/CronJobs'));
-const Skills = lazy(() => import('./pages/Skills'));
-const SystemConfig = lazy(() => import('./pages/SystemConfig'));
-const Plugins = lazy(() => import('./pages/Plugins'));
-const Agents = lazy(() => import('./pages/Agents'));
-const Workflows = lazy(() => import('./pages/Workflows'));
-const Sessions = lazy(() => import('./pages/Sessions'));
-const Tasks = lazy(() => import('./pages/Tasks'));
-const Workspace = lazy(() => import('./pages/Workspace'));
-const Monitor = lazy(() => import('./pages/Monitor'));
-const HermesOverview = lazy(() => import('./pages/HermesOverview'));
-const HermesConfig = lazy(() => import('./pages/HermesConfig'));
-const HermesHealth = lazy(() => import('./pages/HermesHealth'));
-const HermesPlatforms = lazy(() => import('./pages/HermesPlatforms'));
-const HermesSessions = lazy(() => import('./pages/HermesSessions'));
-const HermesPersonality = lazy(() => import('./pages/HermesPersonality'));
+const loadActivityLog = () => import('./pages/ActivityLog');
+const loadPanelChat = () => import('./pages/PanelChat');
+const loadChannels = () => import('./pages/Channels');
+const loadCronJobs = () => import('./pages/CronJobs');
+const loadSkills = () => import('./pages/Skills');
+const loadSystemConfig = () => import('./pages/SystemConfig');
+const loadPlugins = () => import('./pages/Plugins');
+const loadAgents = () => import('./pages/Agents');
+const loadWorkflows = () => import('./pages/Workflows');
+const loadSessions = () => import('./pages/Sessions');
+const loadTasks = () => import('./pages/Tasks');
+const loadWorkspace = () => import('./pages/Workspace');
+const loadMonitor = () => import('./pages/Monitor');
+const loadHermesOverview = () => import('./pages/HermesOverview');
+const loadHermesConfig = () => import('./pages/HermesConfig');
+const loadHermesHealth = () => import('./pages/HermesHealth');
+const loadHermesPlatforms = () => import('./pages/HermesPlatforms');
+const loadHermesSessions = () => import('./pages/HermesSessions');
+const loadHermesPersonality = () => import('./pages/HermesPersonality');
+const loadHermesLogs = () => import('./pages/HermesLogs');
+const loadHermesActions = () => import('./pages/HermesActions');
+const loadHermesTasks = () => import('./pages/HermesTasks');
+const loadHermesProfiles = () => import('./pages/HermesProfiles');
+
+const ActivityLog = lazy(loadActivityLog);
+const PanelChat = lazy(loadPanelChat);
+const Channels = lazy(loadChannels);
+const CronJobs = lazy(loadCronJobs);
+const Skills = lazy(loadSkills);
+const SystemConfig = lazy(loadSystemConfig);
+const Plugins = lazy(loadPlugins);
+const Agents = lazy(loadAgents);
+const Workflows = lazy(loadWorkflows);
+const Sessions = lazy(loadSessions);
+const Tasks = lazy(loadTasks);
+const Workspace = lazy(loadWorkspace);
+const Monitor = lazy(loadMonitor);
+const HermesOverview = lazy(loadHermesOverview);
+const HermesConfig = lazy(loadHermesConfig);
+const HermesHealth = lazy(loadHermesHealth);
+const HermesPlatforms = lazy(loadHermesPlatforms);
+const HermesSessions = lazy(loadHermesSessions);
+const HermesPersonality = lazy(loadHermesPersonality);
+const HermesLogs = lazy(loadHermesLogs);
+const HermesActions = lazy(loadHermesActions);
+const HermesTasks = lazy(loadHermesTasks);
+const HermesProfiles = lazy(loadHermesProfiles);
 const CompanyOverview = lazy(() => import('./pages/CompanyOverview'));
 const CompanyTasks = lazy(() => import('./pages/CompanyTasks'));
 const CompanyTaskDetail = lazy(() => import('./pages/CompanyTaskDetail'));
@@ -48,10 +76,43 @@ function RouteLoadingFallback() {
   );
 }
 
+const ACTIVE_AGENT_KEY = 'clawpanel-active-agent';
+
+function getStoredAgent() {
+  try {
+    return localStorage.getItem(ACTIVE_AGENT_KEY) === 'hermes' ? 'hermes' : 'openclaw';
+  } catch {
+    return 'openclaw';
+  }
+}
+
+function HomeRoute({ logEntries, refreshLog }: { logEntries: any[]; refreshLog: () => void }) {
+  if (getStoredAgent() === 'hermes') {
+    return <Navigate to="/hermes" replace />;
+  }
+  return <Dashboard logEntries={logEntries} refreshLog={refreshLog} />;
+}
+
 export default function App() {
   const enableAgents = import.meta.env.VITE_FEATURE_AGENTS !== 'false';
   const auth = useAuth();
   const ws = useWebSocket();
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadHermesOverview();
+      void loadHermesHealth();
+      void loadHermesPlatforms();
+      void loadHermesLogs();
+      void loadHermesActions();
+      void loadHermesTasks();
+      void loadHermesSessions();
+      void loadHermesPersonality();
+      void loadHermesProfiles();
+      void loadHermesConfig();
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   if (!auth.isLoggedIn) {
     return (
@@ -67,7 +128,7 @@ export default function App() {
     <UpdatePopup />
     <Routes>
       <Route element={<Layout onLogout={auth.logout} napcatStatus={ws.napcatStatus} wechatStatus={ws.wechatStatus} openclawStatus={ws.openclawStatus} processStatus={ws.processStatus} wsMessages={ws.wsMessages} />}>
-        <Route path="/" element={<Dashboard logEntries={ws.logEntries} refreshLog={ws.refreshLog} />} />
+        <Route path="/" element={<HomeRoute logEntries={ws.logEntries} refreshLog={ws.refreshLog} />} />
         <Route path="/chat" element={<OpenClawRequired openclawStatus={ws.openclawStatus} processStatus={ws.processStatus}><Suspense fallback={<RouteLoadingFallback />}><PanelChat /></Suspense></OpenClawRequired>} />
         <Route path="/logs" element={<Suspense fallback={<RouteLoadingFallback />}><ActivityLog logEntries={ws.logEntries} clearEvents={ws.clearEvents} refreshLog={ws.refreshLog} /></Suspense>} />
         <Route path="/channels" element={<OpenClawRequired openclawStatus={ws.openclawStatus} processStatus={ws.processStatus}><Suspense fallback={<RouteLoadingFallback />}><Channels /></Suspense></OpenClawRequired>} />
@@ -93,8 +154,12 @@ export default function App() {
         <Route path="/hermes" element={<Suspense fallback={<RouteLoadingFallback />}><HermesOverview /></Suspense>} />
         <Route path="/hermes/health" element={<Suspense fallback={<RouteLoadingFallback />}><HermesHealth /></Suspense>} />
         <Route path="/hermes/platforms" element={<Suspense fallback={<RouteLoadingFallback />}><HermesPlatforms /></Suspense>} />
+        <Route path="/hermes/logs" element={<Suspense fallback={<RouteLoadingFallback />}><HermesLogs /></Suspense>} />
+        <Route path="/hermes/actions" element={<Suspense fallback={<RouteLoadingFallback />}><HermesActions /></Suspense>} />
+        <Route path="/hermes/tasks" element={<Suspense fallback={<RouteLoadingFallback />}><HermesTasks /></Suspense>} />
         <Route path="/hermes/sessions" element={<Suspense fallback={<RouteLoadingFallback />}><HermesSessions /></Suspense>} />
         <Route path="/hermes/personality" element={<Suspense fallback={<RouteLoadingFallback />}><HermesPersonality /></Suspense>} />
+        <Route path="/hermes/profiles" element={<Suspense fallback={<RouteLoadingFallback />}><HermesProfiles /></Suspense>} />
         <Route path="/hermes/config" element={<Suspense fallback={<RouteLoadingFallback />}><HermesConfig /></Suspense>} />
       </Route>
       <Route path="/login" element={<Navigate to="/" />} />
