@@ -983,11 +983,181 @@ func normalizeFeishuRequireMention(raw interface{}) (bool, bool, error) {
 	}
 }
 
+func normalizeFeishuSwitchMode(raw interface{}, field string) (string, bool, error) {
+	switch v := raw.(type) {
+	case nil:
+		return "", false, nil
+	case bool:
+		if v {
+			return "enabled", true, nil
+		}
+		return "disabled", true, nil
+	case float64:
+		if v == 1 {
+			return "enabled", true, nil
+		}
+		if v == 0 {
+			return "disabled", true, nil
+		}
+	case int:
+		if v == 1 {
+			return "enabled", true, nil
+		}
+		if v == 0 {
+			return "disabled", true, nil
+		}
+	case int64:
+		if v == 1 {
+			return "enabled", true, nil
+		}
+		if v == 0 {
+			return "disabled", true, nil
+		}
+	case json.Number:
+		if parsed, err := v.Int64(); err == nil {
+			if parsed == 1 {
+				return "enabled", true, nil
+			}
+			if parsed == 0 {
+				return "disabled", true, nil
+			}
+		}
+	case string:
+		trimmed := strings.TrimSpace(strings.ToLower(v))
+		switch trimmed {
+		case "":
+			return "", false, nil
+		case "enabled", "true", "1", "on":
+			return "enabled", true, nil
+		case "disabled", "false", "0", "off":
+			return "disabled", true, nil
+		}
+	}
+	return "", false, fmt.Errorf("%s 仅支持 enabled/disabled", field)
+}
+
+func normalizePositiveInt(raw interface{}) (int64, bool) {
+	switch v := raw.(type) {
+	case int:
+		if v > 0 {
+			return int64(v), true
+		}
+	case int64:
+		if v > 0 {
+			return v, true
+		}
+	case float64:
+		if v > 0 && float64(int64(v)) == v {
+			return int64(v), true
+		}
+	case json.Number:
+		if parsed, err := v.Int64(); err == nil && parsed > 0 {
+			return parsed, true
+		}
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return 0, false
+		}
+		if parsed, err := strconv.ParseInt(trimmed, 10, 64); err == nil && parsed > 0 {
+			return parsed, true
+		}
+	}
+	return 0, false
+}
+
+func normalizeFeishuDynamicAgentCreation(raw interface{}) (map[string]interface{}, bool, error) {
+	switch v := raw.(type) {
+	case nil:
+		return nil, false, nil
+	case bool:
+		return map[string]interface{}{"enabled": v}, true, nil
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return nil, false, nil
+		}
+		parsed, err := strconv.ParseBool(trimmed)
+		if err != nil {
+			return nil, false, fmt.Errorf("dynamicAgentCreation 仅支持 object 或 true/false")
+		}
+		return map[string]interface{}{"enabled": parsed}, true, nil
+	case map[string]interface{}:
+		next := map[string]interface{}{}
+		if enabled, ok := normalizeOptionalBool(v["enabled"]); ok {
+			next["enabled"] = enabled
+		}
+		if ws := strings.TrimSpace(toString(v["workspaceTemplate"])); ws != "" {
+			next["workspaceTemplate"] = ws
+		}
+		if dir := strings.TrimSpace(toString(v["agentDirTemplate"])); dir != "" {
+			next["agentDirTemplate"] = dir
+		}
+		if maxAgents, ok := normalizePositiveInt(v["maxAgents"]); ok {
+			next["maxAgents"] = maxAgents
+		}
+		if len(next) == 0 {
+			return nil, false, nil
+		}
+		return next, true, nil
+	default:
+		return nil, false, fmt.Errorf("dynamicAgentCreation 仅支持 object 或 true/false")
+	}
+}
+
 func normalizeFeishuChannelConfigInPlace(body map[string]interface{}) error {
 	if body == nil {
 		return nil
 	}
+	legacyThreadSession, hasLegacyThreadSession := body["threadSession"]
 	delete(body, "dmScope")
+	delete(body, "botName")
+
+	if raw, exists := body["replyInThread"]; exists {
+		normalized, keep, err := normalizeFeishuSwitchMode(raw, "replyInThread")
+		if err != nil {
+			return err
+		}
+		if keep {
+			body["replyInThread"] = normalized
+		} else {
+			delete(body, "replyInThread")
+		}
+	}
+
+	if raw, exists := body["topicSessionMode"]; exists {
+		normalized, keep, err := normalizeFeishuSwitchMode(raw, "topicSessionMode")
+		if err != nil {
+			return err
+		}
+		if keep {
+			body["topicSessionMode"] = normalized
+		} else {
+			delete(body, "topicSessionMode")
+		}
+	}
+	if _, exists := body["topicSessionMode"]; !exists && hasLegacyThreadSession {
+		normalized, keep, err := normalizeFeishuSwitchMode(legacyThreadSession, "topicSessionMode")
+		if err != nil {
+			return err
+		}
+		if keep {
+			body["topicSessionMode"] = normalized
+		}
+	}
+	delete(body, "threadSession")
+
+	if raw, exists := body["dynamicAgentCreation"]; exists {
+		normalized, keep, err := normalizeFeishuDynamicAgentCreation(raw)
+		if err != nil {
+			return err
+		}
+		if keep {
+			body["dynamicAgentCreation"] = normalized
+		} else {
+			delete(body, "dynamicAgentCreation")
+		}
+	}
 
 	if raw, exists := body["requireMention"]; exists {
 		normalized, keep, err := normalizeFeishuRequireMention(raw)
