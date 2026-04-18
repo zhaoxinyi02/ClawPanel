@@ -169,6 +169,32 @@ func TestRunScriptFailsWhenOutputLineExceedsScannerBuffer(t *testing.T) {
 	}
 }
 
+func TestRunCommandUsesAugmentedRuntimePath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("path layout differs on Windows")
+	}
+
+	home := t.TempDir()
+	binDir := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir bin dir: %v", err)
+	}
+	scriptPath := filepath.Join(binDir, "fake-openclaw-helper")
+	script := "#!/bin/sh\nprintf 'ok\\n'\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write helper: %v", err)
+	}
+
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", "")
+
+	task := &Task{ID: "task-1", Name: "augmented-path"}
+	m := NewManager(nil)
+	if err := m.RunCommand(task, "fake-openclaw-helper"); err != nil {
+		t.Fatalf("RunCommand should discover helper from augmented PATH: %v", err)
+	}
+}
+
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }

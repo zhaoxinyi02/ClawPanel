@@ -9,12 +9,14 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf16"
 
+	"github.com/zhaoxinyi02/ClawPanel/internal/config"
 	"github.com/zhaoxinyi02/ClawPanel/internal/websocket"
 )
 
@@ -220,8 +222,8 @@ func (m *Manager) runCommandWithInput(task *Task, input io.Reader, name string, 
 	task.SetStatus(StatusRunning)
 	m.broadcastTaskUpdate(task)
 
-	cmd := exec.Command(name, args...)
-	env := cmd.Environ()
+	cmd := exec.Command(resolveCommandPath(name), args...)
+	env := config.BuildExecEnv()
 
 	if runtime.GOOS == "windows" {
 		if os.Getenv("USERPROFILE") == "" {
@@ -243,14 +245,6 @@ func (m *Manager) runCommandWithInput(task *Task, input io.Reader, name string, 
 		}
 		if os.Getenv("HOME") == "" && home != "" {
 			env = append(env, "HOME="+home)
-		}
-	}
-
-	if os.Getenv("PATH") == "" {
-		if runtime.GOOS == "windows" {
-			env = append(env, "PATH=C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\")
-		} else {
-			env = append(env, "PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
 		}
 	}
 
@@ -289,6 +283,55 @@ func (m *Manager) runCommandWithInput(task *Task, input io.Reader, name string, 
 		return err
 	}
 	return nil
+}
+
+func resolveCommandPath(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return name
+	}
+	if filepath.IsAbs(name) || strings.ContainsRune(name, os.PathSeparator) {
+		return name
+	}
+	if resolved, err := exec.LookPath(name); err == nil && resolved != "" {
+		return resolved
+	}
+	if resolved := lookPathInPath(name, config.BuildAugmentedPath(os.Getenv("PATH"))); resolved != "" {
+		return resolved
+	}
+	return name
+}
+
+func lookPathInPath(name, pathValue string) string {
+	if strings.TrimSpace(pathValue) == "" {
+		return ""
+	}
+	exts := []string{""}
+	if runtime.GOOS == "windows" && filepath.Ext(name) == "" {
+		for _, ext := range strings.Split(os.Getenv("PATHEXT"), ";") {
+			ext = strings.TrimSpace(ext)
+			if ext != "" {
+				exts = append(exts, ext)
+			}
+		}
+	}
+	for _, dir := range filepath.SplitList(pathValue) {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			continue
+		}
+		for _, ext := range exts {
+			candidate := filepath.Join(dir, name) + ext
+			info, err := os.Stat(candidate)
+			if err != nil || info.IsDir() {
+				continue
+			}
+			if runtime.GOOS == "windows" || info.Mode()&0o111 != 0 {
+				return candidate
+			}
+		}
+	}
+	return ""
 }
 
 func dedupeEnv(env []string) []string {
