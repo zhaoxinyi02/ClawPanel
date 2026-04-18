@@ -4,6 +4,7 @@ set -euo pipefail
 CLAWPANEL_PUBLIC_BASE="${CLAWPANEL_PUBLIC_BASE:-http://43.248.142.249:19527}"
 CLAWPANEL_PUBLIC_BASE="${CLAWPANEL_PUBLIC_BASE%/}"
 INSTALL_DIR="/opt/clawpanel-lite"
+DATA_DIR="/var/lib/clawpanel-lite"
 SERVICE_LABEL="com.clawpanel.lite.service"
 REPO="zhaoxinyi02/ClawPanel"
 TAG_PREFIX="lite-v"
@@ -133,6 +134,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 TOTAL_STEPS=4
 
 info "安装目录: ${INSTALL_DIR}"
+info "数据目录: ${DATA_DIR}"
 info "服务标签: ${SERVICE_LABEL}"
 info "目标架构: darwin/${ARCH}"
 echo ""
@@ -159,6 +161,18 @@ log "下载完成：$PACKAGE_NAME"
 
 step 2 $TOTAL_STEPS "部署 Lite 运行环境"
 mkdir -p "$INSTALL_DIR"
+mkdir -p "$DATA_DIR"
+
+LEGACY_DATA_DIR="$INSTALL_DIR/data"
+if [[ -d "$LEGACY_DATA_DIR" ]]; then
+  if [[ ! -e "$DATA_DIR/clawpanel.json" ]] && [[ ! -e "$DATA_DIR/openclaw-config/openclaw.json" ]]; then
+    info "检测到旧版内置数据目录，迁移到外部持久化目录..."
+    cp -a "$LEGACY_DATA_DIR/." "$DATA_DIR/"
+  else
+    info "检测到旧版内置数据目录，但外部数据目录已有内容，跳过自动覆盖。"
+  fi
+fi
+
 rm -rf "$INSTALL_DIR"/*
 tar -xzf "$TMP_DIR/$PACKAGE_NAME" -C "$INSTALL_DIR"
 chmod +x "$INSTALL_DIR/clawpanel-lite" "$INSTALL_DIR/bin/clawlite-openclaw"
@@ -168,6 +182,8 @@ fi
 if [[ -f "$INSTALL_DIR/runtime/node/node" ]]; then
   chmod +x "$INSTALL_DIR/runtime/node/node"
 fi
+rm -rf "$INSTALL_DIR/data"
+ln -sfn "$DATA_DIR" "$INSTALL_DIR/data"
 ln -sf "$INSTALL_DIR/clawpanel-lite" /usr/local/bin/clawpanel-lite
 ln -sf "$INSTALL_DIR/bin/clawlite-openclaw" /usr/local/bin/clawlite-openclaw
 log "Lite 文件已部署到 ${INSTALL_DIR}"
@@ -189,7 +205,7 @@ cat > "/Library/LaunchDaemons/${SERVICE_LABEL}.plist" <<EOF
   <key>EnvironmentVariables</key>
   <dict>
     <key>CLAWPANEL_EDITION</key><string>lite</string>
-    <key>CLAWPANEL_DATA</key><string>${INSTALL_DIR}/data</string>
+    <key>CLAWPANEL_DATA</key><string>${DATA_DIR}</string>
     <key>NODE_OPTIONS</key><string>--max-old-space-size=2048</string>
   </dict>
 </dict>
@@ -209,6 +225,7 @@ log "ClawPanel Lite macOS 安装完成"
 echo ""
 printf "${GREEN}•${NC} 当前版本: ${BOLD}%s${NC}\n" "$VERSION"
 printf "${GREEN}•${NC} 安装目录: ${BOLD}%s${NC}\n" "$INSTALL_DIR"
+printf "${GREEN}•${NC} 数据目录: ${BOLD}%s${NC}\n" "$DATA_DIR"
 printf "${GREEN}•${NC} 服务标签: ${BOLD}%s${NC}\n" "$SERVICE_LABEL"
 printf "${GREEN}•${NC} Lite CLI: ${BOLD}clawlite-openclaw${NC}\n"
 printf "${GREEN}•${NC} 面板地址: ${BOLD}http://%s:19527${NC}\n" "$HOST_IP"

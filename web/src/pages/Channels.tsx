@@ -4,6 +4,7 @@ import QRCode from 'qrcode';
 import { api } from '../lib/api';
 import { Radio, Wifi, WifiOff, QrCode, Key, Zap, UserCheck, Check, X, Power, Loader2, RefreshCw, LogOut, Sparkles, Download, Package, Wrench, Search, Copy, CheckCircle, AlertTriangle, AlertCircle, Trash2, ChevronDown } from 'lucide-react';
 import InfoTooltip from '../components/InfoTooltip';
+import ConfigFieldRenderer from '../components/ConfigFieldRenderer';
 import { useI18n } from '../i18n';
 
 type ChannelFieldSection = 'default' | 'access' | 'conversation' | 'advanced';
@@ -2089,116 +2090,46 @@ export default function Channels() {
       : '';
 
     return (
-      <div key={field.key} className={isFullWidth ? 'md:col-span-2' : ''}>
-        {field.type !== 'toggle' && (
-          <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-            {field.label}
-          </label>
-        )}
-
-        {field.type === 'toggle' ? (
-          <div
-            className={`rounded-lg border transition-colors ${
-              isCompactToggle
-                ? 'flex items-start justify-between gap-4 px-4 py-3 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 h-full'
-                : 'flex items-center gap-3 p-3 border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/30'
-            }`}
-          >
-            {isCompactToggle && (
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold text-gray-900 dark:text-white">{field.label}</div>
-                {field.help && (
-                  <p className="mt-1 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">{field.help}</p>
+      <ConfigFieldRenderer
+        key={field.key}
+        field={{ ...field, options: fieldOptions }}
+        value={currentVal}
+        textareaValue={textareaValue}
+        hasExplicitValue={hasExplicitValue}
+        onChange={value => handleFieldDraftChange(channelId, field, value)}
+        onToggle={() => handleToggleField(channelId, field.key)}
+        fullWidth={isFullWidth}
+        fieldHelp={fieldHelp}
+        emptyOptionLabel={defaultHint ? t.channels.notConfiguredWithDefault.replace('{value}', defaultHint) : t.common.notConfigured}
+        compactToggle={isCompactToggle}
+        toggleStateLabel={currentVal ? t.channels.opened : t.channels.closed}
+        accent="violet"
+        renderFooter={(
+          <>
+            {defaultHint && (
+              <p className="mt-1 text-[11px] text-gray-400">
+                {t.channels.defaultWhenUnset.replace('{value}', defaultHint)}
+              </p>
+            )}
+            {channelId === 'feishu' && field.key === 'groupAllowFrom' && (
+              <div className="mt-2 space-y-2">
+                <p className="text-[11px] text-gray-500">
+                  当前将保存为数组 {groupAllowPreview.length > 0 ? `（${groupAllowPreview.length} 个群 ID）` : '（当前为空）'}。
+                </p>
+                {groupAllowPreview.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {groupAllowPreview.map(groupId => (
+                      <span key={groupId} className="px-2 py-1 rounded-full bg-violet-50 dark:bg-violet-900/20 text-[11px] text-violet-700 dark:text-violet-300 border border-violet-100 dark:border-violet-800/40 font-mono">
+                        {groupId}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
-            <button
-              type="button"
-              onClick={() => handleToggleField(channelId, field.key)}
-              className={`relative shrink-0 w-9 h-5 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-violet-500 ${currentVal ? 'bg-violet-600' : 'bg-gray-300 dark:bg-gray-600'}`}
-            >
-              <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${currentVal ? 'translate-x-4' : ''}`} />
-            </button>
-            <span className={`text-xs ${currentVal ? 'text-violet-600 dark:text-violet-400 font-medium' : 'text-gray-500'}`}>
-              {currentVal ? t.channels.opened : t.channels.closed}
-            </span>
-          </div>
-        ) : field.type === 'select' ? (
-          <div className="relative">
-            <select
-              name={field.key}
-              value={currentVal ?? ''}
-              onChange={e => handleFieldDraftChange(channelId, field, e.target.value)}
-              className={`w-full px-3.5 py-2 text-sm border rounded-lg bg-white dark:bg-gray-900 transition-all focus:ring-2 focus:ring-violet-100 dark:focus:ring-violet-900/30 focus:border-violet-500 outline-none
-                ${hasExplicitValue
-                  ? 'border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-100'
-                  : 'border-gray-200 dark:border-gray-800 text-gray-400'}`}
-            >
-              <option value="">{defaultHint ? t.channels.notConfiguredWithDefault.replace('{value}', defaultHint) : t.common.notConfigured}</option>
-              {fieldOptions?.map(opt => (
-                <option key={opt} value={opt}>{opt}</option>
-              ))}
-            </select>
-          </div>
-        ) : field.type === 'textarea' ? (
-          <textarea
-            name={field.key}
-            rows={field.rows || 3}
-            value={textareaValue}
-            onChange={e => handleFieldDraftChange(channelId, field, e.target.value)}
-            placeholder={field.placeholder || t.common.notConfigured}
-            className={`w-full px-3.5 py-2 text-sm border rounded-lg bg-white dark:bg-gray-900 transition-all focus:ring-2 focus:ring-violet-100 dark:focus:ring-violet-900/30 focus:border-violet-500 outline-none resize-y
-              ${hasExplicitValue
-                ? 'border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-100'
-                : 'border-gray-200 dark:border-gray-800 text-gray-400'}`}
-          />
-        ) : (
-          <div className="relative">
-            <input
-              name={field.key}
-              type={field.type === 'password' ? 'password' : field.type === 'number' ? 'number' : 'text'}
-              value={currentVal ?? ''}
-              onChange={e => handleFieldDraftChange(channelId, field, e.target.value)}
-              placeholder={field.placeholder || t.common.notConfigured}
-              className={`w-full px-3.5 py-2 text-sm border rounded-lg bg-white dark:bg-gray-900 transition-all focus:ring-2 focus:ring-violet-100 dark:focus:ring-violet-900/30 focus:border-violet-500 outline-none
-                ${hasExplicitValue
-                  ? 'border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-100'
-                  : 'border-gray-200 dark:border-gray-800 text-gray-400'}`}
-            />
-            {hasExplicitValue && (
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500">
-                <Check size={14} strokeWidth={3} />
-              </div>
-            )}
-          </div>
+          </>
         )}
-
-        {field.type !== 'toggle' && fieldHelp && (
-          <p className="mt-1.5 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">{fieldHelp}</p>
-        )}
-
-        {defaultHint && (
-          <p className="mt-1 text-[11px] text-gray-400">
-            {t.channels.defaultWhenUnset.replace('{value}', defaultHint)}
-          </p>
-        )}
-        {channelId === 'feishu' && field.key === 'groupAllowFrom' && (
-          <div className="mt-2 space-y-2">
-            <p className="text-[11px] text-gray-500">
-              当前将保存为数组 {groupAllowPreview.length > 0 ? `（${groupAllowPreview.length} 个群 ID）` : '（当前为空）'}。
-            </p>
-            {groupAllowPreview.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {groupAllowPreview.map(groupId => (
-                  <span key={groupId} className="px-2 py-1 rounded-full bg-violet-50 dark:bg-violet-900/20 text-[11px] text-violet-700 dark:text-violet-300 border border-violet-100 dark:border-violet-800/40 font-mono">
-                    {groupId}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      />
     );
   };
 

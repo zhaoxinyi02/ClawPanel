@@ -4,6 +4,7 @@ set -euo pipefail
 CLAWPANEL_PUBLIC_BASE="${CLAWPANEL_PUBLIC_BASE:-http://43.248.142.249:19527}"
 CLAWPANEL_PUBLIC_BASE="${CLAWPANEL_PUBLIC_BASE%/}"
 INSTALL_DIR="/opt/clawpanel-lite"
+DATA_DIR="/var/lib/clawpanel-lite"
 SERVICE_NAME="clawpanel-lite"
 BIN_NAME="clawpanel-lite"
 PORT="19527"
@@ -200,7 +201,9 @@ echo ""
 
 step 1 $TOTAL_STEPS "准备安装目录"
 mkdir -p "$INSTALL_DIR"
+mkdir -p "$DATA_DIR"
 log "目录已就绪: $INSTALL_DIR"
+log "数据目录已就绪: $DATA_DIR"
 
 step 2 $TOTAL_STEPS "下载 ClawPanel Lite v${VERSION}"
 if [[ -n "$LOCAL_PACKAGE_PATH" ]]; then
@@ -218,10 +221,24 @@ log "下载完成 (${DOWNLOAD_SOURCE_ACTUAL})"
 
 step 3 $TOTAL_STEPS "部署 Lite 运行环境"
 systemctl stop "$SERVICE_NAME" >/dev/null 2>&1 || true
+LEGACY_DATA_DIR="$INSTALL_DIR/data"
 DATA_OWNER=""
-if [[ -d "$INSTALL_DIR/data" ]] && command -v stat >/dev/null 2>&1; then
-  DATA_OWNER=$(stat -c '%u:%g' "$INSTALL_DIR/data" 2>/dev/null || true)
+if [[ -d "$DATA_DIR" ]] && command -v stat >/dev/null 2>&1; then
+	DATA_OWNER=$(stat -c '%u:%g' "$DATA_DIR" 2>/dev/null || true)
+elif [[ -d "$LEGACY_DATA_DIR" ]] && command -v stat >/dev/null 2>&1; then
+	DATA_OWNER=$(stat -c '%u:%g' "$LEGACY_DATA_DIR" 2>/dev/null || true)
 fi
+
+if [[ -d "$LEGACY_DATA_DIR" ]]; then
+	if [[ ! -e "$DATA_DIR/clawpanel.json" ]] && [[ ! -e "$DATA_DIR/openclaw-config/openclaw.json" ]]; then
+		info "检测到旧版内置数据目录，迁移到外部持久化目录..."
+		mkdir -p "$DATA_DIR"
+		cp -a "$LEGACY_DATA_DIR/." "$DATA_DIR/"
+	else
+		info "检测到旧版内置数据目录，但外部数据目录已有内容，跳过自动覆盖。"
+	fi
+fi
+
 rm -rf "$INSTALL_DIR"/*
 tar -xzf "$TMP_DIR/$PACKAGE_NAME" -C "$INSTALL_DIR"
 chmod +x "$INSTALL_DIR/$BIN_NAME" "$INSTALL_DIR/bin/clawlite-openclaw"
@@ -231,9 +248,12 @@ fi
 if [[ -f "$INSTALL_DIR/runtime/node/node" ]]; then
   chmod +x "$INSTALL_DIR/runtime/node/node"
 fi
-if [[ -n "$DATA_OWNER" ]] && [[ -d "$INSTALL_DIR/data" ]]; then
-  chown -R "$DATA_OWNER" "$INSTALL_DIR/data" 2>/dev/null || true
+mkdir -p "$DATA_DIR"
+if [[ -n "$DATA_OWNER" ]] && [[ -d "$DATA_DIR" ]]; then
+	chown -R "$DATA_OWNER" "$DATA_DIR" 2>/dev/null || true
 fi
+rm -rf "$INSTALL_DIR/data"
+ln -sfn "$DATA_DIR" "$INSTALL_DIR/data"
 ln -sf "$INSTALL_DIR/$BIN_NAME" /usr/local/bin/clawpanel-lite
 ln -sf "$INSTALL_DIR/bin/clawlite-openclaw" /usr/local/bin/clawlite-openclaw
 log "Lite 文件已部署"
@@ -252,7 +272,7 @@ ExecStart=${INSTALL_DIR}/${BIN_NAME}
 Restart=always
 RestartSec=5
 Environment=CLAWPANEL_EDITION=lite
-Environment=CLAWPANEL_DATA=${INSTALL_DIR}/data
+Environment=CLAWPANEL_DATA=${DATA_DIR}
 Environment=NODE_OPTIONS=--max-old-space-size=2048
 
 [Install]
@@ -269,6 +289,7 @@ log "ClawPanel Lite 安装完成"
 echo ""
 echo -e "${GREEN}•${NC} 当前版本: ${BOLD}${VERSION}${NC}"
 echo -e "${GREEN}•${NC} 安装目录: ${BOLD}${INSTALL_DIR}${NC}"
+echo -e "${GREEN}•${NC} 数据目录: ${BOLD}${DATA_DIR}${NC}"
 echo -e "${GREEN}•${NC} 服务名称: ${BOLD}${SERVICE_NAME}${NC}"
 echo -e "${GREEN}•${NC} Lite CLI: ${BOLD}clawlite-openclaw${NC}"
 echo -e "${GREEN}•${NC} 访问地址: ${BOLD}http://${SERVICE_IP}:${PORT}${NC}"

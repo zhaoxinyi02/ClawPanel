@@ -349,7 +349,6 @@ export default function SystemConfig() {
   const [selectedIdentityDoc, setSelectedIdentityDoc] = useState<any>(null);
   const [identityContent, setIdentityContent] = useState('');
   const [identitySaving, setIdentitySaving] = useState(false);
-  const [adminToken, setAdminToken] = useState('');
   const [checking, setChecking] = useState(false);
   const [configIssues, setConfigIssues] = useState<any[]>([]);
   const [configChecked, setConfigChecked] = useState(0);
@@ -468,10 +467,6 @@ export default function SystemConfig() {
     }
   };
 
-  const loadAdminToken = async () => {
-    const r = await api.getAdminToken();
-    if (r.ok) setAdminToken(r.token || '');
-  };
 
   const loadConfigCheck = async () => {
     setConfigCheckLoading(true);
@@ -515,7 +510,7 @@ export default function SystemConfig() {
   useEffect(() => {
     if (tab === 'version') loadVersion();
     if (tab === 'env') loadEnv();
-    if (tab === 'identity') { loadIdentityDocs(); loadAdminToken(); }
+    if (tab === 'identity') { loadIdentityDocs(); }
     if (tab === 'health') loadConfigCheck();
   }, [tab]);
 
@@ -1433,69 +1428,6 @@ export default function SystemConfig() {
       {/* === Identity & Messages Tab === */}
       {tab === 'identity' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-200">
-          <div className={`${modern ? 'page-modern-panel p-6' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-6'} space-y-5`}>
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 rounded-2xl bg-blue-100/80 dark:bg-blue-900/20 text-blue-600 border border-blue-100/70 dark:border-blue-800/30">
-                    <Key size={18} />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-gray-900 dark:text-white">管理后台登录与身份入口</h3>
-                    <p className="text-xs leading-relaxed text-gray-500 dark:text-gray-400">
-                      这里把查看当前登录密码、修改密码，以及身份页的基本说明收进一个入口，避免顶部像几块独立拼图一样散开。
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2 text-[11px]">
-                <span className="rounded-full border border-gray-200 dark:border-gray-700 px-3 py-1 text-gray-500 dark:text-gray-400">
-                  文档数 {identityDocs.length}
-                </span>
-                <span className="rounded-full border border-gray-200 dark:border-gray-700 px-3 py-1 text-gray-500 dark:text-gray-400">
-                  当前 {selectedIdentityDoc?.name || '未选择'}
-                </span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,0.95fr),minmax(0,1.05fr)] gap-5">
-              <div className="space-y-4">
-                <div className="rounded-[24px] border border-blue-100/80 dark:border-blue-900/40 bg-[linear-gradient(145deg,rgba(255,255,255,0.92),rgba(239,246,255,0.7))] dark:bg-[linear-gradient(145deg,rgba(12,24,42,0.84),rgba(30,64,175,0.12))] p-5 space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-500/80">当前登录凭证</div>
-                      <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">管理后台登录密码</div>
-                    </div>
-                    <div className="rounded-full border border-blue-200/70 dark:border-blue-800/40 px-3 py-1 text-[11px] text-blue-600 dark:text-blue-300">
-                      `.env` / `ADMIN_TOKEN`
-                    </div>
-                  </div>
-                  <AdminPasswordField token={adminToken} onCopy={() => { setMsg('密码已复制'); setTimeout(() => setMsg(''), 2000); }} />
-                  <p className="text-xs text-gray-500 flex items-center gap-1.5">
-                    <span className="w-1 h-1 rounded-full bg-gray-400"></span>
-                    仅用于当前面板管理后台登录，不影响 OpenClaw 自身的 provider / gateway 配置。
-                  </p>
-                </div>
-                <div className="rounded-[24px] border border-gray-100 dark:border-gray-800 bg-gray-50/75 dark:bg-gray-900/40 p-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-xl border border-white/80 dark:border-gray-800 bg-white/80 dark:bg-gray-950/30 px-3 py-3">
-                      <div className="text-[11px] text-gray-500">编辑顺序</div>
-                      <div className="mt-1 text-xs leading-relaxed text-gray-700 dark:text-gray-200">先改基础身份与登录入口，再处理文档内容。</div>
-                    </div>
-                    <div className="rounded-xl border border-white/80 dark:border-gray-800 bg-white/80 dark:bg-gray-950/30 px-3 py-3">
-                      <div className="text-[11px] text-gray-500">页面目标</div>
-                      <div className="mt-1 text-xs leading-relaxed text-gray-700 dark:text-gray-200">把“看密码、改密码、改人格”分出清晰层次。</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-[24px] border border-gray-100 dark:border-gray-800 bg-white/90 dark:bg-slate-900/55 p-5">
-                <ChangePasswordSection embedded />
-              </div>
-            </div>
-          </div>
-
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.35fr),minmax(320px,0.95fr)] gap-6 items-start">
             <div className="space-y-4">
               <div className={`${modern ? 'page-modern-panel p-5' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 p-5'} space-y-4`}>
@@ -2320,25 +2252,6 @@ export default function SystemConfig() {
       )}
 
       {/* Docs tab removed — merged into Identity & 文档 tab */}
-    </div>
-  );
-}
-
-function AdminPasswordField({ token, onCopy }: { token: string; onCopy: () => void }) {
-  const [visible, setVisible] = useState(false);
-  return (
-    <div className="flex items-center gap-2">
-      <div className="relative flex-1">
-        <input type={visible ? 'text' : 'password'} readOnly value={token}
-          className="w-full pl-3 pr-10 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 font-mono text-gray-600 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" />
-        <button onClick={() => setVisible(!visible)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
-          {visible ? <EyeOff size={14} /> : <Eye size={14} />}
-        </button>
-      </div>
-      <button onClick={() => { navigator.clipboard.writeText(token); onCopy(); }}
-        className="px-3 py-2 text-xs font-medium rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors border border-blue-100 dark:border-blue-800/30">
-        复制
-      </button>
     </div>
   );
 }
