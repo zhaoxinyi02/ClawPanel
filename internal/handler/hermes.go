@@ -40,6 +40,7 @@ func firstHermesConfig(cfgs ...*config.Config) *config.Config {
 
 var hermesPlatformSpecs = []hermesPlatformSpec{
 	{ID: "telegram", Label: "Telegram", ConfigPaths: []string{"gateway.telegram"}, RequiredEnv: []string{"TELEGRAM_BOT_TOKEN"}, OptionalEnv: []string{"TELEGRAM_ALLOWED_USERS", "TELEGRAM_HOME_CHAT"}},
+	{ID: "qqbot", Label: "QQ Bot", ConfigPaths: []string{"platforms.qq", "platforms.qqbot", "gateway.qqbot"}, RequiredEnv: []string{"QQ_APP_ID", "QQ_CLIENT_SECRET"}, OptionalEnv: []string{"QQ_ALLOWED_USERS", "QQ_GROUP_ALLOWED_USERS", "QQ_ALLOW_ALL_USERS", "QQ_HOME_CHANNEL", "QQ_HOME_CHANNEL_NAME", "QQ_STT_API_KEY", "QQ_STT_BASE_URL", "QQ_STT_MODEL"}},
 	{ID: "discord", Label: "Discord", ConfigPaths: []string{"gateway.discord"}, RequiredEnv: []string{"DISCORD_BOT_TOKEN"}, OptionalEnv: []string{"DISCORD_ALLOWED_USERS", "DISCORD_HOME_CHANNEL"}},
 	{ID: "slack", Label: "Slack", ConfigPaths: []string{"gateway.slack"}, RequiredEnv: []string{"SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"}, OptionalEnv: []string{"SLACK_ALLOWED_USERS", "SLACK_HOME_CHANNEL"}},
 	{ID: "weixin", Label: "Weixin / WeChat", ConfigPaths: []string{"gateway.weixin"}, RequiredEnv: []string{"WEIXIN_ACCOUNT_ID", "WEIXIN_TOKEN"}, OptionalEnv: []string{"WEIXIN_HOME_CHANNEL", "WEIXIN_HOME_CHANNEL_NAME", "WEIXIN_ALLOWED_USERS"}},
@@ -226,6 +227,21 @@ type HermesPlatformDetail struct {
 	Status      HermesPlatformStatus   `json:"status"`
 	Config      map[string]interface{} `json:"config"`
 	Environment map[string]string      `json:"environment"`
+	Fields      []HermesPlatformField  `json:"fields,omitempty"`
+}
+
+type HermesPlatformField struct {
+	Key         string   `json:"key"`
+	Label       string   `json:"label"`
+	Type        string   `json:"type"`
+	Section     string   `json:"section,omitempty"`
+	EnvVar      bool     `json:"envVar,omitempty"`
+	Required    bool     `json:"required,omitempty"`
+	Help        string   `json:"help,omitempty"`
+	Placeholder string   `json:"placeholder,omitempty"`
+	Options     []string `json:"options,omitempty"`
+	ValueFormat string   `json:"valueFormat,omitempty"`
+	Rows        int      `json:"rows,omitempty"`
 }
 
 type HermesOverview struct {
@@ -360,6 +376,75 @@ type hermesPlatformSpec struct {
 	ConfigPaths []string
 	RequiredEnv []string
 	OptionalEnv []string
+}
+
+func humanizeHermesEnvKey(key string) string {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(key)), "_")
+	for i, part := range parts {
+		switch part {
+		case "id":
+			parts[i] = "ID"
+		case "url":
+			parts[i] = "URL"
+		case "api":
+			parts[i] = "API"
+		case "stt":
+			parts[i] = "STT"
+		case "qq":
+			parts[i] = "QQ"
+		default:
+			if part == "" {
+				continue
+			}
+			parts[i] = strings.ToUpper(part[:1]) + part[1:]
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func buildHermesPlatformEnvField(key string, required bool) HermesPlatformField {
+	upper := strings.ToUpper(strings.TrimSpace(key))
+	field := HermesPlatformField{
+		Key:      upper,
+		Label:    humanizeHermesEnvKey(upper),
+		Type:     "text",
+		Section:  "advanced",
+		EnvVar:   true,
+		Required: required,
+	}
+
+	switch {
+	case strings.Contains(upper, "TOKEN") || strings.Contains(upper, "SECRET") || strings.Contains(upper, "PASSWORD") || strings.Contains(upper, "API_KEY"):
+		field.Type = "password"
+	case strings.HasSuffix(upper, "_PORT"):
+		field.Type = "number"
+	case strings.HasSuffix(upper, "_ENABLED") || strings.Contains(upper, "ALLOW_ALL") || strings.Contains(upper, "MARKDOWN_SUPPORT"):
+		field.Type = "toggle"
+	case strings.Contains(upper, "ALLOWED_USERS") || strings.Contains(upper, "ALLOW_FROM") || strings.Contains(upper, "FALLBACK_IPS"):
+		field.Type = "textarea"
+		field.Rows = 3
+		field.ValueFormat = "stringArray"
+	}
+
+	switch {
+	case strings.Contains(upper, "APP_ID") || strings.Contains(upper, "CLIENT_SECRET") || strings.Contains(upper, "BOT_TOKEN") || strings.Contains(upper, "BOT_ID"):
+		field.Section = "bot"
+	case strings.Contains(upper, "HOME_") || strings.Contains(upper, "ALLOWED_") || strings.Contains(upper, "ALLOW_ALL"):
+		field.Section = "platform"
+	}
+
+	return field
+}
+
+func buildHermesPlatformFields(spec *hermesPlatformSpec) []HermesPlatformField {
+	fields := make([]HermesPlatformField, 0, len(spec.RequiredEnv)+len(spec.OptionalEnv))
+	for _, key := range spec.RequiredEnv {
+		fields = append(fields, buildHermesPlatformEnvField(key, true))
+	}
+	for _, key := range spec.OptionalEnv {
+		fields = append(fields, buildHermesPlatformEnvField(key, false))
+	}
+	return fields
 }
 
 func hermesHomeDir(cfgs ...*config.Config) string {
@@ -966,6 +1051,26 @@ func detectHermesWarnings(status HermesStatus, data HermesDataSummary) []string 
 	return warnings
 }
 
+func detectHermesOverviewWarnings(status HermesStatus) []string {
+	warnings := make([]string, 0, 6)
+	switch {
+	case !status.Installed:
+		warnings = append(warnings, "Hermes 未安装")
+	case !status.Configured:
+		warnings = append(warnings, "Hermes 已安装但尚未初始化配置")
+	}
+	if status.Installed && !status.Running {
+		warnings = append(warnings, "Hermes 当前未运行")
+	}
+	if status.Installed && status.Running && !status.GatewayRunning {
+		warnings = append(warnings, "Hermes 主进程已运行，但未检测到消息网关")
+	}
+	if status.Installed && strings.TrimSpace(status.PythonVersion) == "" {
+		warnings = append(warnings, "未检测到 Python 运行时")
+	}
+	return warnings
+}
+
 func checkHermesState(status HermesStatus, configState HermesConfigState, data HermesDataSummary, platforms HermesPlatformsSnapshot, doctor *HermesDoctorSnapshot) ([]ConfigIssue, int) {
 	issues := make([]ConfigIssue, 0, 16)
 	checked := 0
@@ -1083,7 +1188,7 @@ func checkHermesState(status HermesStatus, configState HermesConfigState, data H
 
 	for _, platform := range platforms.Platforms {
 		checked++
-		if platform.Configured && len(platform.MissingEnvKeys) > 0 {
+		if platform.Enabled && len(platform.MissingEnvKeys) > 0 {
 			issues = append(issues, ConfigIssue{
 				ID:          "hermes-platform-" + platform.ID + "-missing-env",
 				Severity:    "error",
@@ -1095,7 +1200,7 @@ func checkHermesState(status HermesStatus, configState HermesConfigState, data H
 			})
 		}
 		checked++
-		if platform.RuntimeStatus == "error" && platform.LastError != "" {
+		if platform.Enabled && platform.RuntimeStatus == "error" && platform.LastError != "" {
 			issues = append(issues, ConfigIssue{
 				ID:          "hermes-platform-" + platform.ID + "-runtime-error",
 				Severity:    "warning",
@@ -1203,12 +1308,20 @@ func detectHermesPlatforms(configState HermesConfigState) HermesPlatformsSnapsho
 
 		configConfigured := false
 		configEnabled := false
+		explicitEnabledSet := false
+		explicitEnabledValue := false
 		for _, path := range spec.ConfigPaths {
 			value := hermesNestedValue(yamlMap, path)
 			if value == nil {
 				continue
 			}
 			configConfigured = true
+			if _, ok := value.(bool); ok {
+				explicitEnabledSet = true
+				explicitEnabledValue = truthyHermesValue(value)
+				configEnabled = explicitEnabledValue
+				break
+			}
 			if truthyHermesValue(value) {
 				configEnabled = true
 				break
@@ -1217,6 +1330,8 @@ func detectHermesPlatforms(configState HermesConfigState) HermesPlatformsSnapsho
 				if len(valueMap) > 0 {
 					configEnabled = true
 					if enabledRaw, exists := valueMap["enabled"]; exists {
+						explicitEnabledSet = true
+						explicitEnabledValue = truthyHermesValue(enabledRaw)
 						configEnabled = truthyHermesValue(enabledRaw)
 					}
 					break
@@ -1225,13 +1340,17 @@ func detectHermesPlatforms(configState HermesConfigState) HermesPlatformsSnapsho
 		}
 
 		item.Configured = configConfigured || len(item.PresentEnvKeys) > 0
-		item.Enabled = configEnabled || (len(item.PresentEnvKeys) > 0 && len(item.MissingEnvKeys) == 0)
+		switch {
+		case explicitEnabledSet:
+			item.Enabled = explicitEnabledValue
+		case configConfigured:
+			item.Enabled = configEnabled
+		default:
+			item.Enabled = len(item.PresentEnvKeys) > 0 && len(item.MissingEnvKeys) == 0
+		}
 		item.RuntimeStatus, item.LastEvidence, item.LastError = analyzeHermesPlatformEvidence(spec.ID, status)
 		if !item.Configured && (item.LastEvidence != "" || item.LastError != "") {
 			item.Configured = true
-		}
-		if !item.Enabled && status.GatewayRunning && (item.RuntimeStatus == "healthy" || item.RuntimeStatus == "warning" || item.RuntimeStatus == "error") {
-			item.Enabled = true
 		}
 		item.Detail = strings.TrimSpace(strings.Join([]string{
 			ternary(configConfigured, "检测到 config.yaml 配置。", ""),
@@ -1308,6 +1427,7 @@ func buildHermesPlatformDetail(configState HermesConfigState, id string) (*Herme
 		Status:      status,
 		Config:      configBlock,
 		Environment: envValues,
+		Fields:      buildHermesPlatformFields(spec),
 	}, true
 }
 
@@ -2403,30 +2523,19 @@ func GetHermesActions() gin.HandlerFunc {
 
 func GetHermesOverview(cfg *config.Config, tm *taskman.Manager) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		_ = tm
 		status := detectHermesStatus(cfg)
 		configState := buildHermesConfigState(cfg)
-		data := detectHermesDataSummary(status)
-		storage := scanHermesStorage(status)
 		platforms := detectHermesPlatforms(configState)
-		logFiles := listHermesLogFiles(status)
-		tasks, taskSummary := collectHermesTasks(tm)
-		health := buildHermesHealthSnapshot(status, data, logFiles, taskSummary)
 		doctor := readHermesDoctorSnapshot(cfg)
 		c.JSON(http.StatusOK, gin.H{
 			"ok": true,
-			"overview": HermesOverview{
-				Status:      status,
-				Config:      configState,
-				Actions:     hermesActionCatalog(),
-				Data:        data,
-				Health:      health,
-				Storage:     storage,
-				Platforms:   platforms,
-				Doctor:      doctor,
-				LogFiles:    logFiles,
-				RecentTasks: tasks,
-				TaskSummary: taskSummary,
-				Warnings:    detectHermesWarnings(status, data),
+			"overview": gin.H{
+				"status":    status,
+				"actions":   hermesActionCatalog(),
+				"platforms": platforms,
+				"doctor":    doctor,
+				"warnings":  detectHermesOverviewWarnings(status),
 			},
 		})
 	}
@@ -2541,7 +2650,22 @@ func GetHermesHealth(cfgs ...*config.Config) gin.HandlerFunc {
 func GetHermesPlatforms(cfgs ...*config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		configState := buildHermesConfigState(cfgs...)
-		c.JSON(http.StatusOK, gin.H{"ok": true, "platforms": detectHermesPlatforms(configState)})
+		snapshot := detectHermesPlatforms(configState)
+		detailsByID := map[string]*HermesPlatformDetail{}
+		for _, platform := range snapshot.Platforms {
+			if detail, ok := buildHermesPlatformDetail(configState, platform.ID); ok {
+				detailsByID[platform.ID] = detail
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"ok": true,
+			"platforms": gin.H{
+				"platforms":       snapshot.Platforms,
+				"configuredCount": snapshot.ConfiguredCount,
+				"enabledCount":    snapshot.EnabledCount,
+				"detailsById":     detailsByID,
+			},
+		})
 	}
 }
 

@@ -441,9 +441,7 @@ func rewritePanelChatRuntimeConfig(cfg *config.Config, srcConfigPath, dstConfigP
 	}
 	agentsMap["list"] = newList
 	obj["agents"] = agentsMap
-
-	// Ensure panel chat uses the official session store to sync with OpenClaw
-	obj["sessionDir"] = filepath.ToSlash(filepath.Join(cfg.OpenClawDir, "sessions"))
+	sanitizePanelChatRuntimeConfig(obj)
 	delete(obj, "channels")
 	delete(obj, "plugins")
 	encoded, err := json.MarshalIndent(obj, "", "  ")
@@ -451,6 +449,16 @@ func rewritePanelChatRuntimeConfig(cfg *config.Config, srcConfigPath, dstConfigP
 		return err
 	}
 	return os.WriteFile(dstConfigPath, append(encoded, '\n'), 0o644)
+}
+
+func sanitizePanelChatRuntimeConfig(obj map[string]interface{}) {
+	if obj == nil {
+		return
+	}
+	// Newer OpenClaw versions no longer accept these legacy root-level keys in
+	// ephemeral runtime configs generated for panel chat.
+	delete(obj, "sessionDir")
+	delete(obj, "model")
 }
 
 func buildPanelChatTitle(input string) string {
@@ -618,6 +626,15 @@ func loadPanelChatParticipants(db *sql.DB, cfg *config.Config, session panelChat
 	if len(views) == 0 && strings.TrimSpace(session.AgentID) != "" {
 		views = append(views, panelChatParticipantView{AgentID: session.AgentID, Name: nameMap[session.AgentID], RoleType: "assistant", OrderIndex: 0, AutoReply: true, Enabled: true})
 	}
+	sort.SliceStable(views, func(i, j int) bool {
+		if views[i].IsSummary != views[j].IsSummary {
+			return !views[i].IsSummary
+		}
+		if views[i].OrderIndex != views[j].OrderIndex {
+			return views[i].OrderIndex < views[j].OrderIndex
+		}
+		return views[i].AgentID < views[j].AgentID
+	})
 	return views, nil
 }
 
@@ -1043,6 +1060,13 @@ func executeGroupPanelChat(ctx context.Context, db *sql.DB, cfg *config.Config, 
 		"timestamp":   userTimestamp,
 	}
 	messages = append(messages, userEntry)
+	_ = savePanelChatMessages(cfg, session.ID, messages)
+	_, _ = updatePanelChatSessionState(cfg, session.ID, func(item *panelChatSession) {
+		item.Processing = true
+		item.UpdatedAt = time.Now().UnixMilli()
+		item.MessageCount = len(messages)
+		item.LastMessage = strings.TrimSpace(userMessage)
+	})
 	lastReply := ""
 	for _, participant := range participants {
 		if !participant.Enabled || !participant.AutoReply {
@@ -1110,6 +1134,15 @@ func executeGroupPanelChat(ctx context.Context, db *sql.DB, cfg *config.Config, 
 			entry["sources"] = sources
 		}
 		messages = append(messages, entry)
+		_ = savePanelChatMessages(cfg, session.ID, messages)
+		_, _ = updatePanelChatSessionState(cfg, session.ID, func(item *panelChatSession) {
+			item.Processing = true
+			item.CurrentAgentID = participant.AgentID
+			item.CurrentAgentName = agentName
+			item.UpdatedAt = time.Now().UnixMilli()
+			item.MessageCount = len(messages)
+			item.LastMessage = strings.TrimSpace(userMessage)
+		})
 	}
 	return messages, lastReply, sessionIDs, nil
 }

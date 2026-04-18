@@ -3,7 +3,7 @@ import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, ScrollText, Radio, Sparkles, Clock, Settings,
   Moon, Sun, LogOut, Menu, FolderOpen, Languages, MessageSquare,
-  RotateCw, RefreshCw, Power, Puzzle, Bot, Search, Bell, ChevronDown, GitBranch, Network, BriefcaseBusiness, Activity, Brain, TerminalSquare, FileStack,
+  RotateCw, RefreshCw, Power, Puzzle, Bot, Search, Bell, ChevronDown, GitBranch, Network, BriefcaseBusiness, Activity, Brain, TerminalSquare, FileStack, Key, X,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import AIAssistant from './AIAssistant';
@@ -65,6 +65,120 @@ function filterVisibleTasks(tasks: TaskInfo[]) {
   return tasks.filter(task => !(task.type === 'workflow_run' && task.status === 'canceled'));
 }
 
+function PanelSettingsModal({ open, onClose, onLogout, locale }: { open: boolean; onClose: () => void; onLogout: () => void; locale: string }) {
+  const [oldPwd, setOldPwd] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  const [confirmPwd, setConfirmPwd] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [msgOk, setMsgOk] = useState(true);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const handleChangePassword = async () => {
+    if (!oldPwd || !newPwd || !confirmPwd) return;
+    if (newPwd !== confirmPwd) {
+      setMsg(locale === 'zh-CN' ? '两次输入的密码不一致' : 'Passwords do not match');
+      setMsgOk(false);
+      return;
+    }
+    if (newPwd.length < 4) {
+      setMsg(locale === 'zh-CN' ? '密码至少4位' : 'Password must be at least 4 characters');
+      setMsgOk(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      const r = await api.changePassword(oldPwd, newPwd);
+      if (r?.ok) {
+        setMsg(locale === 'zh-CN' ? '密码修改成功，即将退出登录...' : 'Password changed, logging out...');
+        setMsgOk(true);
+        setTimeout(() => {
+          onClose();
+          onLogout();
+        }, 1600);
+      } else {
+        setMsg(r?.error === 'Wrong current password'
+          ? (locale === 'zh-CN' ? '当前密码错误' : 'Current password is incorrect')
+          : (r?.error || (locale === 'zh-CN' ? '修改失败' : 'Change failed')));
+        setMsgOk(false);
+      }
+    } catch {
+      setMsg(locale === 'zh-CN' ? '修改失败' : 'Change failed');
+      setMsgOk(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[220] flex items-center justify-center bg-slate-950/55 px-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-[28px] border border-blue-100/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(239,246,255,0.92))] p-6 shadow-[0_28px_80px_rgba(15,23,42,0.22)] dark:border-blue-800/30 dark:bg-[linear-gradient(145deg,rgba(12,24,42,0.98),rgba(30,64,175,0.16))]" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="inline-flex items-center gap-2 rounded-full border border-blue-200/70 bg-blue-50/70 px-3 py-1 text-[11px] font-semibold text-blue-600 dark:border-blue-800/40 dark:bg-blue-950/30 dark:text-blue-300">
+              <Settings size={13} />
+              {locale === 'zh-CN' ? '面板设置' : 'Panel Settings'}
+            </div>
+            <h3 className="mt-3 text-lg font-semibold text-slate-900 dark:text-white">
+              {locale === 'zh-CN' ? '管理面板登录与本地设置' : 'Panel login and local settings'}
+            </h3>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              {locale === 'zh-CN' ? '这里只放与 ClawPanel 面板自身相关的配置，不影响 OpenClaw 或 Hermes 平台参数。' : 'This dialog only contains ClawPanel-specific settings, separate from OpenClaw and Hermes.'}
+            </p>
+          </div>
+          <button onClick={onClose} className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white/70 text-slate-500 transition-colors hover:text-slate-800 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-400 dark:hover:text-white">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="mt-6">
+          <div className="rounded-[24px] border border-gray-100 bg-white/90 p-5 dark:border-gray-800 dark:bg-slate-900/55">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl border border-blue-100/70 bg-blue-100/80 p-1.5 text-blue-600 dark:border-blue-800/30 dark:bg-blue-900/20">
+                <Key size={16} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">{locale === 'zh-CN' ? '修改管理密码' : 'Change Admin Password'}</h3>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400">{locale === 'zh-CN' ? '修改后需重新登录面板。' : 'You will need to log in again after changing it.'}</p>
+              </div>
+            </div>
+            <div className="mt-4 space-y-3">
+              <div className="grid grid-cols-1 gap-3">
+                <input type="password" value={oldPwd} onChange={e => setOldPwd(e.target.value)} placeholder={locale === 'zh-CN' ? '当前密码' : 'Current password'} className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-xs transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900" />
+                <input type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)} placeholder={locale === 'zh-CN' ? '新密码' : 'New password'} className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-xs transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900" />
+                <input type="password" value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)} placeholder={locale === 'zh-CN' ? '确认新密码' : 'Confirm password'} className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-xs transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900" />
+              </div>
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+                  {locale === 'zh-CN' ? '修改成功后会自动退出当前登录态，请使用新密码重新进入面板。' : 'After a successful change, the current session will be logged out automatically.'}
+                </p>
+                <button onClick={handleChangePassword} disabled={saving || !oldPwd || !newPwd || !confirmPwd} className="page-modern-accent px-4 py-2.5 text-xs font-medium disabled:opacity-50">
+                  {saving ? (locale === 'zh-CN' ? '修改中...' : 'Saving...') : (locale === 'zh-CN' ? '修改密码' : 'Change Password')}
+                </button>
+              </div>
+              {msg && (
+                <div className={`rounded-lg border px-3 py-2 text-xs ${msgOk ? 'border-emerald-100 bg-emerald-50 text-emerald-600 dark:border-emerald-900/30 dark:bg-emerald-900/20 dark:text-emerald-300' : 'border-red-100 bg-red-50 text-red-600 dark:border-red-900/30 dark:bg-red-900/20 dark:text-red-300'}`}>
+                  {msg}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, processStatus, wsMessages }: Props) {
   const { t, locale, setLocale } = useI18n();
   const navigate = useNavigate();
@@ -91,6 +205,7 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [panelSettingsOpen, setPanelSettingsOpen] = useState(false);
   const [hermesOverview, setHermesOverview] = useState<any | null>(null);
   const searchRef = useRef<HTMLDivElement | null>(null);
   const profileRef = useRef<HTMLDivElement | null>(null);
@@ -331,23 +446,21 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
   // Build channel list from enabledChannels returned by /api/status
   const connectedChannels = useMemo(() => {
     if (isHermesBoard) {
-      const hermesPlatforms = Array.isArray(hermesOverview?.platforms?.platforms) ? hermesOverview.platforms.platforms : [];
-      const hermesChannels: RuntimeChannelSummary[] = hermesPlatforms
-        .filter((platform: any) => platform?.configured || platform?.enabled || platform?.runtimeStatus === 'healthy' || platform?.runtimeStatus === 'warning' || platform?.runtimeStatus === 'error')
-        .map((platform: any) => {
-          const connected = platform?.runtimeStatus === 'healthy' || platform?.runtimeStatus === 'warning';
-          const detail = platform?.lastError
-            ? platform.lastError
-            : platform?.lastEvidence
-              ? platform.lastEvidence
-              : platform?.enabled
-                ? t.common.enabled
-                : locale === 'zh-CN'
-                  ? '未启用'
-                  : 'Not enabled';
-          return {
-            label: platform?.label || platform?.id || 'Platform',
-            detail,
+		const hermesPlatforms = Array.isArray(hermesOverview?.platforms?.platforms) ? hermesOverview.platforms.platforms : [];
+		const hermesChannels: RuntimeChannelSummary[] = hermesPlatforms
+			.filter((platform: any) => platform?.enabled)
+			.map((platform: any) => {
+				const connected = platform?.runtimeStatus === 'healthy' || platform?.runtimeStatus === 'warning';
+				const detail = platform?.runtimeStatus === 'error'
+					? (locale === 'zh-CN' ? '运行异常' : 'Runtime Error')
+					: connected
+						? (locale === 'zh-CN' ? '运行中' : 'Running')
+						: platform?.enabled
+							? (locale === 'zh-CN' ? '已启用' : 'Enabled')
+							: (locale === 'zh-CN' ? '未启用' : 'Not enabled');
+				return {
+					label: platform?.label || platform?.id || 'Platform',
+					detail,
             connected,
           };
         });
@@ -400,7 +513,7 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
     return channels.slice(0, 5);
   }, [hermesOverview, isHermesBoard, locale, napcatStatus, openclawStatus, t, wechatStatus]);
   const totalEnabledChannels = isHermesBoard
-    ? (hermesOverview?.platforms?.platforms || []).filter((platform: any) => platform?.configured || platform?.enabled || platform?.runtimeStatus === 'healthy' || platform?.runtimeStatus === 'warning' || platform?.runtimeStatus === 'error').length
+    ? (hermesOverview?.platforms?.platforms || []).filter((platform: any) => platform?.enabled).length
     : (openclawStatus?.enabledChannels || []).length;
   const runtime = useMemo(() => resolveOpenClawRuntime(openclawStatus, processStatus), [openclawStatus, processStatus]);
   const openClawRestartHint = processStatus?.managedExternally
@@ -630,8 +743,11 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
                     </button>
                     <div className="mx-2 mb-2 border-t border-slate-200/80 dark:border-slate-700/80" />
                     <div className="px-3 pb-2 text-[11px] text-slate-400">
-                      Admin
+                      {locale === 'zh-CN' ? '面板设置' : 'Panel Settings'}
                     </div>
+                    <button onClick={() => { setProfileOpen(false); setPanelSettingsOpen(true); }} className="mb-1 w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-slate-700 hover:bg-slate-50 transition-colors dark:text-slate-200 dark:hover:bg-slate-800">
+                      <Settings size={15} /> {locale === 'zh-CN' ? '面板设置' : 'Panel Settings'}
+                    </button>
                     <button onClick={() => { setProfileOpen(false); onLogout(); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-red-600 hover:bg-red-50 transition-colors">
                       <LogOut size={15} /> 退出登录
                     </button>
@@ -711,6 +827,7 @@ function LayoutShell({ onLogout, napcatStatus, wechatStatus, openclawStatus, pro
         </div>
       </nav>
       <AIAssistant />
+      <PanelSettingsModal open={panelSettingsOpen} onClose={() => setPanelSettingsOpen(false)} onLogout={onLogout} locale={locale} />
     </div>
   );
 }

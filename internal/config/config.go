@@ -101,10 +101,14 @@ func Load() (*Config, error) {
 	cfg.Edition = normalizeEdition(cfg.Edition)
 	if cfg.IsLiteEdition() {
 		cfg.Port = DefaultPort
-		cfg.DataDir = filepath.Join(cfg.InstallRoot(), "data")
-		cfg.OpenClawDir = cfg.BundledOpenClawConfigDir()
+		if v := strings.TrimSpace(os.Getenv("CLAWPANEL_DATA")); v != "" {
+			cfg.DataDir = v
+		} else if strings.TrimSpace(cfg.DataDir) == "" {
+			cfg.DataDir = filepath.Join(cfg.InstallRoot(), "data")
+		}
+		cfg.OpenClawDir = filepath.Join(cfg.DataDir, "openclaw-config")
 		cfg.OpenClawApp = cfg.BundledOpenClawAppDir()
-		cfg.OpenClawWork = cfg.BundledOpenClawWorkDir()
+		cfg.OpenClawWork = filepath.Join(cfg.DataDir, "openclaw-work")
 	}
 
 	// 路径校验：
@@ -203,10 +207,16 @@ func (c *Config) BundledRuntimeRoot() string {
 }
 
 func (c *Config) BundledOpenClawConfigDir() string {
+	if c != nil && strings.TrimSpace(c.DataDir) != "" {
+		return filepath.Join(c.DataDir, "openclaw-config")
+	}
 	return filepath.Join(c.InstallRoot(), "data", "openclaw-config")
 }
 
 func (c *Config) BundledOpenClawWorkDir() string {
+	if c != nil && strings.TrimSpace(c.DataDir) != "" {
+		return filepath.Join(c.DataDir, "openclaw-work")
+	}
 	return filepath.Join(c.InstallRoot(), "data", "openclaw-work")
 }
 

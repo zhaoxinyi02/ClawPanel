@@ -271,6 +271,8 @@ func (m *Manager) runCommandWithInput(task *Task, input io.Reader, name string, 
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	task.SetProgress(10)
+	m.broadcastTaskUpdate(task)
 
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 1024*64), 1024*64)

@@ -37,6 +37,7 @@ export default function HermesOverview() {
   const [status, setStatus] = useState<HermesStatus | null>(null);
   const [overview, setOverview] = useState<HermesOverviewData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [storageLoading, setStorageLoading] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
@@ -49,6 +50,15 @@ export default function HermesOverview() {
       if (overviewRes.ok) {
         setOverview(overviewRes.overview || {});
         setStatus(overviewRes.overview?.status || {});
+        setStorageLoading(true);
+        void api.getHermesStorage()
+          .then(storageRes => {
+            if (storageRes?.ok) {
+              setOverview(prev => ({ ...(prev || {}), storage: storageRes.storage || {} }));
+            }
+          })
+          .catch(() => {})
+          .finally(() => setStorageLoading(false));
       }
     } catch {
       setErr(locale === 'zh-CN' ? '加载 Hermes 状态失败' : 'Failed to load Hermes status');
@@ -104,13 +114,15 @@ export default function HermesOverview() {
       tone: status?.pythonVersion ? 'violet' : 'slate',
     },
     {
-      label: locale === 'zh-CN' ? '已配置平台' : 'Configured Platforms',
-      value: String(overview?.platforms?.configuredCount ?? 0),
-      tone: (overview?.platforms?.configuredCount ?? 0) > 0 ? 'blue' : 'slate',
+      label: locale === 'zh-CN' ? '已启用平台' : 'Enabled Platforms',
+      value: String(overview?.platforms?.enabledCount ?? 0),
+      tone: (overview?.platforms?.enabledCount ?? 0) > 0 ? 'blue' : 'slate',
     },
     {
       label: locale === 'zh-CN' ? '会话数' : 'Sessions',
-      value: String(overview?.storage?.conversationCount ?? overview?.storage?.sessionArtifactCount ?? 0),
+      value: storageLoading
+        ? (locale === 'zh-CN' ? '加载中...' : 'Loading...')
+        : String(overview?.storage?.conversationCount ?? overview?.storage?.sessionArtifactCount ?? 0),
       tone: (overview?.storage?.conversationCount ?? overview?.storage?.sessionArtifactCount ?? 0) > 0 ? 'emerald' : 'slate',
     },
   ];
@@ -178,11 +190,11 @@ export default function HermesOverview() {
           </div>
         </div>
         <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 dark:text-slate-300">
-          <span>{locale === 'zh-CN' ? '平台' : 'Platforms'} {overview?.platforms?.configuredCount ?? 0}</span>
+          <span>{locale === 'zh-CN' ? '平台' : 'Platforms'} {overview?.platforms?.enabledCount ?? 0}</span>
           <span>·</span>
           <span>{locale === 'zh-CN' ? '动作' : 'Actions'} {(overview?.actions || []).length}</span>
           <span>·</span>
-          <span>{locale === 'zh-CN' ? '会话' : 'Sessions'} {overview?.storage?.conversationCount ?? overview?.storage?.sessionArtifactCount ?? 0}</span>
+          <span>{locale === 'zh-CN' ? '会话' : 'Sessions'} {storageLoading ? '...' : (overview?.storage?.conversationCount ?? overview?.storage?.sessionArtifactCount ?? 0)}</span>
         </div>
       </div>
 
@@ -305,7 +317,7 @@ export default function HermesOverview() {
           <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300">
             <div>{locale === 'zh-CN' ? 'Doctor 状态：' : 'Doctor Status: '}{overview?.doctor?.taskStatus || '-'}</div>
             <div>{locale === 'zh-CN' ? 'Doctor 时间：' : 'Doctor Updated: '}{overview?.doctor?.updatedAt || '-'}</div>
-            <div>{locale === 'zh-CN' ? '样例会话：' : 'Sample Session: '}{overview?.storage?.previewSessions?.[0]?.title || '-'}</div>
+            <div>{locale === 'zh-CN' ? '样例会话：' : 'Sample Session: '}{storageLoading ? (locale === 'zh-CN' ? '加载中...' : 'Loading...') : (overview?.storage?.previewSessions?.[0]?.title || '-')}</div>
             <div>{locale === 'zh-CN' ? '可执行动作：' : 'Available Actions: '}{(overview?.actions || []).map(item => item.label).slice(0, 3).join(' / ') || '-'}</div>
           </div>
         </div>

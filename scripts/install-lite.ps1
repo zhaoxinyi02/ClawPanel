@@ -7,6 +7,7 @@ $TagPrefix = "lite-v"
 $AccelBase = if ($env:ACCEL_BASE) { $env:ACCEL_BASE } else { "$ClawPanelPublicBase/api/panel/update-mirror" }
 $AccelMeta = if ($env:ACCEL_META_URL) { $env:ACCEL_META_URL } else { "$AccelBase/lite" }
 $InstallDir = "C:\ClawPanelLite"
+$DataDir = "C:\ProgramData\ClawPanelLite"
 $ServiceName = "clawpanel-lite"
 
 function Get-LatestVersionFromGitHub {
@@ -59,9 +60,25 @@ if (-not $LocalPackage) {
 }
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 Get-Service $ServiceName -ErrorAction SilentlyContinue | Stop-Service -Force -ErrorAction SilentlyContinue
+
+$legacyDataDir = Join-Path $InstallDir "data"
+if (Test-Path $legacyDataDir) {
+  $hasExternalData = (Test-Path (Join-Path $DataDir "clawpanel.json")) -or (Test-Path (Join-Path $DataDir "openclaw-config\openclaw.json"))
+  if (-not $hasExternalData) {
+    Write-Host "  [Lite] 检测到旧版内置数据目录，迁移到外部持久化目录..." -ForegroundColor Cyan
+    Copy-Item -Path (Join-Path $legacyDataDir '*') -Destination $DataDir -Recurse -Force -ErrorAction SilentlyContinue
+  } else {
+    Write-Host "  [Lite] 检测到旧版内置数据目录，但外部数据目录已有内容，跳过自动覆盖。" -ForegroundColor Cyan
+  }
+}
+
 Remove-Item "$InstallDir\*" -Recurse -Force -ErrorAction SilentlyContinue
 tar -xzf $tmp -C $InstallDir
+
+Remove-Item "$InstallDir\data" -Recurse -Force -ErrorAction SilentlyContinue
+cmd /c mklink /D "$InstallDir\data" "$DataDir" | Out-Null
 
 Rename-Item -Path "$InstallDir\clawpanel-lite.exe" -NewName "clawpanel-lite.exe" -ErrorAction SilentlyContinue
 New-Item -ItemType SymbolicLink -Path "C:\Windows\System32\clawlite-openclaw.cmd" -Target "$InstallDir\bin\clawlite-openclaw.cmd" -Force | Out-Null
@@ -69,7 +86,8 @@ New-Item -ItemType SymbolicLink -Path "C:\Windows\System32\clawlite-openclaw.cmd
 sc.exe delete $ServiceName 2>$null | Out-Null
 Start-Sleep -Seconds 1
 sc.exe create $ServiceName binPath= "`"$InstallDir\clawpanel-lite.exe`"" start= auto DisplayName= "ClawPanel Lite v$Version" | Out-Null
-reg add "HKLM\SYSTEM\CurrentControlSet\Services\$ServiceName" /v Environment /t REG_MULTI_SZ /d "CLAWPANEL_EDITION=lite\0CLAWPANEL_DATA=$InstallDir\data\0NODE_OPTIONS=--max-old-space-size=2048\0" /f | Out-Null
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\$ServiceName" /v Environment /t REG_MULTI_SZ /d "CLAWPANEL_EDITION=lite\0CLAWPANEL_DATA=$DataDir\0NODE_OPTIONS=--max-old-space-size=2048\0" /f | Out-Null
 sc.exe start $ServiceName | Out-Null
 
 Write-Host "ClawPanel Lite for Windows installed at: $InstallDir"
+Write-Host "ClawPanel Lite data stored at: $DataDir"
