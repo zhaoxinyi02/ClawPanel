@@ -446,6 +446,8 @@ func rewritePanelChatRuntimeConfig(cfg *config.Config, srcConfigPath, dstConfigP
 	obj["sessionDir"] = filepath.ToSlash(filepath.Join(cfg.OpenClawDir, "sessions"))
 	delete(obj, "channels")
 	delete(obj, "plugins")
+	delete(obj, "model")
+	delete(obj, "sessionDir")
 	encoded, err := json.MarshalIndent(obj, "", "  ")
 	if err != nil {
 		return err
