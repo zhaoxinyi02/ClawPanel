@@ -121,6 +121,27 @@ func sortOpenClawTasksByReferenceDesc(tasks []openClawTaskRecord) {
 	})
 }
 
+func dedupeOpenClawTasksByID(tasks []openClawTaskRecord) []openClawTaskRecord {
+	if len(tasks) <= 1 {
+		return tasks
+	}
+	seen := make(map[string]struct{}, len(tasks))
+	deduped := make([]openClawTaskRecord, 0, len(tasks))
+	for _, task := range tasks {
+		taskID := strings.TrimSpace(task.TaskID)
+		if taskID == "" {
+			deduped = append(deduped, task)
+			continue
+		}
+		if _, ok := seen[taskID]; ok {
+			continue
+		}
+		seen[taskID] = struct{}{}
+		deduped = append(deduped, task)
+	}
+	return deduped
+}
+
 func taskStatusTitle(task openClawTaskRecord) string {
 	if strings.TrimSpace(task.Label) != "" {
 		return strings.TrimSpace(task.Label)
@@ -315,6 +336,7 @@ func GetOpenClawTasks(cfg *config.Config) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "error": err.Error()})
 			return
 		}
+		records = dedupeOpenClawTasksByID(records)
 		now := time.Now()
 		summary := summarizeOpenClawTasks(records, now)
 		visible := make([]openClawTaskRecord, 0, len(records))

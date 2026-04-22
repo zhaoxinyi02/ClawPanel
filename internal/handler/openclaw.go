@@ -304,18 +304,34 @@ func injectWecomVirtualChannel(cfg *config.Config, ocConfig map[string]interface
 }
 
 func detectOpenClawPackageRoot() string {
-	bin, err := exec.LookPath("openclaw")
-	if err != nil {
-		return ""
+	candidates := []string{}
+	if p := config.DetectOpenClawBinaryPath(); strings.TrimSpace(p) != "" {
+		candidates = append(candidates, p)
 	}
-	resolved, err := filepath.EvalSymlinks(bin)
-	if err != nil {
-		resolved = bin
-	}
-	if strings.HasSuffix(resolved, ".mjs") || strings.HasSuffix(resolved, ".js") {
+	candidates = append(candidates, "openclaw")
+	for _, bin := range candidates {
+		bin = strings.TrimSpace(bin)
+		if bin == "" {
+			continue
+		}
+		resolvedPath := bin
+		if !filepath.IsAbs(bin) {
+			lookedUp, err := exec.LookPath(bin)
+			if err != nil {
+				continue
+			}
+			resolvedPath = lookedUp
+		}
+		resolved, err := filepath.EvalSymlinks(resolvedPath)
+		if err != nil {
+			resolved = resolvedPath
+		}
+		if strings.HasSuffix(resolved, ".mjs") || strings.HasSuffix(resolved, ".js") {
+			return filepath.Dir(resolved)
+		}
 		return filepath.Dir(resolved)
 	}
-	return filepath.Dir(resolved)
+	return ""
 }
 
 func detectBundledExtensionsDir() string {

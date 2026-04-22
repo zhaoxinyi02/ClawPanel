@@ -2575,7 +2575,7 @@ func (rt *workflowRuntime) workflowImageProviderConfig(step *model.WorkflowStep)
 		if value := strings.TrimSpace(toStringLocal(step.Input["baseUrl"])); value != "" {
 			baseURL = value
 		}
-		if value := strings.TrimSpace(toStringLocal(step.Input["apiKey"])); value != "" {
+		if value := resolveWorkflowAPIKey(step.Input["apiKey"]); value != "" {
 			apiKey = value
 		}
 		if value := strings.TrimSpace(toStringLocal(step.Input["model"])); value != "" {
@@ -2601,7 +2601,7 @@ func (rt *workflowRuntime) workflowImageProviderConfig(step *model.WorkflowStep)
 		baseURL = strings.TrimSpace(toStringLocal(provider["baseUrl"]))
 	}
 	if apiKey == "" {
-		apiKey = strings.TrimSpace(toStringLocal(provider["apiKey"]))
+		apiKey = resolveWorkflowAPIKey(provider["apiKey"])
 	}
 	if baseURL == "" || apiKey == "" {
 		return "", "", "", fmt.Errorf("workflow image provider incomplete: %s", providerID)
@@ -3075,28 +3075,13 @@ func (rt *workflowRuntime) callWorkflowModel(messages []map[string]string) (stri
 	}
 	models, _ := ocConfig["models"].(map[string]interface{})
 	providers, _ := models["providers"].(map[string]interface{})
-	pid := strings.TrimSpace(settings.ProviderID)
-	mid := strings.TrimSpace(settings.ModelID)
-	if pid == "" || mid == "" {
-		if agents, ok := ocConfig["agents"].(map[string]interface{}); ok {
-			if defaults, ok := agents["defaults"].(map[string]interface{}); ok {
-				if modelCfg, ok := defaults["model"].(map[string]interface{}); ok {
-					if primary, ok := modelCfg["primary"].(string); ok {
-						parts := strings.SplitN(primary, "/", 2)
-						if len(parts) == 2 {
-							pid, mid = parts[0], parts[1]
-						}
-					}
-				}
-			}
-		}
-	}
+	pid, mid := resolveWorkflowModelSelection(settings, ocConfig)
 	provider, ok := providers[pid].(map[string]interface{})
 	if !ok {
 		return "", nil, fmt.Errorf("workflow provider not found: %s", pid)
 	}
 	baseURL, _ := provider["baseUrl"].(string)
-	apiKey, _ := provider["apiKey"].(string)
+	apiKey := resolveWorkflowAPIKey(provider["apiKey"])
 	apiType, _ := provider["api"].(string)
 	if apiType == "" {
 		apiType = "openai-completions"
@@ -3354,6 +3339,133 @@ func normalizeWorkflowUserReply(v interface{}) string {
 		return ""
 	default:
 		return reply
+	}
+}
+
+func parseProviderModelID(raw interface{}) string {
+	switch m := raw.(type) {
+	case string:
+		return strings.TrimSpace(m)
+	case map[string]interface{}:
+		return strings.TrimSpace(toStringLocal(m["id"]))
+	default:
+		return ""
+	}
+}
+
+func resolveWorkflowModelSelection(settings *model.WorkflowSettings, ocConfig map[string]interface{}) (string, string) {
+	pid := strings.TrimSpace(settings.ProviderID)
+	mid := strings.TrimSpace(settings.ModelID)
+
+	if pid == "" || mid == "" {
+		agents, _ := ocConfig["agents"].(map[string]interface{})
+		defaults, _ := agents["defaults"].(map[string]interface{})
+		switch modelCfg := defaults["model"].(type) {
+		case string:
+			primary := strings.TrimSpace(modelCfg)
+			parts := strings.SplitN(primary, "/", 2)
+			if len(parts) == 2 {
+				if pid == "" {
+					pid = strings.TrimSpace(parts[0])
+				}
+				if mid == "" {
+					mid = strings.TrimSpace(parts[1])
+				}
+			}
+		case map[string]interface{}:
+			primary := strings.TrimSpace(toStringLocal(modelCfg["primary"]))
+			parts := strings.SplitN(primary, "/", 2)
+			if len(parts) == 2 {
+				if pid == "" {
+					pid = strings.TrimSpace(parts[0])
+				}
+				if mid == "" {
+					mid = strings.TrimSpace(parts[1])
+				}
+			}
+		}
+	}
+
+	models, _ := ocConfig["models"].(map[string]interface{})
+	providers, _ := models["providers"].(map[string]interface{})
+
+	if pid != "" && mid == "" {
+		if provider, ok := providers[pid].(map[string]interface{}); ok {
+			if modelItems, ok := provider["models"].([]interface{}); ok {
+				for _, item := range modelItems {
+					if candidate := parseProviderModelID(item); candidate != "" {
+						mid = candidate
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if pid == "" && mid != "" {
+		for providerID, rawProvider := range providers {
+			provider, _ := rawProvider.(map[string]interface{})
+			if provider == nil {
+				continue
+			}
+			modelItems, _ := provider["models"].([]interface{})
+			for _, item := range modelItems {
+				if parseProviderModelID(item) == mid {
+					pid = strings.TrimSpace(providerID)
+					break
+				}
+			}
+			if pid != "" {
+				break
+			}
+		}
+	}
+
+	if pid == "" && mid == "" && len(providers) == 1 {
+		for providerID, rawProvider := range providers {
+			pid = strings.TrimSpace(providerID)
+			provider, _ := rawProvider.(map[string]interface{})
+			if provider == nil {
+				break
+			}
+			if modelItems, ok := provider["models"].([]interface{}); ok {
+				for _, item := range modelItems {
+					if candidate := parseProviderModelID(item); candidate != "" {
+						mid = candidate
+						break
+					}
+				}
+			}
+			break
+		}
+	}
+
+	return pid, mid
+}
+
+func resolveWorkflowAPIKey(raw interface{}) string {
+	switch v := raw.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(v)
+	case map[string]interface{}:
+		if value := strings.TrimSpace(toStringLocal(v["value"])); value != "" {
+			return value
+		}
+		if value := strings.TrimSpace(toStringLocal(v["raw"])); value != "" {
+			return value
+		}
+		for _, key := range []string{"env", "fromEnv", "envVar", "name"} {
+			if envKey := strings.TrimSpace(toStringLocal(v[key])); envKey != "" {
+				if value := strings.TrimSpace(os.Getenv(envKey)); value != "" {
+					return value
+				}
+			}
+		}
+		return ""
+	default:
+		return strings.TrimSpace(fmt.Sprint(v))
 	}
 }
 
