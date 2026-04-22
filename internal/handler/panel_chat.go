@@ -706,14 +706,7 @@ func extractPanelChatPayloads(content interface{}) (string, []map[string]string)
 	return text, images
 }
 
-func readPanelChatMessages(cfg *config.Config, session panelChatSession) ([]map[string]interface{}, error) {
-	localMessages, err := loadPanelChatMessages(cfg, session.ID)
-	if err != nil {
-		return nil, err
-	}
-	if len(localMessages) > 0 {
-		return localMessages, nil
-	}
+func readPanelChatRuntimeMessages(cfg *config.Config, session panelChatSession) ([]map[string]interface{}, error) {
 	filePath := panelChatSessionFile(cfg, session.AgentID, session.OpenClawSessionID)
 	if _, err := os.Stat(filePath); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -788,6 +781,24 @@ func readPanelChatMessages(cfg *config.Config, session panelChatSession) ([]map[
 		messages = messages[len(messages)-400:]
 	}
 	return messages, nil
+}
+
+func readPanelChatMessages(cfg *config.Config, session panelChatSession) ([]map[string]interface{}, error) {
+	localMessages, err := loadPanelChatMessages(cfg, session.ID)
+	if err != nil {
+		return nil, err
+	}
+	runtimeMessages, err := readPanelChatRuntimeMessages(cfg, session)
+	if err != nil {
+		return nil, err
+	}
+	if len(localMessages) == 0 {
+		return runtimeMessages, nil
+	}
+	if len(runtimeMessages) == 0 {
+		return localMessages, nil
+	}
+	return mergePanelChatTranscripts(localMessages, runtimeMessages), nil
 }
 
 func resolvePanelChatCommand(cfg *config.Config) (string, []string, error) {

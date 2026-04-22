@@ -315,3 +315,53 @@ func TestRewritePanelChatRuntimeConfigPreservesConfiguredWorkspace(t *testing.T)
 		t.Fatalf("expected workspace %q, got %#v", filepath.ToSlash(workspace), got)
 	}
 }
+
+func TestReadPanelChatMessagesMergesRuntimeWithLocalHistory(t *testing.T) {
+	cfg := newPanelChatTestConfig(t)
+	session := panelChatSession{
+		ID:                "panel-merge",
+		OpenClawSessionID: "panel-merge",
+		AgentID:           "main",
+		ChatType:          "direct",
+		Title:             "merge",
+		CreatedAt:         time.Now().UnixMilli(),
+		UpdatedAt:         time.Now().UnixMilli(),
+	}
+
+	localMessages := []map[string]interface{}{
+		{
+			"id":         "user-1",
+			"role":       "user",
+			"senderType": "user",
+			"content":    "hello",
+			"timestamp":  time.Now().UTC().Format(time.RFC3339),
+		},
+	}
+	if err := savePanelChatMessages(cfg, session.ID, localMessages); err != nil {
+		t.Fatalf("savePanelChatMessages failed: %v", err)
+	}
+
+	runtimeFile := panelChatSessionFile(cfg, session.AgentID, session.OpenClawSessionID)
+	if err := os.MkdirAll(filepath.Dir(runtimeFile), 0o755); err != nil {
+		t.Fatalf("mkdir runtime dir failed: %v", err)
+	}
+	runtimeLine := `{"id":"assistant-1","type":"assistant","timestamp":"` + time.Now().UTC().Format(time.RFC3339) + `","message":{"role":"assistant","content":[{"type":"text","text":"world"}]}}`
+	if err := os.WriteFile(runtimeFile, []byte(runtimeLine+"\n"), 0o644); err != nil {
+		t.Fatalf("write runtime file failed: %v", err)
+	}
+
+	messages, err := readPanelChatMessages(cfg, session)
+	if err != nil {
+		t.Fatalf("readPanelChatMessages failed: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("expected merged 2 messages, got %d (%#v)", len(messages), messages)
+	}
+	last := messages[len(messages)-1]
+	if got, _ := last["role"].(string); got != "assistant" {
+		t.Fatalf("expected assistant runtime message, got %#v", last)
+	}
+	if got := strings.TrimSpace(toString(last["content"])); got != "world" {
+		t.Fatalf("expected runtime content world, got %#v", last["content"])
+	}
+}

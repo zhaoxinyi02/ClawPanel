@@ -423,6 +423,14 @@ export default function PanelChat() {
     const message = input.trim();
     if (!message || loading) return;
     let sessionId = selectedId;
+    let livePollTimer: number | null = null;
+    let livePollBusy = false;
+    const stopLivePoll = () => {
+      if (livePollTimer !== null) {
+        window.clearInterval(livePollTimer);
+        livePollTimer = null;
+      }
+    };
     const requestId = activeRequestIdRef.current + 1;
     activeRequestIdRef.current = requestId;
     setErrorText('');
@@ -439,6 +447,20 @@ export default function PanelChat() {
         sessionId,
       });
       setProcessingSessionId(sessionId);
+      livePollTimer = window.setInterval(() => {
+        if (activeRequestIdRef.current !== requestId || livePollBusy) return;
+        livePollBusy = true;
+        void api.getPanelChatSessionDetail(sessionId as string).then(detail => {
+          if (activeRequestIdRef.current !== requestId || !detail?.ok) return;
+          if (selectedIdRef.current === sessionId) {
+            setMessages(Array.isArray(detail.messages) ? detail.messages : []);
+            setParticipants(Array.isArray(detail.participants) ? detail.participants : []);
+            setPendingUserMessage(null);
+          }
+        }).finally(() => {
+          livePollBusy = false;
+        });
+      }, 1200);
       const controller = new AbortController();
       abortControllerRef.current = controller;
       const token = localStorage.getItem('admin-token') || '';
@@ -454,6 +476,7 @@ export default function PanelChat() {
       const res = await response.json();
       abortControllerRef.current = null;
       if (activeRequestIdRef.current !== requestId) return;
+      stopLivePoll();
       if (res?.ok) {
         abortMarkerHandledRef.current[sessionId] = false;
         if (selectedIdRef.current === sessionId) {
@@ -472,6 +495,7 @@ export default function PanelChat() {
       }
     } catch (error: any) {
       abortControllerRef.current = null;
+      stopLivePoll();
       if (activeRequestIdRef.current !== requestId) return;
       if (error?.name === 'AbortError') {
         if (sessionId) appendAbortMarker(sessionId);
@@ -481,6 +505,7 @@ export default function PanelChat() {
       setInput(message);
       setErrorText(text.failedSend);
     } finally {
+      stopLivePoll();
       if (activeRequestIdRef.current !== requestId) return;
       if (sessionId) {
         if (!processingSessionId || processingSessionId === sessionId) abortMarkerHandledRef.current[sessionId] = false;
