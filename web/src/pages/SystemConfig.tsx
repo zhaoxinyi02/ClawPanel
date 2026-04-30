@@ -1070,12 +1070,12 @@ export default function SystemConfig() {
             {Object.entries(providers).map(([pid, prov]: [string, any]) => (
               <div key={pid} className={`${modern ? 'page-modern-panel overflow-hidden transition-all hover:shadow-md' : 'bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50 overflow-hidden transition-all hover:shadow-md'}`}>
                 <div className="p-5 space-y-5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
                         <div className="p-2 rounded-xl border border-blue-100/80 dark:border-blue-800/40 bg-[linear-gradient(135deg,rgba(37,99,235,0.12),rgba(14,165,233,0.08))] dark:bg-[linear-gradient(135deg,rgba(37,99,235,0.2),rgba(14,165,233,0.12))] text-blue-600 dark:text-blue-300">
                           <Brain size={18} />
                         </div>
-                      <div className="flex items-baseline gap-2">
+                      <div className="flex min-w-0 flex-wrap items-baseline gap-2">
                         <input value={providerIdDrafts[pid] ?? pid} onChange={e => {
                           setProviderIdDrafts(prev => ({ ...prev, [pid]: e.target.value }));
                         }} onKeyDown={e => {
@@ -1083,7 +1083,7 @@ export default function SystemConfig() {
                             setProviderIdDrafts(prev => ({ ...prev, [pid]: pid }));
                             e.currentTarget.blur();
                           }
-                        }} className="text-base font-bold bg-transparent border-b border-dashed border-gray-300 dark:border-gray-600 focus:border-blue-500 outline-none px-1 py-0.5 min-w-[120px] transition-colors text-gray-900 dark:text-white" title="输入后在保存时生效，按 Esc 可撤销当前修改" />
+                        }} className="text-base font-bold bg-transparent border-b border-dashed border-gray-300 dark:border-gray-600 focus:border-blue-500 outline-none px-1 py-0.5 min-w-[120px] max-w-full transition-colors text-gray-900 dark:text-white" title="输入后在保存时生效，按 Esc 可撤销当前修改" />
                         {prov.models?.length > 0 && <span className="text-xs text-gray-400 font-medium px-2 py-0.5 bg-gray-50 dark:bg-gray-800 rounded-full">{prov.models.length} 模型</span>}
                       </div>
                     </div>
@@ -1091,7 +1091,7 @@ export default function SystemConfig() {
                       updateConfig((clone: any) => {
                         delete clone.models.providers[pid];
                       });
-                    }} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"><Trash2 size={16} /></button>
+                    }} className="shrink-0 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"><Trash2 size={16} /></button>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
