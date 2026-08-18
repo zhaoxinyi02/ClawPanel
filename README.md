@@ -467,4 +467,4 @@ Release 资产统一从 GitHub 下载，不再维护 Lite 包或自建加速服�
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=zhaoxinyi02/ClawPanel&type=date&legend=top-left)](https://www.star-history.com/#zhaoxinyi02/ClawPanel&type=date&legend=top-left)
+[![Star History Chart](https://star-history.dera.page/svg?repos=zhaoxinyi02/ClawPanel&type=date&legend=top-left)](https://star-history.dera.page/#zhaoxinyi02/ClawPanel&type=date&legend=top-left)
